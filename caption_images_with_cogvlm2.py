@@ -10,10 +10,10 @@ from PIL import Image
 from pathlib import Path
 
 # Constants
-#CAPTION_ENDPOINT = "http://bestiary:8000/caption"
-CAPTION_ENDPOINT = "http://mlboy:8000/caption"
+#CAPTION_ENDPOINT = "http://mlboy:8000/caption"
+CAPTION_ENDPOINT = "http://bestiary:8000/caption"
 SUPPORTED_EXTENSIONS = {'.jpg', '.jpeg', '.png'}
-LOCAL_DB_PATH = 'processed_images.json'
+LOCAL_DB_PATH = 'images_captioned.json'
 BATCH_SAVE_INTERVAL = 10
 
 # Load the local database of processed files
@@ -38,15 +38,6 @@ def handle_exit(signum, frame):
 
 signal.signal(signal.SIGINT, handle_exit)
 
-# Get all image files from the provided directory
-def get_image_files(directory):
-    image_files = []
-    for root, _, files in os.walk(directory):
-        for file in files:
-            if Path(file).suffix.lower() in SUPPORTED_EXTENSIONS:
-                image_files.append(os.path.join(root, file))
-    return image_files
-
 # Calculate SHA-256 hash of the file contents
 def calculate_file_hash(file_path):
     sha256_hash = hashlib.sha256()
@@ -67,71 +58,88 @@ def caption_image(file_path):
             print(f"Error processing file {file_path}: {e}")
             return None
 
+def process_image(file_path):
+    file_hash = calculate_file_hash(file_path)
+
+    # Skip if the image has already been processed
+    if file_hash in processed_files:
+        #print(f"File already processed: {file_path}")
+        return False
+
+    result = caption_image(file_path)
+    if result and "results" in result:
+        caption_data = result["results"].get(file_hash, {})
+        if "description" in caption_data and caption_data["description"]:
+            processed_files[file_hash] = {
+                "filename": caption_data["filename"],
+                "description": caption_data["description"]
+            }
+
+            print(f"Captioned: {caption_data['filename']}")
+            print(f"Description: {caption_data['description']}")
+
+            return True
+        else:
+            print(f"Failed to get a valid caption for {file_path}")
+    else:
+        print(f"Failed to process {file_path}")
+
+    return False
+
+# Get all image files from the provided directory
+def get_image_files(directory):
+    image_files = []
+    for root, _, files in os.walk(directory):
+        for file in files:
+            if Path(file).suffix.lower() in SUPPORTED_EXTENSIONS:
+                image_files.append(os.path.join(root, file))
+    return image_files
+
 # Main function
-def main(directory):
+def main(path):
     global processed_files
 
     # Load processed images from the local database
     processed_files = load_local_db(LOCAL_DB_PATH)
     print(f"Loaded local database with {len(processed_files)} entries.")
 
-    # Get all image files in the directory
-    image_files = get_image_files(directory)
-    print(f"Found {len(image_files)} image files in {directory}.")
+    new_images_processed = False
 
-    # Initialize progress bar and counters
-    progress_bar = tqdm(image_files, desc="Processing images", unit="file")
-    save_counter = 0
+    # If path is a file, process only that file
+    if os.path.isfile(path):
+        print(f"Processing single file: {path}")
+        if process_image(path):
+            new_images_processed = True
+    elif os.path.isdir(path):
+        print(f"Processing directory: {path}")
+        image_files = get_image_files(path)
+        print(f"Found {len(image_files)} image files in {path}.")
 
-    # Process each image file
-    for image_file in progress_bar:
-        # Calculate file hash
-        file_hash = calculate_file_hash(image_file)
+        progress_bar = tqdm(image_files, desc="Processing images", unit="file")
+        save_counter = 0
 
-        # Skip if the image has already been processed
-        if file_hash in processed_files:
-            progress_bar.set_postfix({"status": "Already processed"})
-            continue
-
-        # Call the /caption endpoint
-        result = caption_image(image_file)
-        if result and "results" in result:
-            caption_data = result["results"].get(file_hash, {})
-            if "description" in caption_data and caption_data["description"]:
-                # Store the file hash in the local database
-                processed_files[file_hash] = {
-                    "filename": caption_data["filename"],
-                    "description": caption_data["description"]
-                }
-
-                # Print the result for the file
-                print(f"Captioned: {caption_data['filename']}")
-                print(f"Description: {caption_data['description']}")
-
-                # Increment save counter
+        for image_file in progress_bar:
+            if process_image(image_file):
+                new_images_processed = True
                 save_counter += 1
 
-                # Save the local database every BATCH_SAVE_INTERVAL images
-                if save_counter >= BATCH_SAVE_INTERVAL:
-                    save_local_db(processed_files, LOCAL_DB_PATH)
-                    save_counter = 0  # Reset the counter
-            else:
-                print(f"Failed to get a valid caption for {image_file}")
-        else:
-            print(f"Failed to process {image_file}")
+            if save_counter >= BATCH_SAVE_INTERVAL:
+                save_local_db(processed_files, LOCAL_DB_PATH)
+                save_counter = 0  # Reset the counter
 
-    # Save the local database at the end
-    save_local_db(processed_files, LOCAL_DB_PATH)
+    if new_images_processed:
+        save_local_db(processed_files, LOCAL_DB_PATH)
     print("Finished processing all images.")
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Usage: python caption_images.py <directory>")
+        print("Usage: python caption_images_with_cogvlm2.py <file_or_directory>")
         sys.exit(1)
 
-    directory = sys.argv[1]
-    if not os.path.isdir(directory):
-        print(f"Error: {directory} is not a valid directory.")
+    path = sys.argv[1]
+    if not os.path.exists(path):
+        print(f"Error: {path} is not a valid file or directory.")
         sys.exit(1)
 
-    main(directory)
+    main(path)
+
