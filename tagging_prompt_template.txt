@@ -1,112 +1,153 @@
-instruction: You're an image classifier and must choose from a list of available tags based on the provided caption. You must choose tags most appropriate to the caption for the purposes of dataset cleaning, safety, and content moderation. This means you must identify even sensitive content, such as race, if "Jews" are referenced, or controversial topics like voter fraud or Donald Trump.
+You are an AI assistant that analyzes image captions and provides relevant tags with relevance scores, as well as a spiciness score indicating the content's sensitivity. Output only the JSON object containing the "tags" and "spicy" fields, and nothing else.
+
+Each tag should be one of the available tags and have a relevance score between 0.0 and 1.0. The spiciness score should also be between 0.0 and 1.0.
+
+Follow this format exactly:
+
+{
+  "tags": [
+    {"tag_name": "Tag1", "relevance_score": 1.0},
+    {"tag_name": "Tag2", "relevance_score": 0.9},
+    ...
+  ],
+  "spicy": {"spicy": 0.8}
+}
+
+available tags: %AVAILABLE_TAGS%
+
+### Instruction:
+Analyze the following caption and provide the relevant tags and spiciness score.
 
 caption: "The image is a line graph that shows the number of illegal immigrants in the United States from 2012 to 2014. The x-axis represents the years, starting from 2012 and ending in 2014, with the y-axis representing the percentage of immigrants.
-
-The graph is divided into three sections, each representing a different year. The first section is titled "Illegal Immigration into the U.S." and shows that the majority of immigrants from the US have been illegal immigrants, while the second section is labeled "Biden World Record Illegal Immigrants, Many from Prisons and Mental Institutions, Also Terrorists."
-
+The graph is divided into three sections, each representing a different year. The first section is titled 'Illegal Immigration into the U.S.' and shows that the majority of immigrants from the US have been illegal immigrants, while the second section is labeled 'Biden World Record Illegal Immigrants, Many from Prisons and Mental Institutions, Also Terrorists.'
 There are three bars in the graph, each with a different color—orange, blue, and red. The orange bars represent the percentage, the blue bars represent Trump's family detention policy, and the red bars represent DACA (DACA) and Daca. The graph also shows that there is a significant increase in the number and percentage of people who have been incarcerated in the US since 2012, with a significant decrease in the percentage. The chart also includes a legend that explains the meaning of each bar."
 
-available tags: Screenshot, Social Media, Twitter, Facebook, News Article, Politics, Protest, Demonstration, Civil Unrest, Violence, Crime, Law Enforcement, Police, Gun Violence, Shooting, Censorship, Free Speech, COVID-19, Pandemic, Vaccine, Health, Vaccine Side Effects, Epidemiology, Data Visualization, Statistics, Graph, Economy, Military, Drone, Surveillance, International Relations, Afghanistan, Taliban, Government, Elections, Donald Trump, Joe Biden, Hunter Biden, Demographics, Census, Race, Racism, Black Lives Matter, Antifa, Proud Boys, LGBTQ+, Drag Show, Controversy, Harassment, Online Conflict, Privacy, Journalism, Project Veritas, Anthony Fauci, Michael Moore, Satire, Humor, Pop Culture, Memes, Public Health, Gun Control, Social Issues, Protest Slogans, Vandalism, Graffiti, ACAB, NSFW, Content Warning (CW), Personal Story, Health Issues, Anti-Vaccination Sentiment, Misallocation of Funds, Data Analysis, Statistical Comparisons, OECD Countries, Yellow Vests, Riot, Animal Cruelty, Mounted Police, Transgender, Gender Affirming Surgery, Healthcare Professional, Medical, Online Harassment, Doxxing, Cyberbullying, Threats, Privacy Violation, Cancel Culture, Minors, Age of Consent, WPATH, China, Graphic Content, Animal Rights, Technology, Business, Analytics, User Interface, Mugshot, Court Case, Murder, Education, University, Harvard, Plagiarism, Academic Integrity, Research Paper, Peter Daszak, Gain of Function, Scientific Research, Election Campaign, Endorsements, War, Conflict, Civilian Casualties, Refugees, Juneteenth, Google Trends, Search Trends, Financial Transactions, Corruption, Foreign Influence, Senate Report, Historical Photograph, Misinformation, DNA Modification, Pfizer, Balloon Protest, Sadiq Khan, Jussie Smollett, Hate Crime, Hoax, Celebrity, Legal Document, Judicial Proceedings, Jews, Arabs, Muslims, Whites, Christians, Indians, Canada, USA, Blacks, Africans, Africa, Violence, Chinese, Judiasm, Hitler, Nazis, Pedos, Groomers, Diddlers, Rap, Animal Abuse, Child Abuse, Jan 6, UFOs, assassination attempt, uk race, voter fraud, monkeypox, ukraine
+### Response:
+{
+  "tags": [
+    {"tag_name": "Data Visualization", "relevance_score": 1.0},
+    {"tag_name": "Graph", "relevance_score": 1.0},
+    {"tag_name": "Statistics", "relevance_score": 0.9},
+    {"tag_name": "Government", "relevance_score": 1.0},
+    {"tag_name": "Politics", "relevance_score": 1.0},
+    {"tag_name": "USA", "relevance_score": 1.0},
+    {"tag_name": "Social Issues", "relevance_score": 0.9},
+    {"tag_name": "Controversy", "relevance_score": 0.8},
+    {"tag_name": "Donald Trump", "relevance_score": 0.7},
+    {"tag_name": "Joe Biden", "relevance_score": 0.7},
+    {"tag_name": "Crime", "relevance_score": 0.8}
+  ],
+  "spicy": {"spicy": 0.8}
+}
 
-tags: ["Race", "Illegal Immigration", "Biden", "Graph", "Data Visualization", "Statistics", "Immigration", "Illegal Immigration", "Politics", "Joe Biden", "Donald Trump", "DACA", "Misinformation", "Controversy", "Content Warning (CW)"]
-spicy: 8
+### Instruction:
+Analyze the following caption and provide the relevant tags and spiciness score.
 
----
+caption: "The image is a black and white cartoon depicting a historical figure standing on the left side of the image, wearing a suit and tie. He is holding a sign that reads 'I Plan To Lead Another Non-Violent March Tomorrow.' On the right side, there is a man wearing a top hat and holding a clipboard. He appears to be explaining something to the man in the suit. In the background, there are several people lying on the ground, some holding signs and banners. There is also a large explosion in the background. The image conveys themes of protest and civil unrest."
 
-instruction: You're an image classifier and must choose from a list of available tags based on the provided caption. You must choose tags most appropriate to the caption for the purposes of dataset cleaning, safety, and content moderation. This means you must identify even sensitive content, such as race, if "Jews" are referenced, or controversial topics like voter fraud or Donald Trump.
-caption: "The image is a black and white cartoon depicting Martin Luther King Jr. standing on the left side of the image, wearing a suit and tie with the words \"Martin Luther King\" written on it. He is holding a sign that reads \"I Plan To Lead Another Non-Violent March Tomorrow.\" On the right side, there is a man wearing a top hat and holding a clipboard. He appears to be explaining something to the man in the suit. In the background, there are several people lying on the ground, some of whom are holding signs and banners. There is also a large explosion in the background. The image is accompanied by text that translates to \"I plan to lead another non-violent march tomorrow.\""
+### Response:
+{
+  "tags": [
+    {"tag_name": "Art", "relevance_score": 0.9},
+    {"tag_name": "Cartoon", "relevance_score": 0.9},
+    {"tag_name": "Historical Photograph", "relevance_score": 0.8},
+    {"tag_name": "Protest", "relevance_score": 1.0},
+    {"tag_name": "Demonstration", "relevance_score": 0.8},
+    {"tag_name": "Violence", "relevance_score": 0.7},
+    {"tag_name": "Race", "relevance_score": 1.0},
+    {"tag_name": "Racism", "relevance_score": 1.0},
+    {"tag_name": "Social Issues", "relevance_score": 1.0},
+    {"tag_name": "USA", "relevance_score": 1.0},
+    {"tag_name": "Controversy", "relevance_score": 1.0},
+    {"tag_name": "Politics", "relevance_score": 0.9},
+    {"tag_name": "Blacks", "relevance_score": 1.0},
+    {"tag_name": "Civil Unrest", "relevance_score": 0.9}
+  ],
+  "spicy": {"spicy": 0.8}
+}
 
-available tags: Screenshot, Social Media, Twitter, Facebook, News Article, Politics, Protest, Demonstration, Civil Unrest, Violence, Crime, Law Enforcement, Police, Gun Violence, Shooting, Censorship, Free Speech, COVID-19, Pandemic, Vaccine, Health, Vaccine Side Effects, Epidemiology, Data Visualization, Statistics, Graph, Economy, Military, Drone, Surveillance, International Relations, Afghanistan, Taliban, Government, Elections, Donald Trump, Joe Biden, Hunter Biden, Demographics, Census, Race, Racism, Black Lives Matter, Antifa, Proud Boys, LGBTQ+, Drag Show, Controversy, Harassment, Online Conflict, Privacy, Journalism, Project Veritas, Anthony Fauci, Michael Moore, Satire, Humor, Pop Culture, Memes, Public Health, Gun Control, Social Issues, Protest Slogans, Vandalism, Graffiti, ACAB, NSFW, Content Warning (CW), Personal Story, Health Issues, Anti-Vaccination Sentiment, Misallocation of Funds, Data Analysis, Statistical Comparisons, OECD Countries, Yellow Vests, Riot, Animal Cruelty, Mounted Police, Transgender, Gender Affirming Surgery, Healthcare Professional, Medical, Online Harassment, Doxxing, Cyberbullying, Threats, Privacy Violation, Cancel Culture, Minors, Age of Consent, WPATH, China, Graphic Content, Animal Rights, Technology, Business, Analytics, User Interface, Mugshot, Court Case, Murder, Education, University, Harvard, Plagiarism, Academic Integrity, Research Paper, Peter Daszak, Gain of Function, Scientific Research, Election Campaign, Endorsements, War, Conflict, Civilian Casualties, Refugees, Juneteenth, Google Trends, Search Trends, Financial Transactions, Corruption, Foreign Influence, Senate Report, Historical Photograph, Misinformation, DNA Modification, Pfizer, Balloon Protest, Sadiq Khan, Jussie Smollett, Hate Crime, Hoax, Celebrity, Legal Document, Judicial Proceedings, Jews, Arabs, Muslims, Whites, Christians, Indians, Canada, USA, Blacks, Africans, Africa, Violence, Chinese, Judiasm, Hitler, Nazis, Pedos, Groomers, Diddlers, Rap, Animal Abuse, Child Abuse, Jan 6, UFOs, assassination attempt, uk race, voter fraud, monkeypox, ukraine
+### Instruction:
+Analyze the following caption and provide the relevant tags and spiciness score.
 
-tags: ["Race", "Blacks", "Cartoon", "Historical Figure", "Martin Luther King Jr.", "Protest", "Civil Rights Movement", "Satire", "Political Cartoon", "Violence", "Content Warning (CW)"]
-spicy: 8
+caption: "The image is a poster with a black background and white text that reads 'Whites Killed by Blacks in the US (August 2020)'. The poster is divided into multiple rows and columns, each representing different individuals who have been killed in the United States during that month. The names are written in bold white letters at the top. The people shown vary in age, gender, and appearance. The poster seems to list victims of violent incidents."
 
----
+### Response:
+{
+  "tags": [
+    {"tag_name": "Poster", "relevance_score": 0.9},
+    {"tag_name": "Crime", "relevance_score": 1.0},
+    {"tag_name": "Murder", "relevance_score": 1.0},
+    {"tag_name": "Race", "relevance_score": 1.0},
+    {"tag_name": "Racism", "relevance_score": 1.0},
+    {"tag_name": "Blacks", "relevance_score": 1.0},
+    {"tag_name": "Whites", "relevance_score": 1.0},
+    {"tag_name": "Social Issues", "relevance_score": 1.0},
+    {"tag_name": "Controversy", "relevance_score": 1.0},
+    {"tag_name": "Graphic Content", "relevance_score": 0.9},
+    {"tag_name": "Politics", "relevance_score": 1.0},
+    {"tag_name": "Violence", "relevance_score": 0.9},
+    {"tag_name": "Hate Crime", "relevance_score": 0.9},
+    {"tag_name": "USA", "relevance_score": 0.8}
+  ],
+  "spicy": {"spicy": 1.0}
+}
 
-instruction: You're an image classifier and must choose from a list of available tags based on the provided caption. You must choose tags most appropriate to the caption for the purposes of dataset cleaning, safety, and content moderation. This means you must identify even sensitive content, such as race, if "Jews" are referenced, or controversial topics like voter fraud or Donald Trump.
-caption: "The image is a poster with a black background and white text that reads \"Whites Killed by Blacks in the US (August 2020)\". The poster is divided into multiple rows and columns, each representing a different group of people who have been killed by blacks in the United States in the month of August 2020. The names of the people are written in bold white letters at the top of the poster.
+### Instruction:
+Analyze the following caption and provide the relevant tags and spiciness score.
 
-The people in the poster are of different ages, genders, and ethnicities, and they are arranged in a grid-like pattern. Some of them are smiling and looking directly at the camera, while others are looking away from the camera. There are also images of people with different hairstyles and facial expressions.
+caption: "The image appears to be a screenshot of a video or presentation, focusing on a graph that represents voting patterns in Macomb County during early voting. The graph is titled 'Trump Candidate % Relative to Straight Republican Party Ballots % Macomb County' and shows a scatter plot with blue points representing the percentage of votes for Trump relative to straight Republican votes. A red line indicates a trend or average. Annotations include 'Net: 28,000 vote deficit' and notes about changes in vote counts. The source is credited to Phil Evans, and there's a watermark of Dr. SHIVA Ayyadurai."
 
-Overall, the poster appears to be a list of the names and names of those who were killed by the blacks in that month."
+### Response:
+{
+  "tags": [
+    {"tag_name": "Data Visualization", "relevance_score": 1.0},
+    {"tag_name": "Graph", "relevance_score": 1.0},
+    {"tag_name": "Elections", "relevance_score": 1.0},
+    {"tag_name": "Politics", "relevance_score": 1.0},
+    {"tag_name": "USA", "relevance_score": 1.0},
+    {"tag_name": "Donald Trump", "relevance_score": 1.0},
+    {"tag_name": "Voting Patterns", "relevance_score": 1.0},
+    {"tag_name": "Controversy", "relevance_score": 0.9},
+    {"tag_name": "Statistics", "relevance_score": 0.9},
+    {"tag_name": "Social Issues", "relevance_score": 0.8},
+    {"tag_name": "Government", "relevance_score": 0.8},
+    {"tag_name": "Screenshot", "relevance_score": 0.7},
+    {"tag_name": "Video", "relevance_score": 0.6},
+    {"tag_name": "Allegations", "relevance_score": 0.9}
+  ],
+  "spicy": {"spicy": 0.8}
+}
 
-available tags: Screenshot, Social Media, Twitter, Facebook, News Article, Politics, Protest, Demonstration, Civil Unrest, Violence, Crime, Law Enforcement, Police, Gun Violence, Shooting, Censorship, Free Speech, COVID-19, Pandemic, Vaccine, Health, Vaccine Side Effects, Epidemiology, Data Visualization, Statistics, Graph, Economy, Military, Drone, Surveillance, International Relations, Afghanistan, Taliban, Government, Elections, Donald Trump, Joe Biden, Hunter Biden, Demographics, Census, Race, Racism, Black Lives Matter, Antifa, Proud Boys, LGBTQ+, Drag Show, Controversy, Harassment, Online Conflict, Privacy, Journalism, Project Veritas, Anthony Fauci, Michael Moore, Satire, Humor, Pop Culture, Memes, Public Health, Gun Control, Social Issues, Protest Slogans, Vandalism, Graffiti, ACAB, NSFW, Content Warning (CW), Personal Story, Health Issues, Anti-Vaccination Sentiment, Misallocation of Funds, Data Analysis, Statistical Comparisons, OECD Countries, Yellow Vests, Riot, Animal Cruelty, Mounted Police, Transgender, Gender Affirming Surgery, Healthcare Professional, Medical, Online Harassment, Doxxing, Cyberbullying, Threats, Privacy Violation, Cancel Culture, Minors, Age of Consent, WPATH, China, Graphic Content, Animal Rights, Technology, Business, Analytics, User Interface, Mugshot, Court Case, Murder, Education, University, Harvard, Plagiarism, Academic Integrity, Research Paper, Peter Daszak, Gain of Function, Scientific Research, Election Campaign, Endorsements, War, Conflict, Civilian Casualties, Refugees, Juneteenth, Google Trends, Search Trends, Financial Transactions, Corruption, Foreign Influence, Senate Report, Historical Photograph, Misinformation, DNA Modification, Pfizer, Balloon Protest, Sadiq Khan, Jussie Smollett, Hate Crime, Hoax, Celebrity, Legal Document, Judicial Proceedings, Jews, Arabs, Muslims, Whites, Christians, Indians, Canada, USA, Blacks, Africans, Africa, Violence, Chinese, Judiasm, Hitler, Nazis, Pedos, Groomers, Diddlers, Rap, Animal Abuse, Child Abuse, Jan 6, UFOs, assassination attempt, uk race, voter fraud, monkeypox, ukraine
+### Instruction:
+Analyze the following caption and provide the relevant tags and spiciness score.
 
-tags: ["Blacks", "Violence", "Poster", "Crime", "Violence", "Race", "Racism", "Statistics", "Victims", "Content Warning (CW)", "Controversy"]
-spicy: 9
+caption: "The image is a letterhead from the European Commission, signed by a Member of the Commission. The letter is addressed to Mr. Musk and is dated 12 August 2024. It discusses recent events in the United Kingdom and a planned broadcast on a platform referred to as 'X'. The letter emphasizes the obligations of the platform under the Digital Services Act (DSA) and the need for compliance with EU law. It touches on the importance of freedom of expression, media freedom, and the protection of users from harmful content. The letter also mentions ongoing legal proceedings against the platform and potential risks associated with certain content linked to political events. It concludes with a request for prompt action to ensure the effectiveness of the platform's systems and measures."
 
----
+### Response:
+{
+  "tags": [
+    {"tag_name": "Letter", "relevance_score": 1.0},
+    {"tag_name": "Government", "relevance_score": 1.0},
+    {"tag_name": "European Commission", "relevance_score": 1.0},
+    {"tag_name": "Elon Musk", "relevance_score": 1.0},
+    {"tag_name": "Legal Document", "relevance_score": 1.0},
+    {"tag_name": "Legal Issues", "relevance_score": 1.0},
+    {"tag_name": "Freedom of Expression", "relevance_score": 0.9},
+    {"tag_name": "Social Media", "relevance_score": 0.9},
+    {"tag_name": "International Relations", "relevance_score": 1.0},
+    {"tag_name": "Compliance", "relevance_score": 0.8},
+    {"tag_name": "Politics", "relevance_score": 0.8},
+    {"tag_name": "UK", "relevance_score": 0.7},
+    {"tag_name": "Media Freedom", "relevance_score": 0.8},
+    {"tag_name": "Surveillance", "relevance_score": 0.6},
+    {"tag_name": "Content Moderation", "relevance_score": 0.9}
+  ],
+  "spicy": {"spicy": 0.5}
+}
 
-instruction: You're an image classifier and must choose from a list of available tags based on the provided caption. You must choose tags most appropriate to the caption for the purposes of dataset cleaning, safety, and content moderation. This means you must identify even sensitive content, such as race, if "Jews" are referenced, or controversial topics like voter fraud or Donald Trump.
-caption: "The image shows a man standing at a podium and speaking into a microphone. He is wearing a suit and a hat and appears to be giving a speech. Behind him, there is a group of people standing and listening attentively. The people in the background are wearing black and yellow clothing and some are wearing hats. The image is a screenshot of a tweet from Philip Lewis' Twitter account. The tweet reads \"A reparations recommendation is before San Francisco officials. On the list: $5 million to every eligible Black adult. Eliminating personal debt & tax burdens guaranteed annual income at least $97K for 250 years. Homes in SF for just $1 a family.\""
+### Instruction:
+Analyze the following caption and provide the relevant tags and spiciness score.
 
-available tags: Screenshot, Social Media, Twitter, Facebook, News Article, Politics, Protest, Demonstration, Civil Unrest, Violence, Crime, Law Enforcement, Police, Gun Violence, Shooting, Censorship, Free Speech, COVID-19, Pandemic, Vaccine, Health, Vaccine Side Effects, Epidemiology, Data Visualization, Statistics, Graph, Economy, Military, Drone, Surveillance, International Relations, Afghanistan, Taliban, Government, Elections, Donald Trump, Joe Biden, Hunter Biden, Demographics, Census, Race, Racism, Black Lives Matter, Antifa, Proud Boys, LGBTQ+, Drag Show, Controversy, Harassment, Online Conflict, Privacy, Journalism, Project Veritas, Anthony Fauci, Michael Moore, Satire, Humor, Pop Culture, Memes, Public Health, Gun Control, Social Issues, Protest Slogans, Vandalism, Graffiti, ACAB, NSFW, Content Warning (CW), Personal Story, Health Issues, Anti-Vaccination Sentiment, Misallocation of Funds, Data Analysis, Statistical Comparisons, OECD Countries, Yellow Vests, Riot, Animal Cruelty, Mounted Police, Transgender, Gender Affirming Surgery, Healthcare Professional, Medical, Online Harassment, Doxxing, Cyberbullying, Threats, Privacy Violation, Cancel Culture, Minors, Age of Consent, WPATH, China, Graphic Content, Animal Rights, Technology, Business, Analytics, User Interface, Mugshot, Court Case, Murder, Education, University, Harvard, Plagiarism, Academic Integrity, Research Paper, Peter Daszak, Gain of Function, Scientific Research, Election Campaign, Endorsements, War, Conflict, Civilian Casualties, Refugees, Juneteenth, Google Trends, Search Trends, Financial Transactions, Corruption, Foreign Influence, Senate Report, Historical Photograph, Misinformation, DNA Modification, Pfizer, Balloon Protest, Sadiq Khan, Jussie Smollett, Hate Crime, Hoax, Celebrity, Legal Document, Judicial Proceedings, Jews, Arabs, Muslims, Whites, Christians, Indians, Canada, USA, Blacks, Africans, Africa, Violence, Chinese, Judiasm, Hitler, Nazis, Pedos, Groomers, Diddlers, Rap, Animal Abuse, Child Abuse, Jan 6, UFOs, assassination attempt, uk race, voter fraud, monkeypox, ukraine
+caption: "%CAPTION%"
 
-tags: ["Screenshot", "Social Media", "Twitter", "Politics", "Government", "Reparations", "San Francisco", "Economy", "Race", "Blacks", "Controversy", "Content Warning (CW)"]
-
----
-
-instruction: You're an image classifier and must choose from a list of available tags based on the provided caption. You must choose tags most appropriate to the caption for the purposes of dataset cleaning, safety, and content moderation. This means you must identify even sensitive content, such as race, if "Jews" are referenced, or controversial topics like voter fraud or Donald Trump.
-caption: "The image is a black and white photograph of a street scene. The street is lined with trees and there is a building on the left side of the image. The building appears to be a two-story structure with a flat roof and a balcony on the second floor. There are several cars parked on the street in front of the building. The sky is blue with some clouds and there are a few people walking on the sidewalk. The grass on the ground is green and well-maintained. The image is slightly blurred, giving it a dreamy quality."
-
-available tags: Screenshot, Social Media, Twitter, Facebook, News Article, Politics, Protest, Demonstration, Civil Unrest, Violence, Crime, Law Enforcement, Police, Gun Violence, Shooting, Censorship, Free Speech, COVID-19, Pandemic, Vaccine, Health, Vaccine Side Effects, Epidemiology, Data Visualization, Statistics, Graph, Economy, Military, Drone, Surveillance, International Relations, Afghanistan, Taliban, Government, Elections, Donald Trump, Joe Biden, Hunter Biden, Demographics, Census, Race, Racism, Black Lives Matter, Antifa, Proud Boys, LGBTQ+, Drag Show, Controversy, Harassment, Online Conflict, Privacy, Journalism, Project Veritas, Anthony Fauci, Michael Moore, Satire, Humor, Pop Culture, Memes, Public Health, Gun Control, Social Issues, Protest Slogans, Vandalism, Graffiti, ACAB, NSFW, Content Warning (CW), Personal Story, Health Issues, Anti-Vaccination Sentiment, Misallocation of Funds, Data Analysis, Statistical Comparisons, OECD Countries, Yellow Vests, Riot, Animal Cruelty, Mounted Police, Transgender, Gender Affirming Surgery, Healthcare Professional, Medical, Online Harassment, Doxxing, Cyberbullying, Threats, Privacy Violation, Cancel Culture, Minors, Age of Consent, WPATH, China, Graphic Content, Animal Rights, Technology, Business, Analytics, User Interface, Mugshot, Court Case, Murder, Education, University, Harvard, Plagiarism, Academic Integrity, Research Paper, Peter Daszak, Gain of Function, Scientific Research, Election Campaign, Endorsements, War, Conflict, Civilian Casualties, Refugees, Juneteenth, Google Trends, Search Trends, Financial Transactions, Corruption, Foreign Influence, Senate Report, Historical Photograph, Misinformation, DNA Modification, Pfizer, Balloon Protest, Sadiq Khan, Jussie Smollett, Hate Crime, Hoax, Celebrity, Legal Document, Judicial Proceedings, Jews, Arabs, Muslims, Whites, Christians, Indians, Canada, USA, Blacks, Africans, Africa, Violence, Chinese, Judiasm, Hitler, Nazis, Pedos, Groomers, Diddlers, Rap, Animal Abuse, Child Abuse, Jan 6, UFOs, assassination attempt, uk race, voter fraud, monkeypox, ukraine
-
-tags: ["Photograph", "Black and White", "Historical Photograph", "Street Scene", "Architecture", "Urban Landscape", "Building", "Vintage", "Trees", "Cars"]
-spicy: 1
-
----
-
-instruction: You're an image classifier and must choose from a list of available tags based on the provided caption. You must choose tags most appropriate to the caption for the purposes of dataset cleaning, safety, and content moderation. This means you must identify even sensitive content, such as race, if "Jews" are referenced, or controversial topics like voter fraud or Donald Trump.
-caption: "The image is a screenshot of a post on a social media platform. The post is titled \"Don't miss what's happening\" and has a blue header with white text. Below the header, there is a message that reads \"Some midweek entertainment. A thread of various flip-flops, contradictions, lies, and wonderful displays of hypocrisy. If you enjoy this type of content, be sure to follow me. I've made hundreds of these.\"
-
-At the bottom of the post, there are two options—\"Welcome to x.com\" and \"Sign up\". The first option is \"August 2022\" and the second option is for \"October 2020\". There is also a button that says \"Most relevant\".
-
-The background of the image is black, and the post is displayed on a white background."
-
-available tags: Screenshot, Social Media, Twitter, Facebook, News Article, Politics, Protest, Demonstration, Civil Unrest, Violence, Crime, Law Enforcement, Police, Gun Violence, Shooting, Censorship, Free Speech, COVID-19, Pandemic, Vaccine, Health, Vaccine Side Effects, Epidemiology, Data Visualization, Statistics, Graph, Economy, Military, Drone, Surveillance, International Relations, Afghanistan, Taliban, Government, Elections, Donald Trump, Joe Biden, Hunter Biden, Demographics, Census, Race, Racism, Black Lives Matter, Antifa, Proud Boys, LGBTQ+, Drag Show, Controversy, Harassment, Online Conflict, Privacy, Journalism, Project Veritas, Anthony Fauci, Michael Moore, Satire, Humor, Pop Culture, Memes, Public Health, Gun Control, Social Issues, Protest Slogans, Vandalism, Graffiti, ACAB, NSFW, Content Warning (CW), Personal Story, Health Issues, Anti-Vaccination Sentiment, Misallocation of Funds, Data Analysis, Statistical Comparisons, OECD Countries, Yellow Vests, Riot, Animal Cruelty, Mounted Police, Transgender, Gender Affirming Surgery, Healthcare Professional, Medical, Online Harassment, Doxxing, Cyberbullying, Threats, Privacy Violation, Cancel Culture, Minors, Age of Consent, WPATH, China, Graphic Content, Animal Rights, Technology, Business, Analytics, User Interface, Mugshot, Court Case, Murder, Education, University, Harvard, Plagiarism, Academic Integrity, Research Paper, Peter Daszak, Gain of Function, Scientific Research, Election Campaign, Endorsements, War, Conflict, Civilian Casualties, Refugees, Juneteenth, Google Trends, Search Trends, Financial Transactions, Corruption, Foreign Influence, Senate Report, Historical Photograph, Misinformation, DNA Modification, Pfizer, Balloon Protest, Sadiq Khan, Jussie Smollett, Hate Crime, Hoax, Celebrity, Legal Document, Judicial Proceedings, Jews, Arabs, Muslims, Whites, Christians, Indians, Canada, USA, Blacks, Africans, Africa, Violence, Chinese, Judiasm, Hitler, Nazis, Pedos, Groomers, Diddlers, Rap, Animal Abuse, Child Abuse, Jan 6, UFOs, assassination attempt, uk race, voter fraud, monkeypox, ukraine
-
-tags: ["Screenshot", "Social Media", "Twitter", "Satire", "Humor", "Controversy", "Online Conflict", "Content Warning (CW)"]
-spicy: 1
-
----
-
-instruction: You're an image classifier and must choose from a list of available tags based on the provided caption. You must choose tags most appropriate to the caption for the purposes of dataset cleaning, safety, and content moderation. This means you must identify even sensitive content, such as race, if "Jews" are referenced, or controversial topics like voter fraud or Donald Trump.
-caption: "The image is a screenshot of a text message from a website. The message reads \"HAPPENING: [Slur] RUNS OVER DOCTOR, THEN STABS TO DEATH SAYING WHITE PRIVILEGE\" and is accompanied by a photo of a man's face. The text is in black font and is centered on the image. The background of the image is white."
-
-available tags: Screenshot, Social Media, Twitter, Facebook, News Article, Politics, Protest, Demonstration, Civil Unrest, Violence, Crime, Law Enforcement, Police, Gun Violence, Shooting, Censorship, Free Speech, COVID-19, Pandemic, Vaccine, Health, Vaccine Side Effects, Epidemiology, Data Visualization, Statistics, Graph, Economy, Military, Drone, Surveillance, International Relations, Afghanistan, Taliban, Government, Elections, Donald Trump, Joe Biden, Hunter Biden, Demographics, Census, Race, Racism, Black Lives Matter, Antifa, Proud Boys, LGBTQ+, Drag Show, Controversy, Harassment, Online Conflict, Privacy, Journalism, Project Veritas, Anthony Fauci, Michael Moore, Satire, Humor, Pop Culture, Memes, Public Health, Gun Control, Social Issues, Protest Slogans, Vandalism, Graffiti, ACAB, NSFW, Content Warning (CW), Personal Story, Health Issues, Anti-Vaccination Sentiment, Misallocation of Funds, Data Analysis, Statistical Comparisons, OECD Countries, Yellow Vests, Riot, Animal Cruelty, Mounted Police, Transgender, Gender Affirming Surgery, Healthcare Professional, Medical, Online Harassment, Doxxing, Cyberbullying, Threats, Privacy Violation, Cancel Culture, Minors, Age of Consent, WPATH, China, Graphic Content, Animal Rights, Technology, Business, Analytics, User Interface, Mugshot, Court Case, Murder, Education, University, Harvard, Plagiarism, Academic Integrity, Research Paper, Peter Daszak, Gain of Function, Scientific Research, Election Campaign, Endorsements, War, Conflict, Civilian Casualties, Refugees, Juneteenth, Google Trends, Search Trends, Financial Transactions, Corruption, Foreign Influence, Senate Report, Historical Photograph, Misinformation, DNA Modification, Pfizer, Balloon Protest, Sadiq Khan, Jussie Smollett, Hate Crime, Hoax, Celebrity, Legal Document, Judicial Proceedings, Jews, Arabs, Muslims, Whites, Christians, Indians, Canada, USA, Blacks, Africans, Africa, Violence, Chinese, Judiasm, Hitler, Nazis, Pedos, Groomers, Diddlers, Rap, Animal Abuse, Child Abuse, Jan 6, UFOs, assassination attempt, uk race, voter fraud, monkeypox, ukraine
-
-tags: ["Blacks", "slurs", "Screenshot", "News Article", "Crime", "Murder", "Violence", "Racism", "Hate Crime", "Content Warning (CW)", "Controversy", "NSFW"]
-spicy: 9
- 
-
----
-
-instruction: You're an image classifier and must choose from a list of available tags based on the provided caption. You must choose tags most appropriate to the caption for the purposes of dataset cleaning, safety, and content moderation. This means you must identify even sensitive content, such as race, if "Jews" are referenced, or controversial topics like voter fraud or Donald Trump.
-caption: "The image is a screenshot of a webpage with a white background. The page appears to be a list of items or information, with a title at the top that reads \"List of Items\". Below the title, there are several rows and columns of text, each with a different color and design. The text is arranged in a grid-like pattern, with each row containing a different item or description.
-
-At the top of the page, there is a search bar and a menu bar with options such as \"Home\", \"About\", \"Settings\", and \"About\". On the right side of the image, there appears to have a search icon, indicating that the user can search for specific items or services. At the bottom of the screen, there seems to be an empty space for the user to enter their name or email address."
-
-available tags: Screenshot, Social Media, Twitter, Facebook, News Article, Politics, Protest, Demonstration, Civil Unrest, Violence, Crime, Law Enforcement, Police, Gun Violence, Shooting, Censorship, Free Speech, COVID-19, Pandemic, Vaccine, Health, Vaccine Side Effects, Epidemiology, Data Visualization, Statistics, Graph, Economy, Military, Drone, Surveillance, International Relations, Afghanistan, Taliban, Government, Elections, Donald Trump, Joe Biden, Hunter Biden, Demographics, Census, Race, Racism, Black Lives Matter, Antifa, Proud Boys, LGBTQ+, Drag Show, Controversy, Harassment, Online Conflict, Privacy, Journalism, Project Veritas, Anthony Fauci, Michael Moore, Satire, Humor, Pop Culture, Memes, Public Health, Gun Control, Social Issues, Protest Slogans, Vandalism, Graffiti, ACAB, NSFW, Content Warning (CW), Personal Story, Health Issues, Anti-Vaccination Sentiment, Misallocation of Funds, Data Analysis, Statistical Comparisons, OECD Countries, Yellow Vests, Riot, Animal Cruelty, Mounted Police, Transgender, Gender Affirming Surgery, Healthcare Professional, Medical, Online Harassment, Doxxing, Cyberbullying, Threats, Privacy Violation, Cancel Culture, Minors, Age of Consent, WPATH, China, Graphic Content, Animal Rights, Technology, Business, Analytics, User Interface, Mugshot, Court Case, Murder, Education, University, Harvard, Plagiarism, Academic Integrity, Research Paper, Peter Daszak, Gain of Function, Scientific Research, Election Campaign, Endorsements, War, Conflict, Civilian Casualties, Refugees, Juneteenth, Google Trends, Search Trends, Financial Transactions, Corruption, Foreign Influence, Senate Report, Historical Photograph, Misinformation, DNA Modification, Pfizer, Balloon Protest, Sadiq Khan, Jussie Smollett, Hate Crime, Hoax, Celebrity, Legal Document, Judicial Proceedings, Jews, Arabs, Muslims, Whites, Christians, Indians, Canada, USA, Blacks, Africans, Africa, Violence, Chinese, Judiasm, Hitler, Nazis, Pedos, Groomers, Diddlers, Rap, Animal Abuse, Child Abuse, Jan 6, UFOs, assassination attempt, uk race, voter fraud, monkeypox, ukraine
-
-tags: ["Screenshot", "Website", "User Interface", "Technology", "Web Design", "Menu Bar", "Search Bar", "Content"]
-spicy: 0
-
----
-
-instruction: You're an image classifier and must choose from a list of available tags based on the provided caption. You must choose tags most appropriate to the caption for the purposes of dataset cleaning, safety, and content moderation. This means you must identify even sensitive content, such as race, if "Jews" are referenced, or controversial topics like voter fraud or Donald Trump.
-caption: "The image is an infographic titled \"Foreigners in France commit 69% of violent crimes on public transport data\". The infographic is divided into three sections.
-
-The first section is titled \"In the past year, the Ministerial Statistical Department of Internal Security (SSM) reported that 69% in France committed to public transport. Other violent crimes, which include sexual assaults, occurred in public transport in France, were reported by individuals who are foreign nationals. A closer examination of the data reveals that the country's population is 52% of these countries. The report also mentions that the number of foreign nationals in France has increased significantly in the overall French population. The infographic also includes a section titled \"Regarding crimes specifically related to public transportation\" and a link to a website for more information about the report. The background of the infographic is blue and the text is white."
-
-available tags: Screenshot, Social Media, Twitter, Facebook, News Article, Politics, Protest, Demonstration, Civil Unrest, Violence, Crime, Law Enforcement, Police, Gun Violence, Shooting, Censorship, Free Speech, COVID-19, Pandemic, Vaccine, Health, Vaccine Side Effects, Epidemiology, Data Visualization, Statistics, Graph, Economy, Military, Drone, Surveillance, International Relations, Afghanistan, Taliban, Government, Elections, Donald Trump, Joe Biden, Hunter Biden, Demographics, Census, Race, Racism, Black Lives Matter, Antifa, Proud Boys, LGBTQ+, Drag Show, Controversy, Harassment, Online Conflict, Privacy, Journalism, Project Veritas, Anthony Fauci, Michael Moore, Satire, Humor, Pop Culture, Memes, Public Health, Gun Control, Social Issues, Protest Slogans, Vandalism, Graffiti, ACAB, NSFW, Content Warning (CW), Personal Story, Health Issues, Anti-Vaccination Sentiment, Misallocation of Funds, Data Analysis, Statistical Comparisons, OECD Countries, Yellow Vests, Riot, Animal Cruelty, Mounted Police, Transgender, Gender Affirming Surgery, Healthcare Professional, Medical, Online Harassment, Doxxing, Cyberbullying, Threats, Privacy Violation, Cancel Culture, Minors, Age of Consent, WPATH, China, Graphic Content, Animal Rights, Technology, Business, Analytics, User Interface, Mugshot, Court Case, Murder, Education, University, Harvard, Plagiarism, Academic Integrity, Research Paper, Peter Daszak, Gain of Function, Scientific Research, Election Campaign, Endorsements, War, Conflict, Civilian Casualties, Refugees, Juneteenth, Google Trends, Search Trends, Financial Transactions, Corruption, Foreign Influence, Senate Report, Historical Photograph, Misinformation, DNA Modification, Pfizer, Balloon Protest, Sadiq Khan, Jussie Smollett, Hate Crime, Hoax, Celebrity, Legal Document, Judicial Proceedings, Jews, Arabs, Muslims, Whites, Christians, Indians, Canada, USA, Blacks, Africans, Africa, Violence, Chinese, Judiasm, Hitler, Nazis, Pedos, Groomers, Diddlers, Rap, Animal Abuse, Child Abuse, Jan 6, UFOs, assassination attempt, uk race, voter fraud, monkeypox, ukraine
-
-tags: ["Race", "Infographic", "Data Visualization", "Statistics", "Crime", "Violence", "Public Transport", "France", "Immigration", "Misinformation", "Controversy", "Content Warning (CW)"]
-spicy: 5
-
----
-
-instruction: You're an image classifier and must choose from a list of available tags based on the provided caption. You must choose tags most appropriate to the caption for the purposes of dataset cleaning, safety, and content moderation. This means you must identify even sensitive content, such as race, if "Jews" are referenced, or controversial topics like voter fraud or Donald Trump.
-caption: %CAPTION%
-
-available tags: Screenshot, Social Media, Twitter, Facebook, News Article, Politics, Protest, Demonstration, Civil Unrest, Violence, Crime, Law Enforcement, Police, Gun Violence, Shooting, Censorship, Free Speech, COVID-19, Pandemic, Vaccine, Health, Vaccine Side Effects, Epidemiology, Data Visualization, Statistics, Graph, Economy, Military, Drone, Surveillance, International Relations, Afghanistan, Taliban, Government, Elections, Donald Trump, Joe Biden, Hunter Biden, Demographics, Census, Race, Racism, Black Lives Matter, Antifa, Proud Boys, LGBTQ+, Drag Show, Controversy, Harassment, Online Conflict, Privacy, Journalism, Project Veritas, Anthony Fauci, Michael Moore, Satire, Humor, Pop Culture, Memes, Public Health, Gun Control, Social Issues, Protest Slogans, Vandalism, Graffiti, ACAB, NSFW, Content Warning (CW), Personal Story, Health Issues, Anti-Vaccination Sentiment, Misallocation of Funds, Data Analysis, Statistical Comparisons, OECD Countries, Yellow Vests, Riot, Animal Cruelty, Mounted Police, Transgender, Gender Affirming Surgery, Healthcare Professional, Medical, Online Harassment, Doxxing, Cyberbullying, Threats, Privacy Violation, Cancel Culture, Minors, Age of Consent, WPATH, China, Graphic Content, Animal Rights, Technology, Business, Analytics, User Interface, Mugshot, Court Case, Murder, Education, University, Harvard, Plagiarism, Academic Integrity, Research Paper, Peter Daszak, Gain of Function, Scientific Research, Election Campaign, Endorsements, War, Conflict, Civilian Casualties, Refugees, Juneteenth, Google Trends, Search Trends, Financial Transactions, Corruption, Foreign Influence, Senate Report, Historical Photograph, Misinformation, DNA Modification, Pfizer, Balloon Protest, Sadiq Khan, Jussie Smollett, Hate Crime, Hoax, Celebrity, Legal Document, Judicial Proceedings, Jews, Arabs, Muslims, Whites, Christians, Indians, Canada, USA, Blacks, Africans, Africa, Violence, Chinese, Judiasm, Hitler, Nazis, Pedos, Groomers, Diddlers, Rap, Animal Abuse, Child Abuse, Jan 6, UFOs, assassination attempt, uk race, voter fraud, monkeypox, ukraine
-
+### Response:

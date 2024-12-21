@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import json
+from tqdm import tqdm
 import requests
 import signal
 import sys
@@ -9,12 +10,19 @@ import os
 
 tagged_data = {}
 
-PATH_CAPTIONED = 'images_captioned.json'
-PATH_CAPTIONED_BACKUP = 'images_captioned.json'
-PATH_CAPTIONED_TAGGED = 'images_captioned_tagged.json'
-PATH_CAPTIONED_TAGGED_BACKUP = 'images_captioned_tagged_backup.json'
+if not os.path.exists('backup'):
+    os.makedirs('backup')
+
+PATH_CAPTIONED = os.path.join('data', 'images_captioned.json')
+PATH_CAPTIONED_BACKUP = os.path.join('backup', 'images_captioned.json')
+PATH_CAPTIONED_TAGGED = os.path.join('data', 'images_captioned_tagged.json')
+PATH_CAPTIONED_TAGGED_BACKUP = os.path.join('backup', 'images_captioned_tagged_backup.json')
 PATH_PROMPT_TEMPLATE = 'tagging_prompt_template.txt'
 SERVER = 'bestiary:5000'
+INSTRUCTION = "You're a captioning bot that takes a short summary of an image and must generate a JSON array of around 15 tags. The tags should fully describe the content of the image and break it out into easily searchable categories. Special attention must be paid to the political, social, cultural, race, sex, gender, or controversial content in the captions. A list of tags is provided but you may choose to generate additional tags if it's especially relevant. The tags should be of the form `{\"tag name\": n}` where n is a value 0.0-1.0 that corresponds to how relevant the tag is. After the tags you must append a spiciness rating based on your judgment of the caption, in the form of spicy: `{\"spicy\": n}`, where n is 0.0-1.0. 0.0 would be e.g., a photo of a happy cat. 1.0 would be, e.g., Hitler dancing on the twin towers on 9/11."
+AVAILABLE_TAGS = ""
+with open('available_tags.txt', 'r') as f:
+    AVAILABLE_TAGS = f.read()
 
 def signal_handler(sig, frame):
     print('Interrupted! Saving data...')
@@ -35,8 +43,9 @@ def backup_files():
             print(f'Backup of {PATH_CAPTIONED_TAGGED} created')
 
 def load_prompt_template():
+    template = ""
     with open(PATH_PROMPT_TEMPLATE, 'r') as f:
-        return f.read()
+        return f.read().replace('%INSTRUCTION%', INSTRUCTION).replace('%AVAILABLE_TAGS%', AVAILABLE_TAGS)
 
 def load_data():
     if os.path.exists(PATH_CAPTIONED):
@@ -53,6 +62,7 @@ def load_data():
         tagged_data = {}
     return data, tagged_data
 
+
 def process_item(key, item, prompt_template):
     try:
         caption = item['description']
@@ -61,7 +71,7 @@ def process_item(key, item, prompt_template):
         payload = {
             "n": 1,
             "max_context_length": 128000,
-            "max_length": 75,
+            "max_length": 500,
             "rep_pen": 1.07,
             "temperature": 0.7,
             "top_p": 0.92,
@@ -85,13 +95,13 @@ def process_item(key, item, prompt_template):
             "logit_bias": {},
             "prompt": prompt,
             "quiet": True,
-            "stop_sequence": ["### Instruction:", "### Response:", "\n### "],
+            "stop_sequence": ["### Instruction:", "### Response:", "###Human:", "### Assistant:", "\n\n"],
             "use_default_badwordsids": False,
             "bypass_eos": False
         }
 
         response = requests.post(
-            'http://SERVER/api/v1/generate',
+            f'http://{SERVER}/api/v1/generate',
             headers={'Content-Type': 'application/json'},
             json=payload,
         )
@@ -100,26 +110,26 @@ def process_item(key, item, prompt_template):
             print(f"Error: Received status code {response.status_code} for item {key}")
             return None
 
-        response = response.json()['results']
-        text = response[0]['text']
+        response_text = response.json()['results'][0]['text']
 
-        start_idx = text.find('[')
-        end_idx = text.find(']')
+        # Find the JSON object in the response.
+        json_start = response_text.find('{')
+        json_end = response_text.rfind('}') + 1  # Include the closing brace.
+        if json_start == -1 or json_end == -1:
+            print(f"Could not find JSON in response for item {key}")
+            return None
 
-        # Extract the tags
-        if start_idx != -1 and end_idx != -1 and start_idx < end_idx:
-            tags = text[start_idx+1:end_idx].replace('"', '').split(', ')
-            item['tags'] = tags
+        json_str = response_text[json_start:json_end]
+        try:
+            response_data = json.loads(json_str)
+            # Extract tags and spiciness.
+            item['tags'] = {tag['tag_name']: tag['relevance_score'] for tag in response_data['tags']}
+            item['spicy'] = response_data['spicy']['spicy']
             print(f"Tags for item {key}: {item['tags']}")
-        else:
-            print(f"Could not parse tags for item {key}")
-
-        # Extract "spicy: n" where n is a number from 1 to 10
-        spicy_idx = text.find('spicy:')
-        if spicy_idx != -1:
-            spicy = text[spicy_idx+7:spicy_idx+8]
-            item['spicy'] = spicy
-            print(f"Spicy for item {key}: {item['spicy']}")
+            print(f"Spiciness for item {key}: {item['spicy']}")
+        except json.JSONDecodeError as e:
+            print(f"JSON parsing error for item {key}: {e}")
+            return None
 
         return item
 
@@ -135,7 +145,9 @@ def main():
     data, tagged_data = load_data()
     save_count = 0
 
-    for key, item in data.items():
+    progress_bar = tqdm(data.items(), total=len(data), desc='Processing items', unit='captioned image')
+    # for key, item in data.items():
+    for key, item in progress_bar:
         if key in tagged_data and 'tags' in tagged_data[key]:
             continue
 
