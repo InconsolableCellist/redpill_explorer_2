@@ -1,42 +1,32 @@
+// server.js
 const express = require('express');
 const path = require('path');
 const HashMapper = require('./hashMapper');
+const fs = require('fs').promises;
 
 const app = express();
 const port = 3000;
 
-const hashMapper = new HashMapper({
-  basePaths: [
+// Define base paths for images
+const IMAGE_PATHS = [
     '/mnt/hanoi_data/storage/redpills',
     '/home/offipso/Downloads/redpills'
-  ],
-  cacheFile: path.join(__dirname, 'hash_path_cache.json'),
-  updateInterval: 12 * 60 * 60 * 1000 // 12 hours
+];
+
+// Initialize HashMapper with the base paths
+const hashMapper = new HashMapper({
+    basePaths: IMAGE_PATHS,
+    cacheFile: path.join(__dirname, 'hash_path_cache.json'),
+    updateInterval: 12 * 60 * 60 * 1000 // 12 hours
 });
 
 // Initialize the hash mapper when the server starts
 hashMapper.initialize().catch(error => {
-  console.error('Failed to initialize hash mapper:', error);
+    console.error('Failed to initialize hash mapper:', error);
 });
 
+// Serve static files from public directory
 app.use(express.static(path.join(__dirname, 'public')));
-
-app.get('/hash-to-path/:hash', async (req, res) => {
-    try {
-        await hashMapper.ensureUpdated();
-        const filePath = hashMapper.getPath(req.params.hash);
-
-        if (!filePath) {
-            res.status(404).json({ error: 'Hash not found' });
-            return;
-        }
-
-        res.json({ path: filePath });
-    } catch (error) {
-        console.error('Error in hash-to-path endpoint:', error);
-        res.status(500).json({ error: 'Internal server error' });
-    }
-});
 
 // Custom middleware to serve images from multiple directories
 app.use('/images', (req, res, next) => {
@@ -63,6 +53,7 @@ app.use('/images', (req, res, next) => {
             });
         } catch (err) {
             // File doesn't exist in this path, try next one
+            console.log(`File not found at ${fullPath}`);
             tryNextPath(index + 1);
         }
     };
@@ -71,7 +62,7 @@ app.use('/images', (req, res, next) => {
     tryNextPath(0);
 });
 
-// New endpoint to get path from hash, now returning web-friendly path
+// New endpoint to get path from hash, returning a direct usable URL
 app.get('/hash-to-path/:hash', async (req, res) => {
     try {
         await hashMapper.ensureUpdated();
@@ -91,7 +82,9 @@ app.get('/hash-to-path/:hash', async (req, res) => {
             }
         }
 
-        res.json({ path: webPath });
+        // Return the full URL including protocol and host
+        const baseUrl = `http://localhost:${port}`;
+        res.json({ url: `${baseUrl}${webPath}` });
     } catch (error) {
         console.error('Error in hash-to-path endpoint:', error);
         res.status(500).json({ error: 'Internal server error' });
@@ -114,19 +107,19 @@ app.post('/update-cache', express.json(), (req, res) => {
         });
 });
 
+// Existing endpoints
 app.get('/data', (req, res) => {
-  res.sendFile(path.join(__dirname, 'data', 'images_captioned_tagged.json'));
+    res.sendFile(path.join(__dirname, 'data', 'images_captioned_tagged.json'));
 });
-
 
 app.get('/tag_pairs_with_weights', (req, res) => {
     res.sendFile(path.join(__dirname, 'data', 'tag_pairs_with_weights.json'));
 });
 
 app.get('/tags', (req, res) => {
-  res.sendFile(path.join(__dirname, 'data', 'tags_with_sizes.json'));
+    res.sendFile(path.join(__dirname, 'data', 'tags_with_sizes.json'));
 });
 
 app.listen(port, () => {
-  console.log(`Server is running at http://localhost:${port}`);
+    console.log(`Server is running at http://localhost:${port}`);
 });

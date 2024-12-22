@@ -404,7 +404,7 @@ function openItemPanel(node, initialTags = []) {
                 card.className = 'item-card';
 
                 // Get an excerpt from <MORE_DETAILED_CAPTION>
-                const caption = item.description && item.description['<MORE_DETAILED_CAPTION>'] || '';
+                const caption = item.description;
                 const excerpt = caption.length > 750 ? caption.substring(0, 750) + '...' : caption;
 
                 // Spicy level
@@ -436,7 +436,7 @@ function openItemPanel(node, initialTags = []) {
                     fetch(`/hash-to-path/${hash}`)
                         .then(response => response.json())
                         .then(data => {
-                            if (data.path) {
+                            if (data.url) {
                                 window.open(data.url, '_blank');
                             }
                         });
