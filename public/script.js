@@ -245,7 +245,7 @@ function highlightNode(clickedNode, links, allNodes) {
 }
 
 
-function openItemPanel(node) {
+function openItemPanel(node, initialTags = []) {
     const panel = document.getElementById('itemPanel');
     const closeBtn = panel.querySelector('.close-btn');
     const itemGrid = panel.querySelector('.item-grid');
@@ -296,7 +296,7 @@ function openItemPanel(node) {
     filterContainer.appendChild(tagFilterWrapper);
     filterContainer.appendChild(captionFilterWrapper);
 
-    let selectedTags = [node.id];
+    let selectedTags = [node.id, ...initialTags.filter(tag => tag !== node.id)];
     let tagsInItems = []; // To store tags with counts
 
     // Function to get combined recommended tags for all selected tags
@@ -344,8 +344,8 @@ function openItemPanel(node) {
 
         // Get items matching all selected tags
         const items = Object.keys(data).map(id => {
-            const item = data[id];
-            item.tags = Object.keys(item.tags);
+            const item = {...data[id]};
+            item.tags = Object.entries(item.tags).map(([tag, weight]) => tag);
             return { id, ...item };
         }).filter(item => {
             return selectedTags.every(tag => item.tags && item.tags.includes(tag));
@@ -432,13 +432,14 @@ function openItemPanel(node) {
 
                 // Add click event to open image
                 card.addEventListener('click', () => {
-                    const imagePath = item.path || '';
-                    let imageUrl = imagePath;
-                    imageUrl = imageUrl.replace('/mnt/hanoi_data/storage/redpills', '/images/');
-                    imageUrl = imageUrl.replace('/home/offipso/Downloads/redpills', '/images/');
-                    imageUrl = imageUrl.replace(/\/+/g, '/'); // Replace multiple slashes with a single slash
-                    const encodedUrl = encodeURI(imageUrl);
-                    window.open(encodedUrl, '_blank');
+                    // obtain the URL by making a GET to the server /hash-to-path/:hash
+                    fetch(`/hash-to-path/${hash}`)
+                        .then(response => response.json())
+                        .then(data => {
+                            if (data.path) {
+                                window.open(data.url, '_blank');
+                            }
+                        });
                 });
 
                 itemGrid.appendChild(card);
@@ -540,19 +541,19 @@ function openItemPanel(node) {
     };
 }
 
+function openPanelWithSelectedNodes() {
+    if (selectedNodes.length > 0) {
+        const masterNode = selectedNodes[0];
+        const otherTags = selectedNodes.slice(1).map(node => node.id);
+        openItemPanel(masterNode, otherTags);
+    }
+}
+
 function closeItemPanel() {
     const panel = document.getElementById('itemPanel');
     panel.style.display = 'none';
 }
 
-document.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape') {
-        const panel = document.getElementById('itemPanel');
-        if (panel.style.display === 'block') {
-            closeItemPanel();
-        }
-    }
-});
 
 function toggleNodeSelection(node) {
   const index = selectedNodes.findIndex(n => n.id === node.id);
@@ -564,49 +565,272 @@ function toggleNodeSelection(node) {
 }
 
 function highlightSelectedNodes(links, allNodes) {
-  const link = d3.selectAll('.link');
-  const node = d3.selectAll('.node');
+    const link = d3.selectAll('.link');
+    const node = d3.selectAll('.node');
 
-  // Reset styles for all nodes and links
-  link.style('visibility', 'hidden').attr('opacity', 0);
+    if (selectedNodes.length === 0) {
+        node.select('circle').attr('fill', d => color(d.group));
+        node.select('text')
+            .style('fill', '#000')
+            .style('font-size', `${unselectedNodeFontSize}px`)
+            .style('font-weight', 'normal');
+        link.style('visibility', 'hidden').attr('opacity', 0);
+        updateInfoPanel([], []);
+        return;
+    }
 
-  node.select('circle').attr('fill', mutedColor);
+    // Reset styles for all nodes and links
+    link.style('visibility', 'hidden').attr('opacity', 0);
+    node.select('circle').attr('fill', mutedColor);
+    node.select('text')
+        .style('fill', mutedColor)
+        .style('font-size', `${unselectedNodeFontSize}px`)
+        .style('font-weight', 'normal');
 
-  node.select('text')
-    .style('fill', mutedColor)
-    .style('font-size', `${unselectedNodeFontSize}px`)
-    .style('font-weight', 'normal');
+    if (selectedNodes.length === 0) return;
 
-  // Highlight selected nodes and their connections
-  selectedNodes.forEach(selectedNode => {
-    // Highlight the selected node
-    node.filter(d => d.id === selectedNode.id).select('circle')
-      .attr('fill', d => color(d.group));
+    // Find nodes that are connected to ALL selected nodes
+    const connectedToAllSelected = allNodes.filter(currentNode => {
+        // Skip the selected nodes themselves
+        if (selectedNodes.some(selected => selected.id === currentNode.id)) {
+            return false;
+        }
 
-    node.filter(d => d.id === selectedNode.id).select('text')
-      .style('fill', '#000')
-      .style('font-size', `${selectedNodeFontSize}px`)
-      .style('font-weight', 'bold');
+        // Check if this node is connected to ALL selected nodes
+        return selectedNodes.every(selectedNode => {
+            return links.some(link =>
+                (link.source.id === selectedNode.id && link.target.id === currentNode.id) ||
+                (link.target.id === selectedNode.id && link.source.id === currentNode.id)
+            );
+        });
+    });
 
-    // Show and style links connected to the selected node
-    link.filter(d => d.source.id === selectedNode.id || d.target.id === selectedNode.id)
-      .style('visibility', 'visible')
-      .attr('stroke', d => linkColorScale(d.weight))
-      .attr('stroke-width', d => linkWidthScale(d.weight))
-      .attr('stroke-opacity', 1)
-      .attr('opacity', 1);
+    // Highlight selected nodes
+    selectedNodes.forEach(selectedNode => {
+        node.filter(d => d.id === selectedNode.id)
+            .select('circle')
+            .attr('fill', d => color(d.group));
 
-    // Highlight connected nodes
-    node.filter(d => isConnected(d, selectedNode, links))
-      .select('circle')
-      .attr('fill', d => color(d.group));
+        node.filter(d => d.id === selectedNode.id)
+            .select('text')
+            .style('fill', '#000')
+            .style('font-size', `${selectedNodeFontSize}px`)
+            .style('font-weight', 'bold');
+    });
 
-    node.filter(d => isConnected(d, selectedNode, links))
-      .select('text')
-      .style('fill', '#000')
-      .style('font-size', `${connectedNodeFontSize}px`)
-      .style('font-weight', 'normal');
-  });
+    // Highlight nodes connected to ALL selected nodes
+    connectedToAllSelected.forEach(connectedNode => {
+        node.filter(d => d.id === connectedNode.id)
+            .select('circle')
+            .attr('fill', d => color(d.group));
+
+        node.filter(d => d.id === connectedNode.id)
+            .select('text')
+            .style('fill', '#000')
+            .style('font-size', `${connectedNodeFontSize}px`)
+            .style('font-weight', 'normal');
+    });
+
+    // Show relevant links
+    link.each(function(d) {
+        const isLinkConnectingSelectedNodes = selectedNodes.some(n => n.id === d.source.id) &&
+            selectedNodes.some(n => n.id === d.target.id);
+
+        const isLinkConnectingToAllConnected =
+            (selectedNodes.some(n => n.id === d.source.id) &&
+                connectedToAllSelected.some(n => n.id === d.target.id)) ||
+            (selectedNodes.some(n => n.id === d.target.id) &&
+                connectedToAllSelected.some(n => n.id === d.source.id));
+
+        const isLinkConnectingToAnySelected =
+            selectedNodes.length === 1 &&
+            (selectedNodes[0].id === d.source.id || selectedNodes[0].id === d.target.id);
+
+        if (isLinkConnectingSelectedNodes || isLinkConnectingToAllConnected || isLinkConnectingToAnySelected) {
+            d3.select(this)
+                .style('visibility', 'visible')
+                .attr('stroke', linkColorScale(d.weight))
+                .attr('stroke-width', linkWidthScale(d.weight))
+                .attr('opacity', 1);
+        }
+    });
+    updateInfoPanel(selectedNodes, connectedToAllSelected);
+}
+
+// Modify the setupInfoPanel function to include the search input
+function setupInfoPanel() {
+    const infoPanel = document.createElement('div');
+    infoPanel.id = 'infoPanel';
+    infoPanel.className = 'fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-4';
+
+    // Add a flex container for better organization
+    infoPanel.innerHTML = `
+    <div class="flex justify-between items-center gap-4">
+      <div class="search-container flex-1 max-w-md relative">
+        <input type="text" 
+               class="w-full px-4 py-2 border rounded-lg" 
+               placeholder="Search nodes..."
+               id="nodeSearchInput">
+        <div id="searchResults" 
+             class="absolute bottom-full mb-2 w-full bg-white border rounded-lg shadow-lg max-h-60 overflow-y-auto hidden">
+        </div>
+      </div>
+      <div class="flex gap-8 items-center">
+        <div class="selected-count">Selected: 0 nodes</div>
+        <div class="connected-count">Connected to all: 0 nodes</div>
+        <button class="open-panel-btn px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:bg-gray-400 disabled:cursor-not-allowed">
+          Open Panel
+        </button>
+      </div>
+    </div>
+  `;
+
+    document.body.appendChild(infoPanel);
+
+    // Add click handler for the button
+    const openPanelBtn = infoPanel.querySelector('.open-panel-btn');
+    openPanelBtn.addEventListener('click', () => {
+        if (selectedNodes.length > 0) {
+            openPanelWithSelectedNodes();
+        }
+    });
+
+    // Setup search functionality
+    const searchInput = document.getElementById('nodeSearchInput');
+    const searchResults = document.getElementById('searchResults');
+
+    searchInput.addEventListener('input', debounce((e) => {
+        const searchTerm = e.target.value.toLowerCase();
+        if (searchTerm.length < 2) {
+            searchResults.classList.add('hidden');
+            // Reset all nodes to their normal state if no search term
+            d3.selectAll('.node').style('opacity', 1);
+            return;
+        }
+
+        // Get all nodes from the visualization
+        const nodes = d3.selectAll('.node').data();
+        const matchingNodes = nodes.filter(node =>
+            node.id.toLowerCase().includes(searchTerm)
+        ).sort((a, b) => {
+            // Sort exact matches first, then by string length
+            const aStartsWith = a.id.toLowerCase().startsWith(searchTerm);
+            const bStartsWith = b.id.toLowerCase().startsWith(searchTerm);
+            if (aStartsWith && !bStartsWith) return -1;
+            if (!aStartsWith && bStartsWith) return 1;
+            return a.id.length - b.id.length;
+        }).slice(0, 10); // Limit to top 10 matches
+
+        // Update search results dropdown
+        if (matchingNodes.length > 0) {
+            searchResults.innerHTML = matchingNodes.map(node => `
+        <div class="search-result p-2 hover:bg-gray-100 cursor-pointer" data-node-id="${node.id}">
+          ${node.id}
+        </div>
+      `).join('');
+            searchResults.classList.remove('hidden');
+
+            // Dim all nodes and highlight matching ones
+            d3.selectAll('.node').style('opacity', 0.2);
+            d3.selectAll('.node').filter(d =>
+                matchingNodes.some(n => n.id === d.id)
+            ).style('opacity', 1);
+
+        } else {
+            searchResults.innerHTML = '<div class="p-2 text-gray-500">No matches found</div>';
+            searchResults.classList.remove('hidden');
+            // Reset node opacity if no matches
+            d3.selectAll('.node').style('opacity', 1);
+        }
+    }, 300));
+
+    // Add click handlers for search results
+    searchResults.addEventListener('click', (e) => {
+        const resultEl = e.target.closest('.search-result');
+        if (!resultEl) return;
+
+        const nodeId = resultEl.dataset.nodeId;
+        const node = d3.selectAll('.node').filter(d => d.id === nodeId);
+
+        if (!node.empty()) {
+            // Center the view on the selected node
+            const transform = d3.zoomTransform(svg.node());
+            const bounds = node.node().getBBox();
+            const dx = bounds.x;
+            const dy = bounds.y;
+            const x = -dx * transform.k + width/2;
+            const y = -dy * transform.k + height/2;
+
+            svg.transition()
+                .duration(750)
+                .call(
+                    d3.zoom().transform,
+                    d3.zoomIdentity.translate(x, y).scale(transform.k)
+                );
+
+            // Clear search and reset opacity
+            searchInput.value = '';
+            searchResults.classList.add('hidden');
+            d3.selectAll('.node').style('opacity', 1);
+        }
+    });
+
+    // Close search results when clicking outside
+    document.addEventListener('click', (e) => {
+        if (!searchResults.contains(e.target) && e.target !== searchInput) {
+            searchResults.classList.add('hidden');
+            // Reset node opacity
+            d3.selectAll('.node').style('opacity', 1);
+        }
+    });
+}
+
+// Add a debounce function to prevent too many updates
+function debounce(func, wait) {
+    let timeout;
+    return function executedFunction(...args) {
+        const later = () => {
+            clearTimeout(timeout);
+            func(...args);
+        };
+        clearTimeout(timeout);
+        timeout = setTimeout(later, wait);
+    };
+}
+
+// Add some additional CSS for the search functionality
+const style = document.createElement('style');
+style.textContent = `
+  #infoPanel {
+    z-index: 1000;
+    box-shadow: 0 -2px 10px rgba(0,0,0,0.1);
+  }
+  .selected-count, .connected-count {
+    font-size: 14px;
+    color: #666;
+  }
+  #searchResults {
+    z-index: 1001;
+  }
+  .search-result {
+    transition: background-color 0.2s;
+  }
+  .node {
+    transition: opacity 0.2s;
+  }
+`;
+document.head.appendChild(style);
+
+function updateInfoPanel(selectedNodes, connectedNodes) {
+    const infoPanel = document.getElementById('infoPanel');
+    const selectedCount = infoPanel.querySelector('.selected-count');
+    const connectedCount = infoPanel.querySelector('.connected-count');
+    const openPanelBtn = infoPanel.querySelector('.open-panel-btn');
+
+    selectedCount.textContent = `Selected: ${selectedNodes.length} nodes`;
+    connectedCount.textContent = `Nodes: ${connectedNodes.length} nodes`;
+
+    openPanelBtn.disaled = selectedNodes.length === 0;
 }
 
 function fetchAndDisplayItems(selectedNodes) {
@@ -674,6 +898,19 @@ function clearItemView() {
   const itemView = document.getElementById('itemView');
   itemView.innerHTML = '';
 }
+
+document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') {
+        const panel = document.getElementById('itemPanel');
+        if (panel.style.display === 'block') {
+            closeItemPanel();
+        }
+    } else if (event.key === 'Enter' && selectedNodes.length > 0) {
+        openPanelWithSelectedNodes();
+    }
+});
+
+setupInfoPanel();
 
 // Load tags, data, and weights
 Promise.all([d3.json('/tags'), d3.json('/data'), d3.json('/tag_pairs_with_weights')])

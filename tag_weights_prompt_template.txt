@@ -1,0 +1,237 @@
+You are an assistant that provides semantic similarity scores between pairs of tags. For each pair of tags provided, assign a weight between 0.0 and 1.0, where 0.0 means completely unrelated and 1.0 means highly related.
+
+Here are the tag pairs:
+
+{"tag1":"Teacher","tag2":"Serious Expression"}
+{"tag1":"Document","tag2":"Hispanics"}
+{"tag1":"Border Control","tag2":"Genocide"}
+{"tag1":"Document","tag2":"Graffiti"}
+{"tag1":"Map","tag2":"ADL"}
+{"tag1":"Ethnicity","tag2":"Police Brutality"}
+{"tag1":"Gaming","tag2":"Travel"}
+{"tag1":"Twitter","tag2":"Transgender"}
+{"tag1":"Injury","tag2":"Hispanics"}
+{"tag1":"Barack Obama","tag2":"Gaming"}
+{"tag1":"Murder","tag2":"University"}
+{"tag1":"Pandemic","tag2":"Crowd"}
+{"tag1":"Social Media","tag2":"Europe"}
+{"tag1":"Gender","tag2":"Middle East"}
+{"tag1":"Tragedy","tag2":"Photo"}
+{"tag1":"Inflation","tag2":"Public Safety"}
+{"tag1":"New York City","tag2":"Cityscape"}
+{"tag1":"Journalism","tag2":"City"}
+{"tag1":"Architecture","tag2":"Misogyny"}
+{"tag1":"Police Brutality","tag2":"Coronavirus"}
+{"tag1":"Memes","tag2":"Mortality Rate"}
+{"tag1":"California","tag2":"Middle East"}
+{"tag1":"Shooting","tag2":"Blurry"}
+{"tag1":"Violence","tag2":"Afghanistan"}
+{"tag1":"Race","tag2":"Crowd"}
+{"tag1":"Street Scene","tag2":"Illustration"}
+{"tag1":"Abortion","tag2":"Judicial Proceedings"}
+{"tag1":"Banners","tag2":"Democracy"}
+{"tag1":"Cartoon","tag2":"Arson"}
+{"tag1":"Information","tag2":"Wildlife"}
+{"tag1":"Journalism","tag2":"Injury"}
+{"tag1":"Democracy","tag2":"University"}
+{"tag1":"Healthcare","tag2":"White Supremacy"}
+{"tag1":"Donald Trump","tag2":"Content Warning (CW)"}
+{"tag1":"Legal Document","tag2":"Education"}
+{"tag1":"Facebook","tag2":"CNN"}
+{"tag1":"Court Case","tag2":"Microphone"}
+{"tag1":"Police","tag2":"Google Search"}
+{"tag1":"Journalism","tag2":"Aerial View"}
+{"tag1":"House","tag2":"Information"}
+{"tag1":"Conversation","tag2":"White House"}
+{"tag1":"SpaceX","tag2":"Surveillance"}
+{"tag1":"Democracy","tag2":"New York Post"}
+{"tag1":"Graph","tag2":"Vandalism"}
+{"tag1":"Donald Trump","tag2":"Speech"}
+{"tag1":"Journalism","tag2":"Cartoon"}
+{"tag1":"Doxxing","tag2":"Camera"}
+{"tag1":"Sexual Assault","tag2":"BLM"}
+{"tag1":"CNN","tag2":"Presentation"}
+{"tag1":"Sports","tag2":"Black and White"}
+{"tag1":"News Article","tag2":"Hoax"}
+{"tag1":"Slavery","tag2":"Congress"}
+{"tag1":"Transgender","tag2":"Book"}
+{"tag1":"Riot","tag2":"Antifa"}
+{"tag1":"Quote","tag2":"Justin Trudeau"}
+{"tag1":"Humor","tag2":"Age of Consent"}
+{"tag1":"Speech","tag2":"Sexism"}
+{"tag1":"Food","tag2":"Haiti"}
+{"tag1":"Africa","tag2":"Community"}
+{"tag1":"Pandemic","tag2":"Police"}
+{"tag1":"Epidemiology","tag2":"Video Still"}
+{"tag1":"Children","tag2":"Inclusion"}
+{"tag1":"Protest","tag2":"New York Post"}
+{"tag1":"Design","tag2":"Physical Altercation"}
+{"tag1":"Social Justice","tag2":"Peter Daszak"}
+{"tag1":"Music","tag2":"News Segment"}
+{"tag1":"Civil Unrest","tag2":"Gaming"}
+{"tag1":"Social Media","tag2":"Public Safety"}
+{"tag1":"Texas","tag2":"People"}
+{"tag1":"Violence","tag2":"Slavery"}
+{"tag1":"Mental Health","tag2":"Poster"}
+{"tag1":"Opinion","tag2":"Graffiti"}
+{"tag1":"Government","tag2":"City"}
+{"tag1":"New York City","tag2":"Presentation"}
+{"tag1":"White Supremacy","tag2":"New York Post"}
+{"tag1":"Opinion Piece","tag2":"Blacks"}
+{"tag1":"Taxation","tag2":"Colorful"}
+{"tag1":"Jews","tag2":"Antifa"}
+{"tag1":"Cancel Culture","tag2":"Chaos"}
+{"tag1":"Antifa","tag2":"CCTV Footage"}
+{"tag1":"History","tag2":"Movie"}
+{"tag1":"Infographic","tag2":"Newspaper Article"}
+{"tag1":"Graffiti","tag2":"Proud Boys"}
+{"tag1":"Celebration","tag2":"Sidewalk"}
+{"tag1":"Civil Unrest","tag2":"Biden Administration"}
+{"tag1":"Misogyny","tag2":"Murder"}
+{"tag1":"Content Moderation","tag2":"Image"}
+{"tag1":"Culture","tag2":"Democrats"}
+{"tag1":"Collage","tag2":"United States"}
+{"tag1":"Arrest","tag2":"Antisemitism"}
+{"tag1":"Conspiracy Theory","tag2":"Advertising"}
+{"tag1":"Social Issues","tag2":"Assault"}
+{"tag1":"Poster","tag2":"Proud Boys"}
+{"tag1":"Censorship","tag2":"Hate Crime"}
+{"tag1":"Judicial Proceedings","tag2":"Environment"}
+{"tag1":"Content Moderation","tag2":"Activism"}
+{"tag1":"Video Call","tag2":"Injury"}
+{"tag1":"Monkeypox","tag2":"Trial"}
+{"tag1":"Fire","tag2":"Epidemiology"}
+{"tag1":"USA","tag2":"Speech"}
+
+Please provide the weights in the following JSON format:
+
+[
+  {"tag1": "tagA", "tag2": "tagB", "weight": 0.75},
+  {"tag1": "tagC", "tag2": "tagD", "weight": 0.25},
+  ...
+]
+
+Make sure the weights are numerical values between 0.0 and 1.0.
+
+Only reply with valid JSON.
+
+[
+  {"tag1": "Teacher", "tag2": "Serious Expression", "weight": 0.7},
+  {"tag1": "Document", "tag2": "Hispanics", "weight": 0.5},
+  {"tag1": "Border Control", "tag2": "Genocide", "weight": 0.85},
+  {"tag1": "Document", "tag2": "Graffiti", "weight": 0.3},
+  {"tag1": "Map", "tag2": "ADL", "weight": 0.4},
+  {"tag1": "Ethnicity", "tag2": "Police Brutality", "weight": 0.8},
+  {"tag1": "Gaming", "tag2": "Travel", "weight": 0.2},
+  {"tag1": "Twitter", "tag2": "Transgender", "weight": 0.6},
+  {"tag1": "Injury", "tag2": "Hispanics", "weight": 0.4},
+  {"tag1": "Barack Obama", "tag2": "Gaming", "weight": 0.2},
+  {"tag1": "Murder", "tag2": "University", "weight": 0.6},
+  {"tag1": "Pandemic", "tag2": "Crowd", "weight": 0.7},
+  {"tag1": "Social Media", "tag2": "Europe", "weight": 0.3},
+  {"tag1": "Gender", "tag2": "Middle East", "weight": 0.6},
+  {"tag1": "Tragedy", "tag2": "Photo", "weight": 0.7},
+  {"tag1": "Inflation", "tag2": "Public Safety", "weight": 0.5},
+  {"tag1": "New York City", "tag2": "Cityscape", "weight": 0.9},
+  {"tag1": "Journalism", "tag2": "City", "weight": 0.7},
+  {"tag1": "Architecture", "tag2": "Misogyny", "weight": 0.3},
+  {"tag1": "Police Brutality", "tag2": "Coronavirus", "weight": 0.75},
+  {"tag1": "Memes", "tag2": "Mortality Rate", "weight": 0.4},
+  {"tag1": "California", "tag2": "Middle East", "weight": 0.5},
+  {"tag1": "Shooting", "tag2": "Blurry", "weight": 0.4},
+  {"tag1": "Violence", "tag2": "Afghanistan", "weight": 0.8},
+  {"tag1": "Race", "tag2": "Crowd", "weight": 0.6},
+  {"tag1": "Street Scene", "tag2": "Illustration", "weight": 0.4},
+  {"tag1": "Abortion", "tag2": "Judicial Proceedings", "weight": 0.85},
+  {"tag1": "Banners", "tag2": "Democracy", "weight": 0.7},
+  {"tag1": "Cartoon", "tag2": "Arson", "weight": 0.3},
+  {"tag1": "Information", "tag2": "Wildlife", "weight": 0.2},
+  {"tag1": "Journalism", "tag2": "Injury", "weight": 0.6},
+  {"tag1": "Democracy", "tag2": "University", "weight": 0.8},
+  {"tag1": "Healthcare", "tag2": "White Supremacy", "weight": 0.6},
+  {"tag1": "Donald Trump", "tag2": "Content Warning (CW)", "weight": 0.75},
+  {"tag1": "Legal Document", "tag2": "Education", "weight": 0.7},
+  {"tag1": "Facebook", "tag2": "CNN", "weight": 0.6},
+  {"tag1": "Court Case", "tag2": "Microphone", "weight": 0.5},
+  {"tag1": "Police", "tag2": "Google Search", "weight": 0.4},
+  {"tag1": "Journalism", "tag2": "Aerial View", "weight": 0.6},
+  {"tag1": "House", "tag2": "Information", "weight": 0.3},
+  {"tag1": "Conversation", "tag2": "White House", "weight": 0.9},
+  {"tag1": "SpaceX", "tag2": "Surveillance", "weight": 0.4},
+  {"tag1": "Democracy", "tag2": "New York Post", "weight": 0.6},
+  {"tag1": "Graph", "tag2": "Vandalism", "weight": 0.2},
+  {"tag1": "Donald Trump", "tag2": "Speech", "weight": 0.8},
+  {"tag1": "Journalism", "tag2": "Cartoon", "weight": 0.5},
+  {"tag1": "Doxxing", "tag2": "Camera", "weight": 0.6},
+  {"tag1": "Sexual Assault", "tag2": "BLM", "weight": 0.85},
+  {"tag1": "CNN", "tag2": "Presentation", "weight": 0.5},
+  {"tag1": "Sports", "tag2": "Black and White", "weight": 0.4},
+  {"tag1": "News Article", "tag2": "Hoax", "weight": 0.7},
+  {"tag1": "Slavery", "tag2": "Congress", "weight": 0.85},
+  {"tag1": "Transgender", "tag2": "Book", "weight": 0.6},
+  {"tag1": "Riot", "tag2": "Antifa", "weight": 0.9},
+  {"tag1": "Quote", "tag2": "Justin Trudeau", "weight": 0.5},
+  {"tag1": "Humor", "tag2": "Age of Consent", "weight": 0.3},
+  {"tag1": "Speech", "tag2": "Sexism", "weight": 0.8},
+  {"tag1": "Food", "tag2": "Haiti", "weight": 0.4},
+  {"tag1": "Africa", "tag2": "Community", "weight": 0.7},
+  {"tag1": "Pandemic", "tag2": "Police", "weight": 0.75},
+  {"tag1": "Epidemiology", "tag2": "Video Still", "weight": 0.5},
+  {"tag1": "Children", "tag2": "Inclusion", "weight": 0.8},
+  {"tag1": "Protest", "tag2": "New York Post", "weight": 0.7},
+  {"tag1": "Design", "tag2": "Physical Altercation", "weight": 0.3},
+  {"tag1": "Social Justice", "tag2": "Peter Daszak", "weight": 0.6},
+  {"tag1": "Music", "tag2": "News Segment", "weight": 0.5},
+  {"tag1": "Civil Unrest", "tag2": "Gaming", "weight": 0.4},
+  {"tag1": "Social Media", "tag2": "Public Safety", "weight": 0.6},
+  {"tag1": "Texas", "tag2": "People", "weight": 0.8},
+  {"tag1": "Violence", "tag2": "Slavery", "weight": 0.9},
+  {"tag1": "Mental Health", "tag2": "Poster", "weight": 0.4},
+  {"tag1": "Opinion", "tag2": "Graffiti", "weight": 0.5},
+  {"tag1": "Government", "tag2": "City", "weight": 0.7},
+  {"tag1": "New York City", "tag2": "Presentation", "weight": 0.6},
+  {"tag1": "White Supremacy", "tag2": "New York Post", "weight": 0.7},
+  {"tag1": "Opinion Piece", "tag2": "Blacks", "weight": 0.6},
+  {"tag1": "Taxation", "tag2": "Colorful", "weight": 0.2},
+  {"tag1": "Jews", "tag2": "Antifa", "weight": 0.75},
+  {"tag1": "Cancel Culture", "tag2": "Chaos", "weight": 0.6},
+  {"tag1": "Antifa", "tag2": "CCTV Footage", "weight": 0.5},
+  {"tag1": "History", "tag2": "Movie", "weight": 0.7},
+  {"tag1": "Infographic", "tag2": "Newspaper Article", "weight": 0.6},
+  {"tag1": "Graffiti", "tag2": "Proud Boys", "weight": 0.85},
+  {"tag1": "Celebration", "tag2": "Sidewalk", "weight": 0.4},
+  {"tag1": "Civil Unrest", "tag2": "Biden Administration", "weight": 0.8},
+  {"tag1": "Misogyny", "tag2": "Murder", "weight": 0.75},
+  {"tag1": "Content Moderation", "tag2": "Image", "weight": 0.5},
+  {"tag1": "Culture", "tag2": "Democrats", "weight": 0.7},
+  {"tag1": "Collage", "tag2": "United States", "weight": 0.4},
+  {"tag1": "Arrest", "tag2": "Antisemitism", "weight": 0.8},
+  {"tag1": "Conspiracy Theory", "tag2": "Advertising", "weight": 0.4},
+  {"tag1": "Social Issues", "tag2": "Assault", "weight": 0.75},
+  {"tag1": "Poster", "tag2": "Proud Boys", "weight": 0.85},
+  {"tag1": "Censorship", "tag2": "Hate Crime", "weight": 0.9},
+  {"tag1": "Judicial Proceedings", "tag2": "Environment", "weight": 0.6},
+  {"tag1": "Content Moderation", "tag2": "Activism", "weight": 0.7},
+  {"tag1": "Video Call", "tag2": "Injury", "weight": 0.5},
+  {"tag1": "Monkeypox", "tag2": "Trial", "weight": 0.6},
+  {"tag1": "Fire", "tag2": "Epidemiology", "weight": 0.5},
+  {"tag1": "USA", "tag2": "Speech", "weight": 0.8}
+]### END
+
+You are an assistant that provides semantic similarity scores between pairs of tags. For each pair of tags provided, assign a weight between 0.0 and 1.0, where 0.0 means completely unrelated and 1.0 means highly related.
+
+Here are the tag pairs:
+
+%TAG_PAIRS%
+
+Please provide the weights in the following JSON format:
+
+[
+  {"tag1": "tagA", "tag2": "tagB", "weight": 0.75},
+  {"tag1": "tagC", "tag2": "tagD", "weight": 0.25},
+  ...
+]
+
+Make sure the weights are numerical values between 0.0 and 1.0.
+
+Only reply with valid JSON.### END
