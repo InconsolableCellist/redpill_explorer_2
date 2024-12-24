@@ -5,7 +5,61 @@ export class MatrixInteractions {
         this.setupWeightPanel();
         this.setupSearchPanel();
         this.setupEventListeners();
+        this.tooltip = document.getElementById('tooltip');
+        this.isTooltipVisible = false;
     }
+
+    updateTooltip(event) {
+        const cell = this.visualizer.getIntersectedCell(event);
+        if (cell) {
+            const { row, col } = cell;
+            const fromTag = this.visualizer.tagList[row];
+            const toTag = this.visualizer.tagList[col];
+            const weight = this.visualizer.tagPairs[fromTag]?.[toTag] ?? 0;
+
+            // Only show tooltip if there's a relationship
+            if (weight > 0) {
+                this.tooltip.innerHTML = `
+                <div>From: ${fromTag}</div>
+                <div>To: ${toTag}</div>
+                <div>Weight: ${weight.toFixed(3)}</div>
+            `;
+
+                // Position tooltip near mouse but ensure it stays within viewport
+                const tooltipWidth = this.tooltip.offsetWidth;
+                const tooltipHeight = this.tooltip.offsetHeight;
+                const padding = 15; // Space between mouse and tooltip
+
+                let left = event.clientX + padding;
+                let top = event.clientY + padding;
+
+                // Adjust if tooltip would go off screen
+                if (left + tooltipWidth > window.innerWidth) {
+                    left = event.clientX - tooltipWidth - padding;
+                }
+                if (top + tooltipHeight > window.innerHeight) {
+                    top = event.clientY - tooltipHeight - padding;
+                }
+
+                this.tooltip.style.left = `${left}px`;
+                this.tooltip.style.top = `${top}px`;
+                this.tooltip.style.display = 'block';
+                this.isTooltipVisible = true;
+            } else {
+                this.hideTooltip();
+            }
+        } else {
+            this.hideTooltip();
+        }
+    }
+
+    hideTooltip() {
+        if (this.isTooltipVisible) {
+            this.tooltip.style.display = 'none';
+            this.isTooltipVisible = false;
+        }
+    }
+
 
     setupWeightPanel() {
         this.weightPanel = document.createElement('div');
@@ -185,6 +239,17 @@ export class MatrixInteractions {
                     this.updateWeightPanel(row, col);
                 }
             }
+        });
+
+        this.visualizer.renderer.domElement.addEventListener('mousemove', (event) => {
+            // Only update tooltip if not dragging
+            if (!isDragging) {
+                this.updateTooltip(event);
+            }
+        });
+
+        this.visualizer.renderer.domElement.addEventListener('mouseleave', () => {
+            this.hideTooltip();
         });
 
         // Click outside to deselect

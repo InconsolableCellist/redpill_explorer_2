@@ -4,7 +4,7 @@ const fs = require('fs');
 const path = require('path');
 
 // Configurable minimum number of entries for tags to be included
-const minEntries = 10;
+const minEntries = 5;
 
 // Load the dataset
 const dataPath = path.join(__dirname, 'data', 'images_captioned_tagged.json');

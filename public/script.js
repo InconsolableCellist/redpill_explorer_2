@@ -8,9 +8,7 @@ const connectedNodeFontSize = 200;
 const color = d3.scaleOrdinal(d3.schemeCategory10);
 const minNodeSize = 50;
 const maxNodeSize = 500;
-const minLinkWeight = 0.01;
-const maxLinkWeight = 5;
-const minWeightThreshold = .75;
+const minWeightThreshold = .7;
 const mutedColor = '#ddd';  // Light gray
 
 const linkWidthScale = d3.scaleLinear()
@@ -40,45 +38,6 @@ window.addEventListener('resize', () => {
       simulation.alpha(0.3).restart();
   }
 });
-
-// Add this near the top of the file
-function setupTabBar() {
-    const tabBar = document.createElement('div');
-    tabBar.className = 'tab-bar';
-
-    const redpillsTab = document.createElement('button');
-    redpillsTab.className = 'tab active';
-    redpillsTab.textContent = 'redpills';
-
-    const tagsTab = document.createElement('button');
-    tagsTab.className = 'tab';
-    tagsTab.textContent = 'tags';
-
-    tabBar.appendChild(redpillsTab);
-    tabBar.appendChild(tagsTab);
-
-    document.body.appendChild(tabBar);
-
-    tagsTab.addEventListener('click', async () => {
-        redpillsTab.classList.remove('active');
-        tagsTab.classList.add('active');
-        try {
-            const response = await fetch('/matrix');
-            const data = await response.json();
-            // Handle matrix data here
-            console.log('Matrix data loaded:', data);
-        } catch (error) {
-            console.error('Error loading matrix:', error);
-        }
-    });
-
-    redpillsTab.addEventListener('click', () => {
-        tagsTab.classList.remove('active');
-        redpillsTab.classList.add('active');
-        // Reload original view
-        location.reload();
-    });
-}
 
 function sortConnectedNodes(connectedNodes, links, selectedNode) {
   return connectedNodes.map(node => {
@@ -173,7 +132,6 @@ function drawNodes(container, nodes, link, data) {
   return node;
 }
 
-// Function to prepare the graph by filtering nodes and links
 function prepareGraph(tagsWithSizes, tagWeights) {
   const nodes = Object.keys(tagsWithSizes).map((tag, index) => {
     const tagData = tagsWithSizes[tag];
@@ -241,12 +199,12 @@ function updateConnectedNodesPanel(node, links, allNodes) {
   }
 }
 
-// Function to get the connected nodes for a selected node
 function getConnectedNodes(node, links) {
   return links
     .filter(link => link.source.id === node.id || link.target.id === node.id)
     .map(link => (link.source.id === node.id ? link.target : link.source));
 }
+
 function isConnected(node, clickedNode, links) {
   return links.some(d => (d.source.id === clickedNode.id && d.target.id === node.id) ||
                          (d.target.id === clickedNode.id && d.source.id === node.id));
@@ -284,7 +242,6 @@ function highlightNode(clickedNode, links, allNodes) {
         : `${unselectedNodeFontSize}px`)
     .style('font-weight', d => d.id === clickedNode.id ? 'bold' : 'normal');
 }
-
 
 function openItemPanel(node, initialTags = []) {
     const panel = document.getElementById('itemPanel');
@@ -593,7 +550,6 @@ function closeItemPanel() {
     const panel = document.getElementById('itemPanel');
     panel.style.display = 'none';
 }
-
 
 function toggleNodeSelection(node) {
     const index = selectedNodes.findIndex(n => n.id === node.id);
