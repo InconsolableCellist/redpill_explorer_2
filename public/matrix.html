@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Tag Weight Matrix</title>
+    <style>
+        body { 
+            margin: 0; 
+            overflow: hidden; 
+            font-family: Arial, sans-serif;
+        }
+        canvas { 
+            display: block; 
+        }
+        #tooltip {
+            position: absolute;
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 8px;
+            border-radius: 4px;
+            font-size: 14px;
+            pointer-events: none;
+            display: none;
+            z-index: 1000;
+        }
+        #loading {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 20px;
+            background: rgba(255, 255, 255, 0.9);
+            padding: 20px;
+            border-radius: 5px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.2);
+            z-index: 1000;
+        }
+        #controls {
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            background: rgba(255, 255, 255, 0.9);
+            padding: 10px;
+            border-radius: 5px;
+            font-size: 14px;
+            z-index: 1000;
+        }
+    </style>
+</head>
+<body>
+    <div id="tooltip"></div>
+    <div id="loading">Loading tag matrix...</div>
+    <div id="controls">
+        Mouse controls:<br>
+        - Drag to pan<br>
+        - Scroll to zoom<br>
+        - Hover for details
+    </div>
+    <script>
+        function loadScript(url) {
+            return new Promise((resolve, reject) => {
+                const script = document.createElement('script');
+                script.src = url;
+                script.onload = resolve;
+                script.onerror = reject;
+                document.head.appendChild(script);
+            });
+        }
+
+        async function loadDependencies() {
+            try {
+                await loadScript('https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js');
+                startApplication();
+            } catch (error) {
+                console.error('Failed to load dependencies:', error);
+                document.getElementById('loading').textContent = 'Failed to load required libraries. Please refresh the page.';
+            }
+        }
+
+        let camera, scene, renderer, raycaster, mouse;
+        let matrixMesh;
+        let isDragging = false;
+        let previousMousePosition = { x: 0, y: 0 };
+        let tagList = [];
+        let tagPairs = null;
+        const CELL_SIZE = 40; // Size of each matrix cell in pixels
+        const LABEL_MARGIN = 120; // Space for labels
+
+        async function startApplication() {
+            try {
+                await init();
+            } catch (error) {
+                console.error('Failed to initialize application:', error);
+                document.getElementById('loading').textContent = 'Failed to initialize application. Please refresh the page.';
+            }
+        }
+
+        async function init() {
+            // Load data first
+            const response = await fetch('/tag_pairs_with_weights');
+            tagPairs = await response.json();
+            
+            // Get unique sorted tags
+            tagList = Array.from(new Set([
+                ...Object.keys(tagPairs),
+                ...Object.values(tagPairs).flatMap(obj => Object.keys(obj))
+            ])).sort();
+
+            // Setup scene
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0xffffff);
+            
+            // Setup camera (orthographic for 2D view)
+            const frustumSize = 1000;
+            const aspect = window.innerWidth / window.innerHeight;
+            camera = new THREE.OrthographicCamera(
+                frustumSize * aspect / -2,
+                frustumSize * aspect / 2,
+                frustumSize / 2,
+                frustumSize / -2,
+                1,
+                2000
+            );
+            camera.position.z = 1000;
+
+            // Setup renderer
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            document.body.appendChild(renderer.domElement);
+
+            // Setup raycaster for interactions
+            raycaster = new THREE.Raycaster();
+            mouse = new THREE.Vector2();
+
+            // Create matrix texture
+            const matrixSize = tagList.length;
+            const matrix = new Float32Array(matrixSize * matrixSize);
+            let maxWeight = 0;
+
+            // Fill matrix with weights - i is row (FROM tag), j is column (TO tag)
+            for (let i = 0; i < matrixSize; i++) {
+                for (let j = 0; j < matrixSize; j++) {
+                    if (i === j) {
+                        matrix[i * matrixSize + j] = 1.0;
+                    } else {
+                        const fromTag = tagList[i];  // Row tag (FROM)
+                        const toTag = tagList[j];    // Column tag (TO)
+                        
+                        // Get weight FROM -> TO
+                        const weight = tagPairs[fromTag]?.[toTag] ?? 0.0;
+                                     
+                        matrix[i * matrixSize + j] = weight;
+                        maxWeight = Math.max(maxWeight, weight);
+                    }
+                }
+            }
+
+            // Create matrix visualization
+            const geometry = new THREE.PlaneGeometry(
+                matrixSize * CELL_SIZE,
+                matrixSize * CELL_SIZE
+            );
+            
+            const texture = new THREE.DataTexture(
+                matrix,
+                matrixSize,
+                matrixSize,
+                THREE.RedFormat,
+                THREE.FloatType
+            );
+            texture.needsUpdate = true;
+
+            const material = new THREE.ShaderMaterial({
+                uniforms: {
+                    matrix: { value: texture },
+                    maxWeight: { value: maxWeight }
+                },
+                vertexShader: `
+                    varying vec2 vUv;
+                    void main() {
+                        vUv = uv;
+                        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                    }
+                `,
+                fragmentShader: `
+                    uniform sampler2D matrix;
+                    uniform float maxWeight;
+                    varying vec2 vUv;
+                    void main() {
+                        float weight = texture2D(matrix, vUv).r;
+                        vec3 color = mix(
+                            vec3(1.0, 1.0, 1.0),  // white for zero
+                            vec3(1.0, 0.0, 0.0),   // pure red for maximum
+                            weight
+                        );
+                        gl_FragColor = vec4(color, 1.0);
+                    }
+                `
+            });
+
+            matrixMesh = new THREE.Mesh(geometry, material);
+            scene.add(matrixMesh);
+
+            // Add row labels (left side) - note the reversed order with (matrixSize - 1 - i)
+            tagList.forEach((tag, i) => {
+                const label = createTextSprite(tag);
+                const y = (matrixSize/2 - (matrixSize - 1 - i) - 0.5) * CELL_SIZE;  // Reverse the order
+                label.position.set(-matrixSize * CELL_SIZE / 2 - LABEL_MARGIN/2, y, 0);
+                scene.add(label);
+            });
+
+            // Add column labels (top) with improved spacing
+            tagList.forEach((tag, i) => {
+                const label = createTextSprite(tag, true);
+                const x = (-matrixSize / 2 + i + 0.5) * CELL_SIZE;
+                label.position.set(x, matrixSize * CELL_SIZE / 2 + LABEL_MARGIN, 0);
+                label.scale.set(LABEL_MARGIN * 0.4, LABEL_MARGIN * 0.8, 1); // Increased spacing for column labels
+                scene.add(label);
+            });
+
+            // Event listeners
+            window.addEventListener('resize', onWindowResize, false);
+            renderer.domElement.addEventListener('mousemove', onMouseMove, false);
+            renderer.domElement.addEventListener('mousedown', onMouseDown, false);
+            renderer.domElement.addEventListener('mouseup', onMouseUp, false);
+            renderer.domElement.addEventListener('wheel', onWheel, false);
+
+            // Hide loading message
+            document.getElementById('loading').style.display = 'none';
+
+            // Initial camera position
+            updateCameraToFitScene();
+
+            // Start animation loop
+            animate();
+        }
+
+        function createTextSprite(text, rotate = false) {
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            
+            // Adjust canvas dimensions based on rotation
+            if (rotate) {
+                canvas.width = 128;  // Increased width for rotated labels
+                canvas.height = 256;
+            } else {
+                canvas.width = 256;
+                canvas.height = 64;
+            }
+            
+            ctx.fillStyle = 'white';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            ctx.fillStyle = 'black';
+            ctx.font = rotate ? '18px Arial' : '24px Arial';  // Slightly larger font for rotated text
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            
+            if (rotate) {
+                // For rotated text, center in the wider canvas
+                ctx.translate(canvas.width/2, canvas.height/2);
+                ctx.rotate(-Math.PI / 2);
+                ctx.fillText(text, 0, 0);
+            } else {
+                ctx.fillText(text, canvas.width/2, canvas.height/2);
+            }
+            
+            if (rotate) {
+                ctx.save();
+                ctx.translate(canvas.width/2, canvas.height/2);
+                ctx.rotate(-Math.PI / 2);
+                ctx.fillText(text, 0, 0);
+                ctx.restore();
+            } else {
+                ctx.fillText(text, canvas.width/2, canvas.height/2);
+            }
+
+            const texture = new THREE.CanvasTexture(canvas);
+            const spriteMaterial = new THREE.SpriteMaterial({ map: texture });
+            const sprite = new THREE.Sprite(spriteMaterial);
+            
+            sprite.scale.set(LABEL_MARGIN, LABEL_MARGIN/4, 1);
+            
+            return sprite;
+        }
+
+        function updateCameraToFitScene() {
+            const matrixSize = tagList.length * CELL_SIZE;
+            const padding = matrixSize * 0.2;
+            const aspect = window.innerWidth / window.innerHeight;
+            
+            if (aspect > 1) {
+                camera.left = -(matrixSize + padding + LABEL_MARGIN) * aspect;
+                camera.right = (matrixSize + padding + LABEL_MARGIN) * aspect;
+                camera.top = matrixSize + padding + LABEL_MARGIN;
+                camera.bottom = -(matrixSize + padding + LABEL_MARGIN);
+            } else {
+                camera.left = -(matrixSize + padding + LABEL_MARGIN);
+                camera.right = matrixSize + padding + LABEL_MARGIN;
+                camera.top = (matrixSize + padding + LABEL_MARGIN) / aspect;
+                camera.bottom = -(matrixSize + padding + LABEL_MARGIN) / aspect;
+            }
+            
+            camera.updateProjectionMatrix();
+        }
+
+        function onMouseDown(event) {
+            isDragging = true;
+            previousMousePosition = {
+                x: event.clientX,
+                y: event.clientY
+            };
+        }
+
+        function onMouseUp() {
+            isDragging = false;
+        }
+
+        function onMouseMove(event) {
+            if (isDragging) {
+                const deltaX = event.clientX - previousMousePosition.x;
+                const deltaY = event.clientY - previousMousePosition.y;
+                
+                const cameraZ = camera.position.z;
+                const moveSpeed = (camera.right - camera.left) / window.innerWidth;
+                
+                camera.position.x -= deltaX * moveSpeed;
+                camera.position.y += deltaY * moveSpeed;
+                
+                previousMousePosition = {
+                    x: event.clientX,
+                    y: event.clientY
+                };
+            }
+
+            // Update tooltip
+            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+
+            raycaster.setFromCamera(mouse, camera);
+            const intersects = raycaster.intersectObject(matrixMesh);
+            const tooltip = document.getElementById('tooltip');
+
+            if (intersects.length > 0) {
+                const uv = intersects[0].uv;
+                const matrixSize = tagList.length;
+                const x = Math.floor(uv.x * matrixSize);
+                const y = Math.floor(uv.y * matrixSize);
+                
+                if (x >= 0 && x < matrixSize && y >= 0 && y < matrixSize) {
+                    const fromTag = tagList[y];  // Row (FROM)
+                    const toTag = tagList[x];    // Column (TO)
+                    const weight = getWeight(fromTag, toTag);
+                    
+                    tooltip.innerHTML = `${fromTag} → ${toTag}: ${weight.toFixed(3)}`;
+                    tooltip.style.left = event.clientX + 10 + 'px';
+                    tooltip.style.top = event.clientY + 10 + 'px';
+                    tooltip.style.display = 'block';
+                }
+            } else {
+                tooltip.style.display = 'none';
+            }
+        }
+
+        function getWeight(fromTag, toTag) {
+            if (fromTag === toTag) return 1.0;
+            return tagPairs[fromTag]?.[toTag] ?? 0.0;  // Only look for directional relationship
+        }
+
+        function onWheel(event) {
+            event.preventDefault();
+            
+            const zoomSpeed = 1.1;
+            const zoom = event.deltaY < 0 ? 1 / zoomSpeed : zoomSpeed;
+            
+            camera.left *= zoom;
+            camera.right *= zoom;
+            camera.top *= zoom;
+            camera.bottom *= zoom;
+            
+            camera.updateProjectionMatrix();
+        }
+
+        function onWindowResize() {
+            updateCameraToFitScene();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            renderer.render(scene, camera);
+        }
+
+        // Start loading
+        loadDependencies();
+    </script>
+</body>
+</html>

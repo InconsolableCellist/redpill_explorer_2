@@ -123,3 +123,8 @@ app.get('/tags', (req, res) => {
 app.listen(port, () => {
     console.log(`Server is running at http://localhost:${port}`);
 });
+
+app.get('/matrix', (req, res) => {
+      res.sendFile(path.join(__dirname, 'public', 'matrix.html'));
+});
+
