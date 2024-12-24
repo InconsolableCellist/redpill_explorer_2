@@ -353,8 +353,7 @@ function openItemPanel(node, initialTags = []) {
             // Filter by caption text if provided
             const captionFilterText = captionInput.value.trim().toLowerCase();
             if (captionFilterText) {
-                const caption = item.description && item.description['<MORE_DETAILED_CAPTION>'] || '';
-                return caption.toLowerCase().includes(captionFilterText);
+                return item.description.toLowerCase().includes(captionFilterText);
             }
             return true;
         });
