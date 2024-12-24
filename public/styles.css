@@ -1,14 +1,17 @@
-
-/* public/styles.css */
+/* Base styles */
 body {
   font-family: Arial, sans-serif;
   margin: 0;
+  padding: 0;
   overflow: hidden;
 }
 
 #graph {
+  position: absolute;
+  top: 0;
+  left: 0;
   width: 100vw;
-  height: 100vh;
+  height: calc(100vh - 60px); /* Account for tab bar */
 }
 
 .node circle {
@@ -21,14 +24,419 @@ body {
   font-size: 10px;
 }
 
-.back-button rect {
-  stroke: #000;
-  stroke-width: 1px;
+/* Node Selection Bar */
+.node-selection-bar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 60px;
+  background: #2f3136;
+  display: flex;
+  align-items: center;
+  padding: 0 20px;
+  gap: 10px;
+  box-shadow: 0 -2px 10px rgba(0,0,0,0.1);
+  overflow-x: auto;
 }
 
-.back-button text {
+.selected-node-item {
+  padding: 8px 16px;
+  background: #40444b;
+  color: #ffffff;
+  border-radius: 6px;
   font-size: 14px;
-  pointer-events: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.selected-node-item:hover {
+  background: #4a4f57;
+}
+
+.selected-node-item .remove-node {
+  color: #ff4444;
+  font-weight: bold;
+  margin-left: 4px;
+}
+
+/* Floating Search Panel */
+.floating-search {
+  position: fixed;
+  bottom: 80px;  /* Position above selection bar */
+  right: 20px;
+  background: #ffffff;
+  padding: 20px;
+  border-radius: 12px;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.15);
+  width: 300px;
+  z-index: 1000;
+  border: 1px solid rgba(0,0,0,0.1);
+}
+
+.search-input-container {
+  padding-right: 20px;
+}
+
+.search-input {
+  width: calc(100% - 20px);
+  padding: 10px;
+  border: 1px solid #e1e1e1;
+  border-radius: 6px;
+  font-size: 14px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+
+.search-results {
+  max-height: 200px;
+  overflow-y: auto;
+  margin-top: 10px;
+  border-radius: 6px;
+  background: #f8f9fa;
+}
+
+.search-result {
+  padding: 8px 12px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.search-result:hover {
+  background: #e9ecef;
+}
+
+/* View Container */
+.view-container {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: calc(100vh - 60px);
+  overflow: hidden;
+}
+
+.view {
+  width: 100%;
+  height: 100%;
+  display: none;
+}
+
+.view.active {
+  display: block;
+}
+
+
+/* Panel styles */
+#connectedNodesPanel {
+  position: fixed;
+  bottom: 10px;
+  left: 10px;
+  background-color: rgba(255, 255, 255, 0.9);
+  padding: 10px;
+  border: 1px solid #ccc;
+  border-radius: 5px;
+  max-height: 200px;
+  overflow-y: auto;
+  font-size: 12px;
+  display: none; /* Hidden by default */
+}
+#itemPanel {
+  position: fixed;
+  top: 20px; /* Added margin at the top */
+  left: 20px; /* Added margin on the left */
+  right: 20px; /* Added margin on the right */
+  bottom: 20px; /* Added margin at the bottom */
+  background-color: rgba(255, 255, 255, 0.95);
+  padding: 10px; /* Reduced padding */
+  overflow-y: scroll; /* Ensure scrollbars are visible */
+  display: none; /* Hidden by default */
+  z-index: 1000; /* Ensure it's on top */
+  box-sizing: border-box; /* Include padding and border in the element's total width and height */
+}
+#itemPanel {
+  position: fixed;
+  top: 40px;
+  left: 40px;
+  right: 40px;
+  bottom: 40px;
+  background-color: rgba(0, 0, 0, 0.1);
+  padding: 100px;
+  overflow-y: scroll;
+  display: none;
+  z-index: 1000;
+  box-sizing: border-box;
+  border: 2px solid #ccc; /* Added border */
+  border-radius: 10px; /* Optional: rounded corners */
+  backdrop-filter: blur(5px); /* Optional: blur background */
+}
+#itemPanel .tag-area {
+  display: flex;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+#itemPanel .selected-tag {
+  background-color: #e0e0e0;
+  border-radius: 15px;
+  padding: 5px 10px;
+  margin: 5px;
+  cursor: pointer;
+}
+#itemPanel .tag-dropdown {
+  margin-bottom: 10px;
+}
+#itemPanel .close-btn {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  font-size: 24px;
+  cursor: pointer;
+  color: #fff;
+}
+#itemPanel .item-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 50px; /* So items are below the close button */
+}
+#itemPanel .item-card {
+  position: relative;
+  width: calc(33.333% - 20px);
+  min-height: 250px;
+  background-size: cover;
+  background-position: center;
+  color: #fff;
+  cursor: pointer;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+#itemPanel .item-card:hover {
+  opacity: 0.9;
+}
+#itemPanel .item-card .item-content {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: rgba(0, 0, 0, 0.8);
+  padding: 5px;
+  font-size: 12px;
+  box-sizing: border-box;
+}
+#itemPanel .item-card .item-content p {
+  margin: 2px 0; /* Reduce margin */
+}
+#itemPanel .item-card .item-content .spicy-level {
+  font-size: 10px; /* Smaller spicy text */
+}
+#itemPanel .item-card .item-content .tags {
+  margin: 2px 0;
+  font-size: 10px;
+  color: #ccc; /* Slightly lighter text color for tags */
+}
+
+/* Scrollbar styling for WebKit browsers */
+#itemPanel::-webkit-scrollbar {
+  width: 8px;
+}
+#itemPanel::-webkit-scrollbar-track {
+  background: #f1f1f1;
+}
+#itemPanel::-webkit-scrollbar-thumb {
+  background: #888;
+  border-radius: 4px;
+}
+#itemPanel::-webkit-scrollbar-thumb:hover {
+  background: #555;
+}
+
+/* Style for the tag area */
+#itemPanel .tag-area {
+  display: flex;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+/* Style for individual selected tags */
+#itemPanel .selected-tag {
+  background-color: #e0e0e0;
+  border-radius: 15px;
+  padding: 5px 10px;
+  margin: 5px;
+  cursor: pointer;
+}
+
+/* Style for the input field */
+#itemPanel .tag-input {
+  width: 100%;
+  padding: 8px;
+  box-sizing: border-box;
+  margin-bottom: 10px;
+  font-size: 16px;
+}
+
+/* Style for the tag list */
+#itemPanel .tag-list {
+  max-height: 200px; /* Adjust as needed */
+  overflow-y: auto;
+  border: 1px solid #ccc;
+  margin-bottom: 10px;
+  background-color: #f9f9f9;
+}
+
+/* Style for tag items */
+#itemPanel .tag-item {
+  padding: 8px;
+  cursor: pointer;
+}
+
+#itemPanel .tag-item:hover {
+  background-color: #f0f0f0;
+}
+
+/* Style for 'No tags found' message */
+#itemPanel .no-tag {
+  padding: 8px;
+  color: #888;
+}
+
+/* Container for the filters */
+#itemPanel .filter-container {
+  display: flex;
+  margin-bottom: 10px;
+}
+
+/* Wrapper for each filter input and its content */
+#itemPanel .filter-wrapper {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  margin-right: 10px;
+}
+
+/* Remove right margin for the last wrapper */
+#itemPanel .filter-wrapper:last-child {
+  margin-right: 0;
+}
+
+/* Style for the input fields */
+#itemPanel .tag-input,
+#itemPanel .caption-input {
+  width: 100%;
+  padding: 8px;
+  box-sizing: border-box;
+  margin-bottom: 10px;
+  font-size: 16px;
+}
+
+/* Style for the tag list */
+#itemPanel .tag-list {
+  max-height: 200px; /* Adjust as needed */
+  overflow-y: auto;
+  border: 1px solid #ccc;
+}
+
+/* Style for tag items */
+#itemPanel .tag-item {
+  padding: 8px;
+  cursor: pointer;
+}
+
+#itemPanel .tag-item:hover {
+  background-color: #f0f0f0;
+}
+
+/* Style for 'No tags found' message */
+#itemPanel .no-tag {
+  padding: 8px;
+  color: #888;
+}
+
+/* Style adjustments for item grid when filters are present */
+#itemPanel .item-grid {
+  margin-top: 10px;
+}
+
+/* Style for the recommended tags container */
+#itemPanel .recommended-tags-container {
+  margin-top: 10px;
+}
+
+/* Style for the recommended tags title */
+#itemPanel .recommended-tags-container h3 {
+  margin-bottom: 5px;
+}
+
+/* Style for recommended tag items */
+#itemPanel .recommended-tag-item {
+  padding: 8px;
+  cursor: pointer;
+  border-bottom: 1px solid #ccc;
+}
+
+#itemPanel .recommended-tag-item:hover {
+  background-color: #f0f0f0;
+}
+
+/* Style for 'No recommended tags' message */
+#itemPanel .no-recommendations {
+  padding: 8px;
+  color: #888;
+}
+
+/* Style for the recommended tags list */
+#itemPanel .recommended-tags-list {
+  max-height: 200px; /* Adjust to show approximately 5 items */
+  overflow-y: auto;
+  border: 1px solid #ccc;
+}
+
+/* Style for recommended tag items */
+#itemPanel .recommended-tag-item {
+  padding: 8px;
+  cursor: pointer;
+  border-bottom: 1px solid #eee;
+}
+
+#itemPanel .recommended-tag-item:hover {
+  background-color: #f0f0f0;
+}
+
+/* Style for the recommended tags container */
+#itemPanel .recommended-tags-container {
+  margin-top: 10px;
+}
+
+/* Style for the recommended tags title */
+#itemPanel .recommended-tags-container h3 {
+  margin-bottom: 5px;
+}
+
+/* Style for the recommended tags list */
+#itemPanel .recommended-tags-list {
+  max-height: 200px; /* Adjust to show approximately 5 items */
+  overflow-y: auto;
+  border: 1px solid #ccc;
+}
+
+/* Style for recommended tag items */
+#itemPanel .recommended-tag-item {
+  padding: 8px;
+  cursor: pointer;
+  border-bottom: 1px solid #eee;
+}
+
+#itemPanel .recommended-tag-item:hover {
+  background-color: #f0f0f0;
+}
+
+/* Style for 'No recommended tags' message */
+#itemPanel .no-recommendations {
+  padding: 8px;
+  color: #888;
 }
 
 #graph-container {
@@ -44,4 +452,122 @@ body {
   flex: 1;
   overflow-y: auto;
   /* Other styles */
+}
+
+/* Base styles */
+body {
+  font-family: Arial, sans-serif;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+#graph {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: calc(100vh - 60px); /* Account for tab bar */
+}
+
+.node circle {
+  stroke: #fff;
+  stroke-width: 1.5px;
+}
+
+.node text {
+  pointer-events: none;
+  font-size: 10px;
+}
+
+/* Tab Bar */
+.tab-bar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 60px;
+  background: #2f3136;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  padding: 0 20px;
+  box-shadow: 0 -2px 10px rgba(0,0,0,0.01);
+}
+
+.tab {
+  padding: 8px 24px;
+  border: none;
+  background: #40444b;
+  color: #ffffff;
+  cursor: pointer;
+  border-radius: 6px;
+  font-size: 14px;
+  transition: background 0.2s;
+}
+
+.tab:hover {
+  background: #4a4f57;
+}
+
+.tab.active {
+  background: #5865f2;
+}
+
+/* Floating Search Panel */
+.floating-search {
+  position: fixed;
+  bottom: 80px;  /* Position above tab bar */
+  right: 20px;
+  background: #ffffff;
+  padding: 20px;
+  border-radius: 12px;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.15);
+  width: 300px;
+  z-index: 1000;
+  border: 1px solid rgba(0,0,0,0.1);
+}
+
+.search-input {
+  width: 100%;
+  padding: 10px;
+  border: 1px solid #e1e1e1;
+  border-radius: 6px;
+  font-size: 14px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+
+.search-results {
+  max-height: 200px;
+  overflow-y: auto;
+  margin-top: 10px;
+  border-radius: 6px;
+  background: #f8f9fa;
+}
+
+.search-result {
+  padding: 8px 12px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.search-result:hover {
+  background: #e9ecef;
+}
+
+/* View Container */
+.view-container {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: calc(100vh - 60px);
+  overflow: hidden;
+}
+
+.view {
+  width: 100%;
+  height: 100%;
+  display: none;
 }

@@ -3,6 +3,7 @@ export class MatrixInteractions {
         this.visualizer = visualizer;
         this.weightPanel = null;
         this.setupWeightPanel();
+        this.setupSearchPanel();
         this.setupEventListeners();
     }
 
@@ -24,6 +25,99 @@ export class MatrixInteractions {
         `;
         document.body.appendChild(this.weightPanel);
     }
+
+    setupSearchPanel() {
+	this.searchPanel = document.createElement('div');
+	this.searchPanel.style.cssText = `
+	    position: fixed;
+	    left: 20px;
+	    top: 100px;  // Below the controls panel
+	    background: white;
+	    padding: 20px;
+	    border-radius: 8px;
+	    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+	    z-index: 1000;
+	    width: 300px;
+	`;
+
+	// Create search input
+	const searchInput = document.createElement('input');
+	searchInput.type = 'text';
+	searchInput.placeholder = 'Search tags...';
+	searchInput.style.cssText = `
+	    width: 100%;
+	    padding: 8px;
+	    margin-bottom: 8px;
+	    border: 1px solid #ccc;
+	    border-radius: 4px;
+	    font-size: 14px;
+	`;
+
+	// Create dropdown
+	const dropdown = document.createElement('select');
+	dropdown.style.cssText = `
+	    width: 100%;
+	    padding: 8px;
+	    border: 1px solid #ccc;
+	    border-radius: 4px;
+	    font-size: 14px;
+	`;
+
+	// Add default option
+	const defaultOption = document.createElement('option');
+	defaultOption.text = 'Select a tag...';
+	defaultOption.value = '';
+	dropdown.appendChild(defaultOption);
+
+	// Add all tags to dropdown
+	this.visualizer.tagList.forEach(tag => {
+	    const option = document.createElement('option');
+	    option.text = tag;
+	    option.value = tag;
+	    dropdown.appendChild(option);
+	});
+
+	// Add elements to panel
+	this.searchPanel.appendChild(searchInput);
+	this.searchPanel.appendChild(dropdown);
+	document.body.appendChild(this.searchPanel);
+
+	// Add event listeners
+	searchInput.addEventListener('input', (e) => {
+	    const searchTerm = e.target.value.toLowerCase();
+	    if (searchTerm) {
+		// Find the first matching tag
+		const matchingTag = this.visualizer.tagList.find(tag => 
+		    tag.toLowerCase().includes(searchTerm)
+		);
+		if (matchingTag) {
+		    this.selectTagByName(matchingTag);
+		    dropdown.value = matchingTag;
+		}
+	    } else {
+		this.visualizer.clearSelection();
+		this.updateWeightPanel(-1, -1);
+		dropdown.value = '';
+	    }
+	});
+
+	dropdown.addEventListener('change', (e) => {
+	    if (e.target.value) {
+		this.selectTagByName(e.target.value);
+	    } else {
+		this.visualizer.clearSelection();
+		this.updateWeightPanel(-1, -1);
+	    }
+	});
+    }
+
+    selectTagByName(tagName) {
+	const index = this.visualizer.tagList.indexOf(tagName);
+        if (index !== -1) {
+            this.visualizer.setSelection(index, index);
+            this.updateWeightPanel(index, index);
+        }
+    } 
 
     updateWeightPanel(row, col) {
         if (row === -1 || col === -1) {

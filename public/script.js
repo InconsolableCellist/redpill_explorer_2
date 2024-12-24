@@ -1,5 +1,7 @@
 let width = window.innerWidth;
 let height = window.innerHeight;
+let filteredLinks = [];
+let filteredNodes = [];
 const unselectedNodeFontSize = 100;
 const selectedNodeFontSize = 250;
 const connectedNodeFontSize = 200;
@@ -38,6 +40,45 @@ window.addEventListener('resize', () => {
       simulation.alpha(0.3).restart();
   }
 });
+
+// Add this near the top of the file
+function setupTabBar() {
+    const tabBar = document.createElement('div');
+    tabBar.className = 'tab-bar';
+
+    const redpillsTab = document.createElement('button');
+    redpillsTab.className = 'tab active';
+    redpillsTab.textContent = 'redpills';
+
+    const tagsTab = document.createElement('button');
+    tagsTab.className = 'tab';
+    tagsTab.textContent = 'tags';
+
+    tabBar.appendChild(redpillsTab);
+    tabBar.appendChild(tagsTab);
+
+    document.body.appendChild(tabBar);
+
+    tagsTab.addEventListener('click', async () => {
+        redpillsTab.classList.remove('active');
+        tagsTab.classList.add('active');
+        try {
+            const response = await fetch('/matrix');
+            const data = await response.json();
+            // Handle matrix data here
+            console.log('Matrix data loaded:', data);
+        } catch (error) {
+            console.error('Error loading matrix:', error);
+        }
+    });
+
+    redpillsTab.addEventListener('click', () => {
+        tagsTab.classList.remove('active');
+        redpillsTab.classList.add('active');
+        // Reload original view
+        location.reload();
+    });
+}
 
 function sortConnectedNodes(connectedNodes, links, selectedNode) {
   return connectedNodes.map(node => {
@@ -555,12 +596,14 @@ function closeItemPanel() {
 
 
 function toggleNodeSelection(node) {
-  const index = selectedNodes.findIndex(n => n.id === node.id);
-  if (index >= 0) {
-    selectedNodes.splice(index, 1); // Remove node from selection
-  } else {
-    selectedNodes.push(node); // Add node to selection
-  }
+    const index = selectedNodes.findIndex(n => n.id === node.id);
+    if (index >= 0) {
+        selectedNodes.splice(index, 1);
+    } else {
+        selectedNodes.push(node);
+    }
+    highlightSelectedNodes(filteredLinks, filteredNodes)
+    updateNodeSelectionBar();
 }
 
 function highlightSelectedNodes(links, allNodes) {
@@ -574,7 +617,6 @@ function highlightSelectedNodes(links, allNodes) {
             .style('font-size', `${unselectedNodeFontSize}px`)
             .style('font-weight', 'normal');
         link.style('visibility', 'hidden').attr('opacity', 0);
-        updateInfoPanel([], []);
         return;
     }
 
@@ -653,136 +695,106 @@ function highlightSelectedNodes(links, allNodes) {
                 .attr('opacity', 1);
         }
     });
-    updateInfoPanel(selectedNodes, connectedToAllSelected);
 }
 
-// Modify the setupInfoPanel function to include the search input
-function setupInfoPanel() {
-    const infoPanel = document.createElement('div');
-    infoPanel.id = 'infoPanel';
-    infoPanel.className = 'fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-4';
+function setupFloatingSearch() {
+    const searchPanel = document.createElement('div');
+    searchPanel.className = 'floating-search';
 
-    // Add a flex container for better organization
-    infoPanel.innerHTML = `
-    <div class="flex justify-between items-center gap-4">
-      <div class="search-container flex-1 max-w-md relative">
-        <input type="text" 
-               class="w-full px-4 py-2 border rounded-lg" 
-               placeholder="Search nodes..."
-               id="nodeSearchInput">
-        <div id="searchResults" 
-             class="absolute bottom-full mb-2 w-full bg-white border rounded-lg shadow-lg max-h-60 overflow-y-auto hidden">
-        </div>
-      </div>
-      <div class="flex gap-8 items-center">
-        <div class="selected-count">Selected: 0 nodes</div>
-        <div class="connected-count">Connected to all: 0 nodes</div>
-        <button class="open-panel-btn px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:bg-gray-400 disabled:cursor-not-allowed">
-          Open Panel
-        </button>
-      </div>
+    searchPanel.innerHTML = `
+    <div class="search-input-container">
+      <input type="text" 
+             class="search-input" 
+             placeholder="Search nodes...">
     </div>
+    <div class="search-results hidden"></div>
   `;
 
-    document.body.appendChild(infoPanel);
+    document.body.appendChild(searchPanel);
 
-    // Add click handler for the button
-    const openPanelBtn = infoPanel.querySelector('.open-panel-btn');
-    openPanelBtn.addEventListener('click', () => {
-        if (selectedNodes.length > 0) {
-            openPanelWithSelectedNodes();
-        }
-    });
-
-    // Setup search functionality
-    const searchInput = document.getElementById('nodeSearchInput');
-    const searchResults = document.getElementById('searchResults');
+    const searchInput = searchPanel.querySelector('.search-input');
+    const searchResults = searchPanel.querySelector('.search-results');
 
     searchInput.addEventListener('input', debounce((e) => {
         const searchTerm = e.target.value.toLowerCase();
         if (searchTerm.length < 2) {
             searchResults.classList.add('hidden');
-            // Reset all nodes to their normal state if no search term
-            d3.selectAll('.node').style('opacity', 1);
             return;
         }
 
-        // Get all nodes from the visualization
         const nodes = d3.selectAll('.node').data();
-        const matchingNodes = nodes.filter(node =>
-            node.id.toLowerCase().includes(searchTerm)
-        ).sort((a, b) => {
-            // Sort exact matches first, then by string length
-            const aStartsWith = a.id.toLowerCase().startsWith(searchTerm);
-            const bStartsWith = b.id.toLowerCase().startsWith(searchTerm);
-            if (aStartsWith && !bStartsWith) return -1;
-            if (!aStartsWith && bStartsWith) return 1;
-            return a.id.length - b.id.length;
-        }).slice(0, 10); // Limit to top 10 matches
+        const matchingNodes = nodes
+            .filter(node => node.id.toLowerCase().includes(searchTerm))
+            .sort((a, b) => {
+                const aStartsWith = a.id.toLowerCase().startsWith(searchTerm);
+                const bStartsWith = b.id.toLowerCase().startsWith(searchTerm);
+                if (aStartsWith && !bStartsWith) return -1;
+                if (!aStartsWith && bStartsWith) return 1;
+                return a.id.length - b.id.length;
+            })
+            .slice(0, 10);
 
-        // Update search results dropdown
         if (matchingNodes.length > 0) {
-            searchResults.innerHTML = matchingNodes.map(node => `
-        <div class="search-result p-2 hover:bg-gray-100 cursor-pointer" data-node-id="${node.id}">
-          ${node.id}
-        </div>
-      `).join('');
+            searchResults.innerHTML = matchingNodes
+                .map(node => `
+          <div class="search-result p-2 hover:bg-gray-100 cursor-pointer" 
+               data-node-id="${node.id}">
+            ${node.id}
+          </div>
+        `)
+                .join('');
             searchResults.classList.remove('hidden');
-
-            // Dim all nodes and highlight matching ones
-            d3.selectAll('.node').style('opacity', 0.2);
-            d3.selectAll('.node').filter(d =>
-                matchingNodes.some(n => n.id === d.id)
-            ).style('opacity', 1);
-
         } else {
             searchResults.innerHTML = '<div class="p-2 text-gray-500">No matches found</div>';
             searchResults.classList.remove('hidden');
-            // Reset node opacity if no matches
-            d3.selectAll('.node').style('opacity', 1);
         }
     }, 300));
 
-    // Add click handlers for search results
     searchResults.addEventListener('click', (e) => {
         const resultEl = e.target.closest('.search-result');
         if (!resultEl) return;
 
         const nodeId = resultEl.dataset.nodeId;
-        const node = d3.selectAll('.node').filter(d => d.id === nodeId);
+        const node = d3.selectAll('.node').filter(d => d.id === nodeId).datum();
 
-        if (!node.empty()) {
-            // Center the view on the selected node
-            const transform = d3.zoomTransform(svg.node());
-            const bounds = node.node().getBBox();
-            const dx = bounds.x;
-            const dy = bounds.y;
-            const x = -dx * transform.k + width/2;
-            const y = -dy * transform.k + height/2;
-
-            svg.transition()
-                .duration(750)
-                .call(
-                    d3.zoom().transform,
-                    d3.zoomIdentity.translate(x, y).scale(transform.k)
-                );
-
-            // Clear search and reset opacity
+        if (node) {
+            toggleNodeSelection(node);
             searchInput.value = '';
             searchResults.classList.add('hidden');
-            d3.selectAll('.node').style('opacity', 1);
-        }
-    });
-
-    // Close search results when clicking outside
-    document.addEventListener('click', (e) => {
-        if (!searchResults.contains(e.target) && e.target !== searchInput) {
-            searchResults.classList.add('hidden');
-            // Reset node opacity
-            d3.selectAll('.node').style('opacity', 1);
         }
     });
 }
+
+function setupNodeSelectionBar() {
+    const selectionBar = document.createElement('div');
+    selectionBar.className = 'node-selection-bar';
+    document.body.appendChild(selectionBar);
+    updateNodeSelectionBar();
+}
+
+function updateNodeSelectionBar() {
+    const selectionBar = document.querySelector('.node-selection-bar');
+    selectionBar.innerHTML = selectedNodes
+        .map(node => `
+      <div class="selected-node-item" data-node-id="${node.id}">
+        ${node.id}
+        <span class="remove-node">×</span>
+      </div>
+    `)
+        .join('');
+
+    // Add click handlers for removal
+    selectionBar.querySelectorAll('.selected-node-item').forEach(item => {
+        item.addEventListener('click', () => {
+            const nodeId = item.dataset.nodeId;
+            const node = selectedNodes.find(n => n.id === nodeId);
+            if (node) {
+                toggleNodeSelection(node);
+            }
+        });
+    });
+}
+
 
 // Add a debounce function to prevent too many updates
 function debounce(func, wait) {
@@ -819,18 +831,6 @@ style.textContent = `
   }
 `;
 document.head.appendChild(style);
-
-function updateInfoPanel(selectedNodes, connectedNodes) {
-    const infoPanel = document.getElementById('infoPanel');
-    const selectedCount = infoPanel.querySelector('.selected-count');
-    const connectedCount = infoPanel.querySelector('.connected-count');
-    const openPanelBtn = infoPanel.querySelector('.open-panel-btn');
-
-    selectedCount.textContent = `Selected: ${selectedNodes.length} nodes`;
-    connectedCount.textContent = `Nodes: ${connectedNodes.length} nodes`;
-
-    openPanelBtn.disaled = selectedNodes.length === 0;
-}
 
 function fetchAndDisplayItems(selectedNodes) {
   const selectedTags = selectedNodes.map(node => node.id);
@@ -909,7 +909,8 @@ document.addEventListener('keydown', (event) => {
     }
 });
 
-setupInfoPanel();
+setupNodeSelectionBar();
+setupFloatingSearch();
 
 // Load tags, data, and weights
 Promise.all([d3.json('/tags'), d3.json('/data'), d3.json('/tag_pairs_with_weights')])
@@ -918,7 +919,9 @@ Promise.all([d3.json('/tags'), d3.json('/data'), d3.json('/tag_pairs_with_weight
     tagsWithSizes = tagsWithSizesLoaded;
     tagWeights = tagWeightsLoaded
     data = dataLoaded;
-    const { filteredNodes, filteredLinks } = prepareGraph(tagsWithSizes, tagWeights);
+    const graphData = prepareGraph(tagsWithSizes, tagWeights);
+    filteredNodes = graphData.filteredNodes;
+    filteredLinks = graphData.filteredLinks;
     svg = setupSVG();
     const container = svg.append('g');  // Group for nodes and links
 
