@@ -8,7 +8,7 @@ const connectedNodeFontSize = 200;
 const color = d3.scaleOrdinal(d3.schemeCategory10);
 const minNodeSize = 50;
 const maxNodeSize = 500;
-const minWeightThreshold = .7;
+const minWeightThreshold = .75;
 const mutedColor = '#ddd';  // Light gray
 
 const linkWidthScale = d3.scaleLinear()
