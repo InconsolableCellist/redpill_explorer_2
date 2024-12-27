@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Spiciness Visualization</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            font-family: Arial, sans-serif;
+            background: #000;
+        }
+        canvas {
+            display: block;
+        }
+        #tooltip {
+            position: absolute;
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 8px;
+            border-radius: 4px;
+            font-size: 14px;
+            pointer-events: none;
+            display: none;
+            z-index: 1000;
+            max-width: 300px;
+        }
+        #loading {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 20px;
+            background: rgba(255, 255, 255, 0.9);
+            padding: 20px;
+            border-radius: 5px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.2);
+            z-index: 1000;
+        }
+        #tagPanel {
+            position: fixed;
+            left: 0;
+            top: 0;
+            bottom: 60px;
+            width: 250px;
+            background: rgba(255, 255, 255, 0.9);
+            padding: 20px;
+            overflow-y: auto;
+            z-index: 1000;
+        }
+        #tagSearch {
+            width: 100%;
+            padding: 8px;
+            margin-bottom: 10px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+        #tagList {
+            max-height: calc(100% - 100px);
+            overflow-y: auto;
+        }
+        .tag-item {
+            padding: 8px;
+            margin: 4px 0;
+            background: #f0f0f0;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        .tag-item:hover {
+            background: #e0e0e0;
+        }
+        #selectedTags {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 60px;
+            background: rgba(255, 255, 255, 0.9);
+            display: flex;
+            align-items: center;
+            padding: 0 20px;
+            gap: 10px;
+            overflow-x: auto;
+            z-index: 1000;
+        }
+        .selected-tag {
+            padding: 8px 16px;
+            background: #40444b;
+            color: #fff;
+            border-radius: 6px;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            cursor: pointer;
+        }
+        .selected-tag:hover {
+            background: #4a4f57;
+        }
+    </style>
+</head>
+<body>
+<div id="tooltip"></div>
+<div id="loading">Loading visualization...</div>
+<div id="tagPanel">
+    <input type="text" id="tagSearch" placeholder="Search tags...">
+    <div id="tagList"></div>
+</div>
+<div id="selectedTags"></div>
+<script type="module">
+    try {
+        await import('https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js');
+        const { SpicyVisualizer } = await import('./spicyCore.js');
+        const { SpicyInteractions } = await import('./spicyInteractions.js');
+
+        const visualizer = new SpicyVisualizer();
+        await visualizer.initialize();
+        new SpicyInteractions(visualizer);
+
+        document.getElementById('loading').style.display = 'none';
+    } catch (error) {
+        console.error('Failed to initialize:', error);
+        document.getElementById('loading').textContent = 'Failed to load. Please refresh the page.';
+    }
+</script>
+</body>
+</html>

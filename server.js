@@ -128,3 +128,80 @@ app.get('/matrix', (req, res) => {
       res.sendFile(path.join(__dirname, 'public', 'matrix.html'));
 });
 
+
+app.get('/spicy', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'spicy.html'));
+});
+
+app.get('/node-info/:hash', (req, res) => {
+    const hash = req.params.hash;
+
+    // Read the data file
+    fs.readFile(path.join(__dirname, 'data', 'images_captioned_tagged.json'), 'utf8')
+        .then(data => {
+            const jsonData = JSON.parse(data);
+            const nodeData = jsonData[hash];
+
+            if (!nodeData) {
+                res.status(404).send('Node not found');
+                return;
+            }
+
+            // Generate an HTML page with the node information
+            const html = `
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <title>Node Information</title>
+                    <style>
+                        body {
+                            font-family: Arial, sans-serif;
+                            max-width: 800px;
+                            margin: 0 auto;
+                            padding: 20px;
+                        }
+                        .image {
+                            max-width: 100%;
+                            height: auto;
+                            margin: 20px 0;
+                        }
+                        .tags {
+                            display: flex;
+                            flex-wrap: wrap;
+                            gap: 8px;
+                            margin: 20px 0;
+                        }
+                        .tag {
+                            background: #f0f0f0;
+                            padding: 4px 8px;
+                            border-radius: 4px;
+                        }
+                    </style>
+                </head>
+                <body>
+                    <h1>Node Information</h1>
+                    <div class="image">
+                        <img src="/images/${nodeData.filename}" alt="Node image">
+                    </div>
+                    <h2>Description</h2>
+                    <p>${nodeData.description}</p>
+                    <h2>Spiciness Level</h2>
+                    <p>${nodeData.spicy.toFixed(2)}</p>
+                    <h2>Tags</h2>
+                    <div class="tags">
+                        ${Object.entries(nodeData.tags)
+                .map(([tag, weight]) =>
+                    `<div class="tag">${tag} (${weight.toFixed(2)})</div>`)
+                .join('')}
+                    </div>
+                </body>
+                </html>
+            `;
+
+            res.send(html);
+        })
+        .catch(err => {
+            console.error('Error reading node data:', err);
+            res.status(500).send('Internal server error');
+        });
+});
