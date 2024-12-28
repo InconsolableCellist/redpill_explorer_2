@@ -11,6 +11,8 @@ export class SpicyVisualizer {
         this.mouse = new THREE.Vector2();
         this.COLUMN_HEIGHT = 1000;
         this.SLICE_RADIUS = 200;
+        this.centerOffset = 0; // Will be calculated based on viewport
+        this.sliceView = null;
     }
 
     async initialize() {
@@ -37,6 +39,7 @@ export class SpicyVisualizer {
     setupScene() {
         this.scene = new THREE.Scene();
         this.scene.background = new THREE.Color(0x000000);
+        this.centerOffset = -this.SLICE_RADIUS - 50; // Adjust based on label width
     }
 
     setupCamera() {
@@ -66,6 +69,17 @@ export class SpicyVisualizer {
     }
 
     createNodes(data) {
+        // Generate a color map for tags
+        this.tagColors = new Map();
+        const allTags = new Set();
+        Object.values(data).forEach(item => {
+            Object.keys(item.tags).forEach(tag => allTags.add(tag));
+        });
+
+        Array.from(allTags).forEach(tag => {
+            this.tagColors.set(tag, new THREE.Color(Math.random(), Math.random(), Math.random()));
+        });
+
         // Group nodes by spiciness level (rounded to 1 decimal)
         const spicyLevels = new Map();
 
@@ -81,6 +95,24 @@ export class SpicyVisualizer {
         spicyLevels.forEach((items, spicyLevel) => {
             const y = spicyLevel * this.COLUMN_HEIGHT;
 
+            // Create label for this slice
+            const canvas = document.createElement('canvas');
+            canvas.width = 256;
+            canvas.height = 64;
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = 'white';
+            ctx.font = 'bold 32px Arial';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(`Spicy: ${spicyLevel.toFixed(1)}`, canvas.width/2, canvas.height/2);
+
+            const texture = new THREE.CanvasTexture(canvas);
+            const labelMaterial = new THREE.SpriteMaterial({ map: texture });
+            const label = new THREE.Sprite(labelMaterial);
+            label.position.set(-this.SLICE_RADIUS - 50, y, 0);
+            label.scale.set(100, 25, 1);
+            this.scene.add(label);
+
             items.forEach((item) => {
                 // Random position within the slice
                 const angle = Math.random() * Math.PI * 2;
@@ -90,11 +122,22 @@ export class SpicyVisualizer {
 
                 // Create node geometry
                 const geometry = new THREE.SphereGeometry(5, 32, 32);
-                const material = new THREE.MeshPhongMaterial({ color: 0xffffff });
-                const node = new THREE.Mesh(geometry, material);
 
+                // Get color from first tag (or white if no tags)
+                const firstTag = Object.keys(item.tags)[0];
+                const color = firstTag ? this.tagColors.get(firstTag) : new THREE.Color(0xffffff);
+                const material = new THREE.MeshPhongMaterial({ color });
+
+                const node = new THREE.Mesh(geometry, material);
                 node.position.set(x, y, z);
-                node.userData.hash = item.hash;
+                node.userData = {
+                    type: 'node',
+                    hash: item.hash,
+                    tags: Object.keys(item.tags),
+                    spicyLevel,
+                    radius,
+                    angle
+                };
 
                 this.scene.add(node);
                 this.nodes.set(item.hash, node);

@@ -104,6 +104,23 @@
         .selected-tag:hover {
             background: #4a4f57;
         }
+        #sliceViewer {
+            display: none;
+            position: fixed;
+            right: 0;
+            top: 0;
+            bottom: 60px;
+            width: 400px;
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 20px;
+            overflow-y: auto;
+        }
+        #sliceCanvas {
+            background: black;
+            border: 1px solid #333;
+            margin-top: 10px;
+        }
     </style>
 </head>
 <body>
@@ -114,6 +131,10 @@
     <div id="tagList"></div>
 </div>
 <div id="selectedTags"></div>
+<div id="sliceViewer">
+    <h2 id="sliceTitle">Slice View</h2>
+    <canvas id="sliceCanvas"></canvas>
+</div>
 <script type="module">
     try {
         const { SpicyVisualizer } = await import('./spicyCore.js');
