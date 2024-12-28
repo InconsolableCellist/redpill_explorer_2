@@ -39,6 +39,8 @@ export class SpicyVisualizer {
     setupScene() {
         this.scene = new THREE.Scene();
         this.scene.background = new THREE.Color(0x000000);
+
+        // Calculate center offset based on viewport
         this.centerOffset = -this.SLICE_RADIUS - 50; // Adjust based on label width
     }
 
@@ -69,7 +71,7 @@ export class SpicyVisualizer {
     }
 
     createNodes(data) {
-        // Generate a color map for tags
+        // Generate color map for tags
         this.tagColors = new Map();
         const allTags = new Set();
         Object.values(data).forEach(item => {
@@ -80,9 +82,11 @@ export class SpicyVisualizer {
             this.tagColors.set(tag, new THREE.Color(Math.random(), Math.random(), Math.random()));
         });
 
+        // Create cylindrical slice geometry for reuse
+        const sliceGeometry = new THREE.CylinderGeometry(this.SLICE_RADIUS, this.SLICE_RADIUS, 50, 64, 1, true);
+
         // Group nodes by spiciness level (rounded to 1 decimal)
         const spicyLevels = new Map();
-
         Object.entries(data).forEach(([hash, itemData]) => {
             const spicyLevel = Math.round(itemData.spicy * 10) / 10;
             if (!spicyLevels.has(spicyLevel)) {
@@ -94,6 +98,22 @@ export class SpicyVisualizer {
         // Create nodes for each spiciness level
         spicyLevels.forEach((items, spicyLevel) => {
             const y = spicyLevel * this.COLUMN_HEIGHT;
+
+            // Create slice cylinder
+            const sliceMaterial = new THREE.MeshPhongMaterial({
+                color: 0xffffff,
+                transparent: true,
+                opacity: 0.1,
+                side: THREE.DoubleSide
+            });
+            const sliceMesh = new THREE.Mesh(sliceGeometry, sliceMaterial);
+            sliceMesh.position.set(0, y, 0);
+            sliceMesh.userData = {
+                type: 'slice',
+                level: spicyLevel,
+                items: items
+            };
+            this.scene.add(sliceMesh);
 
             // Create label for this slice
             const canvas = document.createElement('canvas');
@@ -109,12 +129,12 @@ export class SpicyVisualizer {
             const texture = new THREE.CanvasTexture(canvas);
             const labelMaterial = new THREE.SpriteMaterial({ map: texture });
             const label = new THREE.Sprite(labelMaterial);
-            label.position.set(-this.SLICE_RADIUS - 50, y, 0);
+            label.position.set(this.centerOffset, y, 0);
             label.scale.set(100, 25, 1);
             this.scene.add(label);
 
+            // Create nodes within the slice
             items.forEach((item) => {
-                // Random position within the slice
                 const angle = Math.random() * Math.PI * 2;
                 const radius = Math.random() * this.SLICE_RADIUS;
                 const x = Math.cos(angle) * radius;
@@ -126,7 +146,11 @@ export class SpicyVisualizer {
                 // Get color from first tag (or white if no tags)
                 const firstTag = Object.keys(item.tags)[0];
                 const color = firstTag ? this.tagColors.get(firstTag) : new THREE.Color(0xffffff);
-                const material = new THREE.MeshPhongMaterial({ color });
+                const material = new THREE.MeshPhongMaterial({
+                    color,
+                    transparent: true,
+                    opacity: 1
+                });
 
                 const node = new THREE.Mesh(geometry, material);
                 node.position.set(x, y, z);
@@ -147,9 +171,12 @@ export class SpicyVisualizer {
 
     updateSelection() {
         if (this.selectedTags.size === 0) {
-            // Reset all nodes to visible and white
-            this.nodes.forEach((node) => {
-                node.material.color.setHex(0xffffff);
+            // Reset all nodes to their original colors
+            this.nodes.forEach((node, hash) => {
+                const itemData = this.nodeData.get(hash);
+                const firstTag = Object.keys(itemData.tags)[0];
+                const color = firstTag ? this.tagColors.get(firstTag) : new THREE.Color(0xffffff);
+                node.material.color.copy(color);
                 node.material.opacity = 1;
                 node.material.transparent = false;
             });
@@ -163,11 +190,9 @@ export class SpicyVisualizer {
                 .every(tag => itemData.tags && itemData.tags[tag] !== undefined);
 
             if (hasAllTags) {
-                node.material.color.setHex(0xff0000);
                 node.material.opacity = 1;
                 node.material.transparent = false;
             } else {
-                node.material.color.setHex(0x333333);
                 node.material.opacity = 0.2;
                 node.material.transparent = true;
             }
@@ -193,8 +218,13 @@ export class SpicyVisualizer {
         this.raycaster.setFromCamera(this.mouse, this.camera);
         const intersects = this.raycaster.intersectObjects(this.scene.children);
 
-        if (intersects.length > 0) {
-            return intersects[0].object;
+        // Filter for objects that have userData.type
+        for (const intersect of intersects) {
+            if (intersect.object.userData &&
+                (intersect.object.userData.type === 'node' ||
+                    intersect.object.userData.type === 'slice')) {
+                return intersect.object;
+            }
         }
         return null;
     }

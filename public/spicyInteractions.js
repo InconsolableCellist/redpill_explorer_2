@@ -11,6 +11,7 @@ export class SpicyInteractions {
         this.setupEventListeners();
         this.setupTagPanel();
         this.selectedSlice = null;
+        this.hoveredSlice = null;
         this.setupSliceViewer();
     }
 
@@ -130,31 +131,53 @@ export class SpicyInteractions {
             this.visualizer.onWindowResize();
         }, false);
 
-        // Mouse events for node interaction
+        // Mouse events for node and slice interaction
         this.visualizer.renderer.domElement.addEventListener('mousemove', (event) => {
-            const node = this.visualizer.getIntersectedNode(event);
-            this.updateTooltip(event, node);
+            const intersectedObject = this.visualizer.getIntersectedNode(event);
+
+            // Reset previous hover state
+            if (this.hoveredSlice) {
+                this.hoveredSlice.material.opacity = 0.1;
+                this.hoveredSlice = null;
+            }
+
+            if (intersectedObject) {
+                if (intersectedObject.userData.type === 'slice') {
+                    // Highlight hovered slice
+                    intersectedObject.material.opacity = 0.3;
+                    this.hoveredSlice = intersectedObject;
+                    this.updateTooltip(event, null); // Hide node tooltip when hovering slice
+                } else if (intersectedObject.userData.type === 'node') {
+                    this.updateTooltip(event, intersectedObject);
+                }
+            } else {
+                this.hideTooltip();
+            }
         });
 
         // Hide tooltip when mouse leaves canvas
         this.visualizer.renderer.domElement.addEventListener('mouseleave', () => {
             this.hideTooltip();
-        });
-
-        // Keyboard events
-        document.addEventListener('keydown', (event) => {
-            if (event.key === 'Escape') {
-                this.visualizer.selectedTags.clear();
-                this.updateSelectedTagsPanel();
-                this.visualizer.updateSelection();
+            if (this.hoveredSlice) {
+                this.hoveredSlice.material.opacity = 0.1;
+                this.hoveredSlice = null;
             }
         });
 
+        // Click handling
         this.visualizer.renderer.domElement.addEventListener('click', (event) => {
             const intersectedObject = this.visualizer.getIntersectedNode(event);
             if (!intersectedObject) return;
 
             if (intersectedObject.userData.type === 'slice') {
+                // Deselect previous slice if different
+                if (this.selectedSlice && this.selectedSlice !== intersectedObject) {
+                    this.selectedSlice.material.opacity = 0.1;
+                }
+
+                // Select new slice
+                this.selectedSlice = intersectedObject;
+                intersectedObject.material.opacity = 0.4;
                 this.showSliceView(intersectedObject);
             } else if (intersectedObject.userData.type === 'node') {
                 // Single click selects the first tag
@@ -167,11 +190,25 @@ export class SpicyInteractions {
             }
         });
 
-        // Add double click handler
+        // Double click handling
         this.visualizer.renderer.domElement.addEventListener('dblclick', (event) => {
             const intersectedObject = this.visualizer.getIntersectedNode(event);
             if (intersectedObject && intersectedObject.userData.type === 'node') {
                 window.open(`/node-info/${intersectedObject.userData.hash}`, '_blank');
+            }
+        });
+
+        // Keyboard events
+        document.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape') {
+                if (this.selectedSlice) {
+                    this.selectedSlice.material.opacity = 0.1;
+                    this.selectedSlice = null;
+                    document.getElementById('sliceViewer').style.display = 'none';
+                }
+                this.visualizer.selectedTags.clear();
+                this.updateSelectedTagsPanel();
+                this.visualizer.updateSelection();
             }
         });
     }
@@ -301,12 +338,26 @@ export class SpicyInteractions {
             this.isTooltipVisible = false;
         }
     }
+
     setupSliceViewer() {
         const viewer = document.getElementById('sliceViewer');
         const canvas = document.getElementById('sliceCanvas');
-        canvas.width = 380;  // Adjust as needed
+        canvas.width = 380;
         canvas.height = 380;
         this.sliceCanvas = canvas;
+
+        // Add close button
+        const closeBtn = document.createElement('button');
+        closeBtn.textContent = '×';
+        closeBtn.className = 'slice-close-btn';
+        closeBtn.onclick = () => {
+            viewer.style.display = 'none';
+            if (this.selectedSlice) {
+                this.selectedSlice.material.opacity = 0.1;
+                this.selectedSlice = null;
+            }
+        };
+        viewer.insertBefore(closeBtn, viewer.firstChild);
     }
 
     showSliceView(sliceMesh) {
@@ -315,15 +366,22 @@ export class SpicyInteractions {
         const canvas = this.sliceCanvas;
         const ctx = canvas.getContext('2d');
 
-        // Clear canvas
-        ctx.fillStyle = 'black';
+        // Clear canvas with semi-transparent background
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // Draw circular boundary
+        ctx.beginPath();
+        ctx.strokeStyle = '#666';
+        ctx.lineWidth = 2;
+        ctx.arc(canvas.width/2, canvas.height/2, canvas.width/2 - 10, 0, Math.PI * 2);
+        ctx.stroke();
 
         // Set title
         title.textContent = `Slice View - Spicy: ${sliceMesh.userData.level.toFixed(1)}`;
 
         // Draw nodes
-        const scale = canvas.width / (this.visualizer.SLICE_RADIUS * 2);
+        const scale = (canvas.width - 20) / (this.visualizer.SLICE_RADIUS * 2);
         const center = canvas.width / 2;
 
         sliceMesh.userData.items.forEach(item => {
@@ -333,12 +391,21 @@ export class SpicyInteractions {
             const x = center + node.userData.radius * Math.cos(node.userData.angle) * scale;
             const y = center + node.userData.radius * Math.sin(node.userData.angle) * scale;
 
+            // Draw node with glow effect
             ctx.beginPath();
-            ctx.arc(x, y, 5, 0, Math.PI * 2);
-
-            // Use the same color as the 3D view
+            const gradient = ctx.createRadialGradient(x, y, 0, x, y, 8);
             const color = node.material.color;
-            ctx.fillStyle = `rgb(${color.r * 255}, ${color.g * 255}, ${color.b * 255})`;
+            const colorStr = `rgb(${color.r * 255}, ${color.g * 255}, ${color.b * 255})`;
+            gradient.addColorStop(0, colorStr);
+            gradient.addColorStop(1, 'rgba(0,0,0,0)');
+            ctx.fillStyle = gradient;
+            ctx.arc(x, y, 8, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Draw node center
+            ctx.beginPath();
+            ctx.arc(x, y, 4, 0, Math.PI * 2);
+            ctx.fillStyle = colorStr;
             ctx.fill();
         });
 
