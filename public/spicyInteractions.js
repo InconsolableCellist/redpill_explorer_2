@@ -8,6 +8,8 @@ export class SpicyInteractions {
         this.visualizer = visualizer;
         this.controls = null;
         this.tooltip = document.getElementById('tooltip');
+        this.thumbnailViewer = document.getElementById('thumbnailViewer');
+        this.thumbnailImage = document.getElementById('thumbnailImage');
         this.isTooltipVisible = false;
         this.setupOrbitControls();
         this.setupEventListeners();
@@ -100,19 +102,23 @@ export class SpicyInteractions {
                 if (intersectedObject.userData.type === 'node') {
                     this.visualizer.highlightNode(intersectedObject);
                     this.updateTooltip(event, intersectedObject);
+                    this.updateThumbnail(intersectedObject);
                 } else {
                     this.visualizer.unhighlightNode();
                     this.hideTooltip();
+                    this.hideThumbnail();
                 }
             } else {
                 this.visualizer.unhighlightNode();
                 this.hideTooltip();
+                this.hideThumbnail();
             }
         });
 
         this.visualizer.renderer.domElement.addEventListener('mouseleave', () => {
             this.visualizer.unhighlightNode();
             this.hideTooltip();
+            this.hideThumbnail();
         });
 
         this.visualizer.renderer.domElement.addEventListener('click', (event) => {
@@ -181,11 +187,29 @@ export class SpicyInteractions {
         }
     }
 
+    updateThumbnail(node) {
+        if (node && node.userData.hash) {
+            const hash = node.userData.hash;
+            const thumbnailUrl = `/thumbnails/${hash[0]}/${hash[1]}/${hash[2]}/${hash.substring(3)}.jpg`;
+
+            // Only update src if it's different to avoid flickering
+            if (this.thumbnailImage.src !== thumbnailUrl) {
+                this.thumbnailImage.src = thumbnailUrl;
+            }
+
+            this.thumbnailViewer.style.display = 'block';
+        }
+    }
+
     hideTooltip() {
         if (this.isTooltipVisible) {
             this.tooltip.style.display = 'none';
             this.isTooltipVisible = false;
         }
+    }
+
+    hideThumbnail() {
+        this.thumbnailViewer.style.display = 'none';
     }
 
     async setupTagPanel() {

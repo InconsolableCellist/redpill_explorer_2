@@ -6,6 +6,8 @@ export class SpicySliceView {
         this.sliceCanvas = null;
         this.sliceCanvasMousePos = { x: 0, y: 0 };
         this.tooltip = document.getElementById('tooltip');
+        this.thumbnailViewer = document.getElementById('thumbnailViewer');
+        this.thumbnailImage = document.getElementById('thumbnailImage');
         this.setupSliceViewer();
     }
 
@@ -24,7 +26,10 @@ export class SpicySliceView {
         viewer.insertBefore(closeBtn, viewer.firstChild);
 
         // Add slice view event listeners
-        canvas.addEventListener('mouseleave', () => this.hideTooltip());
+        canvas.addEventListener('mouseleave', () => {
+            this.hideTooltip();
+            this.hideThumbnail();
+        });
         canvas.addEventListener('mousemove', (event) => this.handleSliceCanvasMouseMove(event));
         canvas.addEventListener('click', (event) => this.handleSliceCanvasClick(event));
         canvas.addEventListener('dblclick', (event) => this.handleSliceCanvasDoubleClick(event));
@@ -33,6 +38,7 @@ export class SpicySliceView {
     closeSliceView() {
         const viewer = document.getElementById('sliceViewer');
         viewer.style.display = 'none';
+        this.hideThumbnail();
         if (this.selectedSlice) {
             this.selectedSlice.material.opacity = 0.1;
             this.selectedSlice = null;
@@ -162,6 +168,7 @@ export class SpicySliceView {
                 node.scale.set(1.5, 1.5, 1.5);
             }
             this.updateTooltip(event, node);
+            this.updateThumbnail(node);
         } else {
             // Reset hover state when not over any node
             if (this.hoveredNode) {
@@ -169,6 +176,7 @@ export class SpicySliceView {
                 this.hoveredNode = null;
             }
             this.hideTooltip();
+            this.hideThumbnail();
         }
 
         // Store mouse position for reference
@@ -230,7 +238,25 @@ export class SpicySliceView {
         }
     }
 
+    updateThumbnail(node) {
+        if (node && node.userData.hash) {
+            const hash = node.userData.hash;
+            const thumbnailUrl = `/thumbnails/${hash[0]}/${hash[1]}/${hash[2]}/${hash.substring(3)}.jpg`;
+
+            // Only update src if it's different to avoid flickering
+            if (this.thumbnailImage.src !== thumbnailUrl) {
+                this.thumbnailImage.src = thumbnailUrl;
+            }
+
+            this.thumbnailViewer.style.display = 'block';
+        }
+    }
+
     hideTooltip() {
         this.tooltip.style.display = 'none';
+    }
+
+    hideThumbnail() {
+        this.thumbnailViewer.style.display = 'none';
     }
 }

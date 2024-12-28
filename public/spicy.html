@@ -136,6 +136,26 @@
         .slice-close-btn:hover {
             background: rgba(255, 255, 255, 0.1);
         }
+        #thumbnailViewer {
+            display: none;
+            position: fixed;
+            right: 0;
+            bottom: 80px; /* Position above the selected tags bar */
+            width: 400px;
+            height: 300px;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 10px;
+            z-index: 1000;
+            border-radius: 4px;
+        }
+
+        #thumbnailImage {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            background: #000;
+            border: 1px solid #333;
+        }
     </style>
 </head>
 <body>
@@ -149,6 +169,9 @@
 <div id="sliceViewer">
     <h2 id="sliceTitle">Slice View</h2>
     <canvas id="sliceCanvas"></canvas>
+</div>
+<div id="thumbnailViewer">
+    <img id="thumbnailImage" alt="Node thumbnail">
 </div>
 <script type="module">
     try {
