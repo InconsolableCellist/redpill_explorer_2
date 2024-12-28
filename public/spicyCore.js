@@ -1,4 +1,4 @@
-// Core visualization functionality
+import * as THREE from 'three';
 export class SpicyVisualizer {
     constructor() {
         this.scene = null;

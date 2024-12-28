@@ -2,6 +2,14 @@
 <html>
 <head>
     <title>Spiciness Visualization</title>
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.157.0/build/three.module.js",
+                "three/examples/jsm/controls/OrbitControls.js": "https://unpkg.com/three@0.157.0/examples/jsm/controls/OrbitControls.js"
+            }
+        }
+    </script>
     <style>
         body {
             margin: 0;
@@ -108,7 +116,6 @@
 <div id="selectedTags"></div>
 <script type="module">
     try {
-        await import('https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js');
         const { SpicyVisualizer } = await import('./spicyCore.js');
         const { SpicyInteractions } = await import('./spicyInteractions.js');
 

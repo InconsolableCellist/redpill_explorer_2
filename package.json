@@ -8,7 +8,8 @@
     "dev": "nodemon server.js"
   },
   "dependencies": {
-    "express": "^4.21.1"
+    "express": "^4.21.1",
+    "three": "^0.171.0"
   },
   "devDependencies": {
     "nodemon": "^2.0.22"

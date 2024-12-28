@@ -25,8 +25,15 @@ hashMapper.initialize().catch(error => {
     console.error('Failed to initialize hash mapper:', error);
 });
 
-// Serve static files from public directory
-app.use(express.static(path.join(__dirname, 'public')));
+app.use('/node_modules/three', express.static(path.join(__dirname, 'node_modules/three')));
+
+app.use(express.static(path.join(__dirname, 'public'), {
+    setHeaders: (res, path, stat) => {
+        if (path.endsWith('.js')) {
+            res.set('Content-Type', 'application/javascript; charset=UTF-8');
+        }
+    }
+}));
 
 // Custom middleware to serve images from multiple directories
 app.use('/images', (req, res, next) => {

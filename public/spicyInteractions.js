@@ -1,3 +1,6 @@
+import * as THREE from 'three';
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+
 export class SpicyInteractions {
     constructor(visualizer) {
         this.visualizer = visualizer;
@@ -11,17 +14,105 @@ export class SpicyInteractions {
 
     setupOrbitControls() {
         // Initialize OrbitControls
-        this.controls = new THREE.OrbitControls(
+        this.controls = new OrbitControls(
             this.visualizer.camera,
             this.visualizer.renderer.domElement
         );
 
-        // Configure controls
+        // Configure basic controls
         this.controls.enableDamping = true;
         this.controls.dampingFactor = 0.05;
         this.controls.screenSpacePanning = false;
         this.controls.minDistance = 100;
         this.controls.maxDistance = 1500;
+
+        // Disable built-in controls - we'll handle them manually
+        this.controls.enableRotate = false;
+        this.controls.enablePan = false;
+
+        let isLeftMouseDown = false;
+        let isRightMouseDown = false;
+        let previousX = 0;
+        let previousY = 0;
+        let cameraAngle = 0; // Track camera's vertical angle
+
+        this.visualizer.renderer.domElement.addEventListener('mousedown', (event) => {
+            if (event.button === 0) { // Left button
+                isLeftMouseDown = true;
+                previousX = event.clientX;
+                previousY = event.clientY;
+            } else if (event.button === 2) { // Right button
+                isRightMouseDown = true;
+                previousY = event.clientY;
+            }
+        });
+
+        this.visualizer.renderer.domElement.addEventListener('mousemove', (event) => {
+            if (isLeftMouseDown) {
+                // Horizontal movement - orbit around vertical axis
+                const deltaX = event.clientX - previousX;
+                const rotationSpeed = 0.01;
+                const radius = Math.sqrt(
+                    Math.pow(this.visualizer.camera.position.x, 2) +
+                    Math.pow(this.visualizer.camera.position.z, 2)
+                );
+
+                const currentAngle = Math.atan2(
+                    this.visualizer.camera.position.z,
+                    this.visualizer.camera.position.x
+                );
+                const newAngle = currentAngle - deltaX * rotationSpeed;
+
+                this.visualizer.camera.position.x = radius * Math.cos(newAngle);
+                this.visualizer.camera.position.z = radius * Math.sin(newAngle);
+
+                // Vertical movement - translate up/down
+                const deltaY = event.clientY - previousY;
+                this.visualizer.camera.position.y += deltaY * 2;
+                this.controls.target.y = this.visualizer.camera.position.y;
+
+                previousX = event.clientX;
+                previousY = event.clientY;
+            }
+
+            if (isRightMouseDown) {
+                // Vertical camera rotation around X axis
+                const deltaY = event.clientY - previousY;
+                const rotationSpeed = 0.01;
+
+                cameraAngle = Math.max(Math.min(cameraAngle + deltaY * rotationSpeed, Math.PI/3), -Math.PI/3);
+
+                // Get current radius in XZ plane
+                const radius = Math.sqrt(
+                    Math.pow(this.visualizer.camera.position.x, 2) +
+                    Math.pow(this.visualizer.camera.position.z, 2)
+                );
+
+                // Adjust camera height based on angle while maintaining distance
+                const currentY = this.visualizer.camera.position.y;
+                const baseY = this.controls.target.y;
+                const heightOffset = radius * Math.sin(cameraAngle);
+                this.visualizer.camera.position.y = baseY + heightOffset;
+
+                previousY = event.clientY;
+            }
+
+            // Always look at target
+            this.visualizer.camera.lookAt(this.controls.target);
+        });
+
+        document.addEventListener('mouseup', (event) => {
+            if (event.button === 0) {
+                isLeftMouseDown = false;
+            } else if (event.button === 2) {
+                isRightMouseDown = false;
+            }
+        });
+
+        // Prevent context menu
+        this.visualizer.renderer.domElement.addEventListener('contextmenu', (event) => {
+            event.preventDefault();
+        });
 
         // Update controls in animation loop
         const animate = () => {
