@@ -7,12 +7,37 @@ export class SpicyVisualizer {
         this.nodes = new Map(); // Map of hash to THREE.Mesh
         this.nodeData = new Map(); // Map of hash to data object
         this.selectedTags = new Set();
+        this.tagToColorIndex = new Map(); // Maps selected tags to their color index
         this.raycaster = new THREE.Raycaster();
         this.mouse = new THREE.Vector2();
         this.COLUMN_HEIGHT = 1000;
         this.SLICE_RADIUS = 200;
-        this.centerOffset = 0; // Will be calculated based on viewport
+        this.centerOffset = 0;
         this.sliceView = null;
+
+        // Predefined color palette for tag selection
+        this.TAG_COLORS = [
+            new THREE.Color('#ff4444'), // Red
+            new THREE.Color('#44ff44'), // Green
+            new THREE.Color('#4444ff'), // Blue
+            new THREE.Color('#ffff44'), // Yellow
+            new THREE.Color('#ff44ff'), // Magenta
+            new THREE.Color('#44ffff'), // Cyan
+            new THREE.Color('#ff8844'), // Orange
+            new THREE.Color('#88ff44'), // Lime
+            new THREE.Color('#4488ff'), // Light Blue
+            new THREE.Color('#ff4488')  // Pink
+        ];
+
+        // Add properties for hover highlighting
+        this.highlightMaterial = new THREE.MeshPhongMaterial({
+            color: 0xffffff,
+            emissive: 0x444444,
+            transparent: true,
+            opacity: 1
+        });
+        this.hoveredNode = null;
+        this.originalMaterial = null;
     }
 
     async initialize() {
@@ -39,9 +64,7 @@ export class SpicyVisualizer {
     setupScene() {
         this.scene = new THREE.Scene();
         this.scene.background = new THREE.Color(0x000000);
-
-        // Calculate center offset based on viewport
-        this.centerOffset = -this.SLICE_RADIUS - 50; // Adjust based on label width
+        this.centerOffset = -this.SLICE_RADIUS - 50;
     }
 
     setupCamera() {
@@ -71,21 +94,10 @@ export class SpicyVisualizer {
     }
 
     createNodes(data) {
-        // Generate color map for tags
-        this.tagColors = new Map();
-        const allTags = new Set();
-        Object.values(data).forEach(item => {
-            Object.keys(item.tags).forEach(tag => allTags.add(tag));
-        });
-
-        Array.from(allTags).forEach(tag => {
-            this.tagColors.set(tag, new THREE.Color(Math.random(), Math.random(), Math.random()));
-        });
-
         // Create cylindrical slice geometry for reuse
         const sliceGeometry = new THREE.CylinderGeometry(this.SLICE_RADIUS, this.SLICE_RADIUS, 50, 64, 1, true);
 
-        // Group nodes by spiciness level (rounded to 1 decimal)
+        // Group nodes by spiciness level
         const spicyLevels = new Map();
         Object.entries(data).forEach(([hash, itemData]) => {
             const spicyLevel = Math.round(itemData.spicy * 10) / 10;
@@ -140,14 +152,9 @@ export class SpicyVisualizer {
                 const x = Math.cos(angle) * radius;
                 const z = Math.sin(angle) * radius;
 
-                // Create node geometry
                 const geometry = new THREE.SphereGeometry(5, 32, 32);
-
-                // Get color from first tag (or white if no tags)
-                const firstTag = Object.keys(item.tags)[0];
-                const color = firstTag ? this.tagColors.get(firstTag) : new THREE.Color(0xffffff);
                 const material = new THREE.MeshPhongMaterial({
-                    color,
+                    color: 0x888888,  // Default grey color
                     transparent: true,
                     opacity: 1
                 });
@@ -171,28 +178,39 @@ export class SpicyVisualizer {
 
     updateSelection() {
         if (this.selectedTags.size === 0) {
-            // Reset all nodes to their original colors
-            this.nodes.forEach((node, hash) => {
-                const itemData = this.nodeData.get(hash);
-                const firstTag = Object.keys(itemData.tags)[0];
-                const color = firstTag ? this.tagColors.get(firstTag) : new THREE.Color(0xffffff);
-                node.material.color.copy(color);
+            // Reset all nodes to default grey
+            this.nodes.forEach((node) => {
+                node.material.color.setHex(0x888888);
                 node.material.opacity = 1;
                 node.material.transparent = false;
             });
+            this.tagToColorIndex.clear();
             return;
         }
 
-        // Update visibility based on selected tags
+        // Update color mappings for selected tags
+        Array.from(this.selectedTags).forEach((tag, index) => {
+            if (!this.tagToColorIndex.has(tag)) {
+                this.tagToColorIndex.set(tag, index % this.TAG_COLORS.length);
+            }
+        });
+
+        // Update node appearances
         this.nodes.forEach((node, hash) => {
             const itemData = this.nodeData.get(hash);
-            const hasAllTags = Array.from(this.selectedTags)
-                .every(tag => itemData.tags && itemData.tags[tag] !== undefined);
+            const nodeTags = Object.keys(itemData.tags);
 
-            if (hasAllTags) {
+            // Find the first selected tag that this node has
+            const matchingTag = Array.from(this.selectedTags)
+                .find(tag => nodeTags.includes(tag));
+
+            if (matchingTag) {
+                const colorIndex = this.tagToColorIndex.get(matchingTag);
+                node.material.color.copy(this.TAG_COLORS[colorIndex]);
                 node.material.opacity = 1;
                 node.material.transparent = false;
             } else {
+                node.material.color.setHex(0x888888);
                 node.material.opacity = 0.2;
                 node.material.transparent = true;
             }
@@ -227,5 +245,30 @@ export class SpicyVisualizer {
             }
         }
         return null;
+    }
+
+    highlightNode(node) {
+        if (this.hoveredNode === node) return;
+
+        // Reset previous highlight
+        this.unhighlightNode();
+
+        if (node) {
+            // Store current material and apply highlight
+            this.hoveredNode = node;
+            this.originalMaterial = node.material;
+            node.material = this.highlightMaterial.clone();
+            node.material.color = this.originalMaterial.color.clone();
+            node.scale.set(1.5, 1.5, 1.5); // Make node bigger
+        }
+    }
+
+    unhighlightNode() {
+        if (this.hoveredNode) {
+            this.hoveredNode.material = this.originalMaterial;
+            this.hoveredNode.scale.set(1, 1, 1); // Reset size
+            this.hoveredNode = null;
+            this.originalMaterial = null;
+        }
     }
 }
