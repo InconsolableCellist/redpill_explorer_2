@@ -427,16 +427,24 @@ function openItemPanel(node, initialTags = []) {
                     </div>
                 `;
 
-                // Add click event to open image
-                card.addEventListener('click', () => {
-                    // obtain the URL by making a GET to the server /hash-to-path/:hash
-                    fetch(`/hash-to-path/${hash}`)
-                        .then(response => response.json())
-                        .then(data => {
-                            if (data.url) {
-                                window.open(data.url, '_blank');
-                            }
-                        });
+                // Add click event to open node info
+                const itemContent = card.querySelector('.item-content');
+                itemContent.addEventListener('click', (e) => {
+                    e.stopPropagation(); // Prevent event from bubbling to card
+                    window.open(`/node-info/${hash}`, '_blank');
+                });
+
+// Add click event for the card background to open image
+                card.addEventListener('click', (e) => {
+                    if (e.target === card) { // Only trigger if clicking the background
+                        fetch(`/hash-to-path/${hash}`)
+                            .then(response => response.json())
+                            .then(data => {
+                                if (data.url) {
+                                    window.open(data.url, '_blank');
+                                }
+                            });
+                    }
                 });
 
                 itemGrid.appendChild(card);

@@ -140,75 +140,91 @@ app.get('/spicy', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'spicy.html'));
 });
 
-app.get('/node-info/:hash', (req, res) => {
+app.get('/node-info/:hash', async (req, res) => {
     const hash = req.params.hash;
 
-    // Read the data file
-    fs.readFile(path.join(__dirname, 'data', 'images_captioned_tagged.json'), 'utf8')
-        .then(data => {
-            const jsonData = JSON.parse(data);
-            const nodeData = jsonData[hash];
+    try {
+        // Get image URL via hash-to-path
+        await hashMapper.ensureUpdated();
+        const filePath = hashMapper.getPath(hash);
+        let imageUrl;
 
-            if (!nodeData) {
-                res.status(404).send('Node not found');
-                return;
+        if (filePath) {
+            // Convert filesystem path to web path
+            for (const basePath of IMAGE_PATHS) {
+                if (filePath.startsWith(basePath)) {
+                    imageUrl = '/images' + filePath.substring(basePath.length);
+                    break;
+                }
             }
+        }
 
-            // Generate an HTML page with the node information
-            const html = `
-                <!DOCTYPE html>
-                <html>
-                <head>
-                    <title>Node Information</title>
-                    <style>
-                        body {
-                            font-family: Arial, sans-serif;
-                            max-width: 800px;
-                            margin: 0 auto;
-                            padding: 20px;
-                        }
-                        .image {
-                            max-width: 100%;
-                            height: auto;
-                            margin: 20px 0;
-                        }
-                        .tags {
-                            display: flex;
-                            flex-wrap: wrap;
-                            gap: 8px;
-                            margin: 20px 0;
-                        }
-                        .tag {
-                            background: #f0f0f0;
-                            padding: 4px 8px;
-                            border-radius: 4px;
-                        }
-                    </style>
-                </head>
-                <body>
-                    <h1>Node Information</h1>
+        // Read the data file
+        const data = await fs.readFile(path.join(__dirname, 'data', 'images_captioned_tagged.json'), 'utf8');
+        const jsonData = JSON.parse(data);
+        const nodeData = jsonData[hash];
+
+        if (!nodeData) {
+            res.status(404).send('Node not found');
+            return;
+        }
+
+        // Generate an HTML page with the node information
+        const html = `
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <title>Node Information</title>
+                <style>
+                    body {
+                        font-family: Arial, sans-serif;
+                        max-width: 800px;
+                        margin: 0 auto;
+                        padding: 20px;
+                    }
+                    .image {
+                        max-width: 100%;
+                        height: auto;
+                        margin: 20px 0;
+                    }
+                    .tags {
+                        display: flex;
+                        flex-wrap: wrap;
+                        gap: 8px;
+                        margin: 20px 0;
+                    }
+                    .tag {
+                        background: #f0f0f0;
+                        padding: 4px 8px;
+                        border-radius: 4px;
+                    }
+                </style>
+            </head>
+            <body>
+                <h1>Node Information</h1>
+                ${imageUrl ? `
                     <div class="image">
-                        <img src="/images/${nodeData.filename}" alt="Node image">
+                        <img src="${imageUrl}" alt="Node image">
                     </div>
-                    <h2>Description</h2>
-                    <p>${nodeData.description}</p>
-                    <h2>Spiciness Level</h2>
-                    <p>${nodeData.spicy.toFixed(2)}</p>
-                    <h2>Tags</h2>
-                    <div class="tags">
-                        ${Object.entries(nodeData.tags)
-                .map(([tag, weight]) =>
-                    `<div class="tag">${tag} (${weight.toFixed(2)})</div>`)
-                .join('')}
-                    </div>
-                </body>
-                </html>
-            `;
+                ` : '<p>Image not found</p>'}
+                <h2>Description</h2>
+                <p>${nodeData.description}</p>
+                <h2>Spiciness Level</h2>
+                <p>${nodeData.spicy.toFixed(2)}</p>
+                <h2>Tags</h2>
+                <div class="tags">
+                    ${Object.entries(nodeData.tags)
+            .map(([tag, weight]) =>
+                `<div class="tag">${tag} (${weight.toFixed(2)})</div>`)
+            .join('')}
+                </div>
+            </body>
+            </html>
+        `;
 
-            res.send(html);
-        })
-        .catch(err => {
-            console.error('Error reading node data:', err);
-            res.status(500).send('Internal server error');
-        });
+        res.send(html);
+    } catch (err) {
+        console.error('Error reading node data:', err);
+        res.status(500).send('Internal server error');
+    }
 });

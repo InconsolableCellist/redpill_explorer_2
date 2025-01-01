@@ -150,7 +150,7 @@ body {
   left: 20px; /* Added margin on the left */
   right: 20px; /* Added margin on the right */
   bottom: 20px; /* Added margin at the bottom */
-  background-color: rgba(255, 255, 255, 0.95);
+  background-color: rgba(255, 255, 255, 1);
   padding: 10px; /* Reduced padding */
   overflow-y: scroll; /* Ensure scrollbars are visible */
   display: none; /* Hidden by default */
