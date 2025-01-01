@@ -198,18 +198,21 @@ export class SpicyVisualizer {
         // Update node appearances
         this.nodes.forEach((node, hash) => {
             const itemData = this.nodeData.get(hash);
-            const nodeTags = Object.keys(itemData.tags);
+            const nodeTags = new Set(Object.keys(itemData.tags));
 
-            // Find the first selected tag that this node has
-            const matchingTag = Array.from(this.selectedTags)
-                .find(tag => nodeTags.includes(tag));
+            // Check if node has ALL selected tags (AND operation)
+            const hasAllTags = Array.from(this.selectedTags)
+                .every(tag => nodeTags.has(tag));
 
-            if (matchingTag) {
-                const colorIndex = this.tagToColorIndex.get(matchingTag);
+            if (hasAllTags) {
+                // If node has all tags, use the color of the first tag
+                const firstTag = Array.from(this.selectedTags)[0];
+                const colorIndex = this.tagToColorIndex.get(firstTag);
                 node.material.color.copy(this.TAG_COLORS[colorIndex]);
                 node.material.opacity = 1;
                 node.material.transparent = false;
             } else {
+                // If node doesn't have all tags, make it semi-transparent grey
                 node.material.color.setHex(0x888888);
                 node.material.opacity = 0.2;
                 node.material.transparent = true;

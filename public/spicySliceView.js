@@ -76,9 +76,10 @@ export class SpicySliceView {
             let shouldShow = true;
             if (this.visualizer.selectedTags.size > 0) {
                 const itemData = this.visualizer.nodeData.get(item.hash);
-                const nodeTags = Object.keys(itemData.tags);
+                const nodeTags = new Set(Object.keys(itemData.tags));
+                // Check if node has ALL selected tags (AND operation)
                 shouldShow = Array.from(this.visualizer.selectedTags)
-                    .some(tag => nodeTags.includes(tag));
+                    .every(tag => nodeTags.has(tag));
             }
 
             if (shouldShow) {
