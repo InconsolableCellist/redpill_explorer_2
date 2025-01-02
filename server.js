@@ -228,3 +228,90 @@ app.get('/node-info/:hash', async (req, res) => {
         res.status(500).send('Internal server error');
     }
 });
+
+app.get('/matrix', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'matrix.html'));
+});
+
+// Template endpoint
+app.get('/templates/:type', async (req, res) => {
+    try {
+        const templateType = req.params.type;
+        let templatePath;
+
+        switch(templateType) {
+            case 'concept-map':
+                templatePath = path.join(__dirname, 'templates', 'concept_map_template.txt');
+                break;
+            default:
+                return res.status(404).json({ error: 'Template not found' });
+        }
+
+        const template = await fs.readFile(templatePath, 'utf8');
+        res.json({ template });
+    } catch (error) {
+        console.error('Error reading template:', error);
+        res.status(500).json({ error: 'Failed to load template' });
+    }
+});
+
+app.get('/concept-map', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'concept-map.html'));
+});
+
+app.post('/parse-mermaid', express.text(), (req, res) => {
+    try {
+        const mermaidSyntax = req.body;
+        const nodes = new Map(); // Using Map instead of Set for easier updates
+        const links = [];
+
+        // Parse the Mermaid syntax
+        const lines = mermaidSyntax.split('\n');
+        lines.forEach(line => {
+            // Skip empty lines, comments, or graph definition
+            if (!line.trim() || line.includes('graph LR') || line.startsWith('%')) return;
+
+            // Match more complex node patterns including nested quotes
+            // Look for patterns like: A["text"] --> B["text"] or A --> B or A["text"] --> B
+            const connection = line.trim().match(/([A-Za-z0-9]+)(?:\["([^"]+)"\])?\s*-->\s*([A-Za-z0-9]+)(?:\["([^"]+)"\])?/);
+
+            if (connection) {
+                const [, sourceId, sourceLabel, targetId, targetLabel] = connection;
+
+                // Add or update nodes
+                if (!nodes.has(sourceId)) {
+                    nodes.set(sourceId, {
+                        id: sourceId,
+                        label: sourceLabel || sourceId,
+                        level: parseInt(sourceId.match(/\d+/)?.[0] || '0', 10)
+                    });
+                }
+
+                if (!nodes.has(targetId)) {
+                    nodes.set(targetId, {
+                        id: targetId,
+                        label: targetLabel || targetId,
+                        level: parseInt(targetId.match(/\d+/)?.[0] || '0', 10)
+                    });
+                }
+
+                // Add link
+                links.push({
+                    source: sourceId,
+                    target: targetId
+                });
+            }
+        });
+
+        // Convert Map to array and sort by level for better layout
+        const nodesArray = Array.from(nodes.values()).sort((a, b) => a.level - b.level);
+
+        res.json({
+            nodes: nodesArray,
+            links: links
+        });
+    } catch (error) {
+        console.error('Error parsing Mermaid syntax:', error);
+        res.status(500).json({ error: 'Failed to parse Mermaid syntax' });
+    }
+});

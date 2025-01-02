@@ -284,6 +284,56 @@ function openItemPanel(node, initialTags = []) {
     captionFilterWrapper.className = 'filter-wrapper';
     captionFilterWrapper.appendChild(captionInput);
 
+    // Create explain all button
+    let explainButton = document.createElement('button');
+    explainButton.className = 'explain-all-llm-btn';
+    explainButton.textContent = 'Generate Concept Map';
+    explainButton.addEventListener('click', async () => {
+        try {
+            // Fetch template
+            const response = await fetch('/templates/concept-map');
+            if (!response.ok) throw new Error('Failed to load template');
+            const { template } = await response.json();
+
+            // Get currently filtered items
+            const currentItems = Object.keys(data)
+                .map(id => ({id, ...data[id]}))
+                .filter(item => {
+                    const matchesTags = selectedTags.every(tag =>
+                        item.tags && Object.keys(item.tags).includes(tag)
+                    );
+                    const captionFilterText = captionInput.value.trim().toLowerCase();
+                    const matchesCaption = !captionFilterText ||
+                        item.description.toLowerCase().includes(captionFilterText);
+                    return matchesTags && matchesCaption;
+                });
+
+            // Create inputs string
+            const inputs = currentItems.map((item, index) =>
+                `Input ${index + 1}:\nDescription: ${item.description}\nTags: ${Object.keys(item.tags).join(', ')}`
+            ).join('\n\n');
+
+            // Combine template and inputs
+            const promptTemplate = `${template}\n\nHERE ARE THE INPUTS TO ANALYZE:\n\n${inputs}`;
+
+            await navigator.clipboard.writeText(promptTemplate);
+            const originalText = explainButton.textContent;
+            explainButton.textContent = `Copied ${currentItems.length} items to clipboard!`;
+            setTimeout(() => {
+                explainButton.textContent = originalText;
+            }, 2000);
+        } catch (err) {
+            console.error('Error:', err);
+            explainButton.textContent = 'Error loading template';
+            setTimeout(() => {
+                explainButton.textContent = 'Generate Concept Map';
+            }, 2000);
+        }
+    });
+
+    // Add button to the filter wrapper
+    captionFilterWrapper.appendChild(explainButton);
+
     // Create the recommended tags container
     let recommendedTagsContainer = document.createElement('div');
     recommendedTagsContainer.className = 'recommended-tags-container';
