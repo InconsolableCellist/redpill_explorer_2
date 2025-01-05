@@ -3,309 +3,111 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Concept Map Visualization</title>
+    <title>Markmap Visualization</title>
+    <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+    <script src="https://cdn.jsdelivr.net/npm/markmap-view"></script>
+    <script src="https://cdn.jsdelivr.net/npm/markmap-lib"></script>
     <style>
         body {
+            display: flex;
             margin: 0;
-            overflow: hidden;
+            height: 100vh;
             font-family: Arial, sans-serif;
         }
-        #graph {
-            width: 100vw;
-            height: 100vh;
-            background: #f8f9fa;
-        }
-        .node {
-            cursor: pointer;
-        }
-        .node circle {
-            fill: #69b3a2;
-            stroke: #fff;
-            stroke-width: 2px;
-        }
-        .node text {
-            font-size: 12px;
-            font-family: Arial;
-        }
-        .link {
-            fill: none;
-            stroke: #ccc;
-            stroke-width: 2px;
-        }
-        .tooltip {
-            position: absolute;
-            background: rgba(0, 0, 0, 0.8);
-            color: white;
-            padding: 10px;
-            border-radius: 5px;
-            font-size: 12px;
-            pointer-events: none;
-            max-width: 300px;
-        }
-        #input {
-            position: fixed;
-            top: 20px;
-            left: 20px;
+        #input-panel {
             width: 300px;
-            height: 200px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-right: 1px solid #ddd;
+            box-sizing: border-box;
+        }
+        #markdown-input {
+            width: 100%;
+            height: 300px;
+            margin-bottom: 10px;
             padding: 10px;
-            border-radius: 5px;
-            border: 1px solid #ccc;
+            border: 1px solid #ced4da;
+            border-radius: 4px;
+            font-family: monospace;
         }
-        #visualize {
-            position: fixed;
-            top: 240px;
-            left: 20px;
-            padding: 10px 20px;
-            background: #69b3a2;
-            color: white;
-            border: none;
-            border-radius: 5px;
-            cursor: pointer;
+        #graph {
+            flex-grow: 1;
+            position: relative;
         }
-        #visualize:hover {
-            background: #558b82;
-        }
-        .node-container {
-            fill: #f8f8f8;
-            stroke: #ccc;
-            rx: 5;
-            ry: 5;
-        }
-        .node text {
-            font-size: 12px;
-            font-family: Arial;
-            fill: #333;
-        }
-        .link {
-            fill: none;
-            stroke: #ccc;
-            stroke-width: 1.5px;
-        }
-        .link-path {
-            fill: none;
-            stroke: #ccc;
-            stroke-width: 1.5px;
-        }
-        .node-container {
-            fill: white;
-            stroke: #d3d3d3;
-            rx: 5;
-            ry: 5;
-            filter: drop-shadow(2px 2px 2px rgba(0,0,0,0.1));
-        }
-        .node text {
-            font-size: 12px;
-            font-family: Arial;
-            fill: #333;
-        }
-        .link {
-            fill: none;
-            stroke: #ccc;
-            stroke-width: 1.5px;
-        }
-        .node-container {
-            fill: white;
-            stroke: #d3d3d3;
-            rx: 5;
-            ry: 5;
-            filter: drop-shadow(2px 2px 2px rgba(0,0,0,0.1));
-        }
-        .node text {
-            font-size: 12px;
-            font-family: Arial;
-            fill: #333;
-            dominant-baseline: middle;
+        svg {
+            width: 100%;
+            height: 100%;
         }
     </style>
 </head>
 <body>
-<textarea id="input" placeholder="Paste Mermaid graph syntax here..."></textarea>
-<button id="visualize">Visualize</button>
-<div id="graph"></div>
-<script src="https://d3js.org/d3.v7.min.js"></script>
+<div id="input-panel">
+        <textarea id="markdown-input"># Example
+- Topic 1
+  - Subtopic 1.1
+  - Subtopic 1.2
+- Topic 2
+  - Subtopic 2.1</textarea>
+    <button id="visualize">Visualize</button>
+</div>
+<div id="graph">
+    <svg></svg>
+</div>
+
 <script>
-    const width = window.innerWidth;
-    const height = window.innerHeight;
+    const { markmap } = window;
+    const { Markmap, loadCSS, loadJS } = markmap;
+    const input = document.getElementById('markdown-input');
+    const visualizeBtn = document.getElementById('visualize');
+    const svg = document.querySelector('svg');
 
-    const svg = d3.select('#graph')
-        .append('svg')
-        .attr('width', width)
-        .attr('height', height);
+    visualizeBtn.addEventListener('click', () => {
+        const markdown = input.value;
 
-    const g = svg.append('g');
+        // Transform Markdown into Markmap data
+        /*
+        const transformer = new markmap.Transformer();
+        const { root, features } = transformer.transform(markdown);
+        const assets = transformer.getUsedAssets(features);
 
-    // Add zoom behavior
-    svg.call(d3.zoom()
-        .extent([[0, 0], [width, height]])
-        .scaleExtent([0.1, 4])
-        .on('zoom', ({transform}) => {
-            g.attr('transform', transform);
-        }));
+        // Create or update Markmap
+        const mm = markmap.Markmap.create(svg, {
+            linkShape: 'diagonal', // Ensure links are visible
+            nodeFont: 'Arial',
+            nodeMinHeight: 16,
+            spacingVertical: 20,
+            spacingHorizontal: 120,
+            autoFit: true,
+            paddingX: 20,
+            color: (node) => {
+                const colors = ['#4caf50', '#03a9f4', '#f44336', '#ff9800'];
+                return colors[node.depth % colors.length];
+            },
+            style: (node) => {
+                // Safely check if 'type' exists
+                if (node.data && node.data.type === 'code') {
+                    return { 'font-family': 'monospace' };
+                }
+                return {}; // Default style for nodes without 'type'
+            }
+        });
+         */
 
+        // mm.setData(root);
+        // mm.fit();
 
-    // Update simulation forces
-    let simulation = d3.forceSimulation()
-        .force('link', d3.forceLink().id(d => d.id).distance(300)) // Increased distance
-        .force('charge', d3.forceManyBody().strength(-2000)) // Stronger repulsion
-        .force('x', d3.forceX(d => {
-            return 150 + (d.level * 300); // Increased horizontal spacing
-        }).strength(1))
-        .force('y', d3.forceY(height / 2).strength(0.2))
-        .force('collision', d3.forceCollide().radius(100)); // Increased collision radius
+        const transformer = new Transformer();
+        const { root } = transformer.transform(md);
+        const { styles, scripts } = transformer.getAssets();
+        const { Markmap, loadCSS, loadJS } = markmap;
+        if (styles) loadCSS(styles);
+        if (scripts) loadJS(scripts, { getMarkmap: () => markmap });
 
-
-    function updateGraph(data) {
-        // Clear existing elements
-        g.selectAll('*').remove();
-
-
-        // Create hierarchical layout
-        const hierarchy = d3.stratify()
-            .id(d => d.id)
-            .parentId(d => {
-                const link = data.links.find(l => l.target === d.id);
-                return link ? link.source : null;
-            })(data.nodes);
-
-        const treeLayout = d3.tree()
-            .nodeSize([150, 300])  // Increased spacing to accommodate larger text boxes
-            .separation((a, b) => {
-                return a.parent === b.parent ? 1.5 : 2.5;
-            });
-        // Apply layout
-        const root = treeLayout(hierarchy);
-
-        // Create links with right angles
-        const links = g.selectAll('.link')
-            .data(root.links())
-            .enter()
-            .append('path')
-            .attr('class', 'link')
-            .attr('d', d => {
-                return `M${d.source.y},${d.source.x}
-                    L${d.source.y + (d.target.y - d.source.y)/2},${d.source.x}
-                    L${d.source.y + (d.target.y - d.source.y)/2},${d.target.x}
-                    L${d.target.y},${d.target.x}`;
-            });
-
-        // Create nodes
-        const nodes = g.selectAll('.node')
-            .data(root.descendants())
-            .enter()
-            .append('g')
-            .attr('class', 'node')
-            .attr('transform', d => `translate(${d.y},${d.x})`);
-
-        // Add background rectangles
-        nodes.append('rect')
-            .attr('class', 'node-container')
-            .attr('x', -90)
-            .attr('y', -25)
-            .attr('width', 180)
-            .attr('height', 50);
-
-        nodes.append('text')
-            .attr('text-anchor', 'middle')
-            .attr('dy', '.35em')
-            .each(function(d) {
-                const text = d3.select(this);
-                const words = d.data.label.split(/\s+/);
-                let lineHeight = 1.2;  // Increased for better readability
-                let line = [];
-                let lineNumber = 0;
-                const maxWidth = 160;  // Slightly reduced to ensure text fits
-
-                // Start first line
-                text.append('tspan')
-                    .attr('x', 0)
-                    .attr('dy', `-${(words.length * lineHeight / 2)}em`);
-
-                words.forEach((word, i) => {
-                    line.push(word);
-                    const tspan = text.select('tspan');
-                    tspan.text(line.join(' '));
-
-                    if (tspan.node().getComputedTextLength() > maxWidth) {
-                        line.pop();
-                        if (line.length) {
-                            // Complete current line
-                            tspan.text(line.join(' '));
-                            line = [word];
-                        } else {
-                            // Word is too long, keep it and wrap
-                            line = [word];
-                        }
-                        // Start new line
-                        text.append('tspan')
-                            .attr('x', 0)
-                            .attr('dy', `${lineHeight}em`)
-                            .text(word);
-                        lineNumber++;
-                    }
-                });
-
-                // Adjust rectangle size based on text content
-                const bbox = text.node().getBBox();
-                const padding = 20;
-                d3.select(this.parentNode)
-                    .select('rect')
-                    .attr('x', bbox.x - padding)
-                    .attr('y', bbox.y - padding/2)
-                    .attr('width', bbox.width + padding * 2)
-                    .attr('height', bbox.height + padding);
-            });
-
-        // Center the graph
-        const bounds = g.node().getBBox();
-        const centerX = (width - bounds.width) / 2 - bounds.x;
-        const centerY = (height - bounds.height) / 2 - bounds.y;
-        g.attr('transform', `translate(${centerX},${centerY})`);
-    }
-
-    // Add zoom behavior
-    svg.call(d3.zoom()
-        .extent([[0, 0], [width, height]])
-        .scaleExtent([0.1, 2])
-        .on('zoom', ({transform}) => {
-            g.attr('transform', transform);
-        }));
-
-    function dragstarted(event, d) {
-        if (!event.active) simulation.alphaTarget(0.3).restart();
-        d.fx = d.x;
-        d.fy = d.y;
-    }
-
-    function dragged(event, d) {
-        d.fx = event.x;
-        d.fy = event.y;
-    }
-
-    function dragended(event, d) {
-        if (!event.active) simulation.alphaTarget(0);
-        d.fx = null;
-        d.fy = null;
-    }
-
-    // Handle visualization button click
-    document.getElementById('visualize').addEventListener('click', async () => {
-        const mermaidSyntax = document.getElementById('input').value;
-        try {
-            const response = await fetch('/parse-mermaid', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'text/plain'
-                },
-                body: mermaidSyntax
-            });
-            const data = await response.json();
-            updateGraph(data);
-        } catch (error) {
-            console.error('Error:', error);
-            alert('Failed to parse graph syntax');
-        }
+        Markmap.create("#mindmap", undefined, root);
+        Markmap.create('#markmap', null, root);
     });
 </script>
+
+
 </body>
 </html>
