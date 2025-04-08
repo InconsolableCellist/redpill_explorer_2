@@ -2,7 +2,7 @@
 
 ## AI-Driven Content Archival & Organization System
 
-![Demo Video](images/demo1.mp4)
+[Demo Video](images/demo1.mp4)
 
 ## 🌟 Overview
 
