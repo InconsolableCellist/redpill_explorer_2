@@ -17,6 +17,7 @@ RedPill Explorer is a comprehensive tool for archiving, analyzing, and exploring
 - 🕸️ **Dynamic Node Graph**: Interactive 2D visualization of content relationships
 - 🔍 **Realtime Search**: Find content by typing words that appear in descriptions
 - 🧩 **3D Spicyness Visualization**: Browse content based on sensitivity level in a 3D interface
+- 🖼️ **Thumbnail Generation**: Generate thumbnails for images, shards onto filesystem 
 
 ## 🚀 How It Works
 
