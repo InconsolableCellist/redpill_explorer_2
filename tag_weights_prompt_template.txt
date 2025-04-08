@@ -79,7 +79,6 @@ Here are the tag pairs:
 {"tag1":"White Supremacy","tag2":"New York Post"}
 {"tag1":"Opinion Piece","tag2":"Blacks"}
 {"tag1":"Taxation","tag2":"Colorful"}
-{"tag1":"Jews","tag2":"Antifa"}
 {"tag1":"Cancel Culture","tag2":"Chaos"}
 {"tag1":"Antifa","tag2":"CCTV Footage"}
 {"tag1":"History","tag2":"Movie"}
@@ -193,7 +192,6 @@ Only reply with valid JSON.
   {"tag1": "White Supremacy", "tag2": "New York Post", "weight": 0.7},
   {"tag1": "Opinion Piece", "tag2": "Blacks", "weight": 0.6},
   {"tag1": "Taxation", "tag2": "Colorful", "weight": 0.2},
-  {"tag1": "Jews", "tag2": "Antifa", "weight": 0.75},
   {"tag1": "Cancel Culture", "tag2": "Chaos", "weight": 0.6},
   {"tag1": "Antifa", "tag2": "CCTV Footage", "weight": 0.5},
   {"tag1": "History", "tag2": "Movie", "weight": 0.7},
