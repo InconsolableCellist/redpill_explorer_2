@@ -5,7 +5,7 @@ const HashMapper = require('./hashMapper');
 const fs = require('fs').promises;
 
 const app = express();
-const port = 3000;
+const port = 4001;
 
 // Define base paths for images
 const IMAGE_PATHS = [
