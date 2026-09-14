@@ -15,15 +15,20 @@ def test_extract_images_pipeline(tmp_path, monkeypatch):
     Image.new("RGB", (800, 600), "white").save(root / "good.png")
     Image.new("RGB", (300, 200), "black").save(root / "small.png")
     Image.new("RGB", (900, 900), "gray").save(root / "fails.png")
+    Image.new("RGB", (600, 3000), "red").save(root / "tall.png")
 
     conn = db.connect(":memory:")
     db.init_schema(conn)
     cfg = SimpleNamespace(corpus_root=root, base_url="http://vlm.test/v1", vision_model="gemma-test",
-                          vision_max_tokens=100, vision_max_side=1024, vision_concurrency=2)
+                          vision_max_tokens=100, vision_max_side=1024, vision_concurrency=2,
+                          vision_max_tiles=6, vision_max_tokens_tall=300)
     scan.scan(conn, cfg)
+
+    requests = []
 
     def handler(request):
         body = json.loads(request.content)
+        requests.append(body)
         user_text = body["messages"][1]["content"][0]["text"]
         if b"data:image/jpeg;base64,RkFJTA==" in request.content:  # b"FAIL"
             return httpx.Response(400, text="rejected")
@@ -34,22 +39,27 @@ def test_extract_images_pipeline(tmp_path, monkeypatch):
         return httpx.Response(200, json={"choices": [{"message": {"content": json.dumps(result)}}],
                                          "usage": {"completion_tokens": 10}})
 
-    real_prepare = extract_images.vlm.prepare_image
-    monkeypatch.setattr(extract_images.vlm, "prepare_image",
-                        lambda path, side: b"FAIL" if path.name == "fails.png" else real_prepare(path, side))
+    real_prepare = extract_images.vlm.prepare_images
+    monkeypatch.setattr(extract_images.vlm, "prepare_images",
+                        lambda path, side, tiles: [b"FAIL"] if path.name == "fails.png" else real_prepare(path, side, tiles))
     stats = extract_images.run(conn, cfg, client_factory=lambda: httpx.Client(
         transport=httpx.MockTransport(handler)))
 
-    assert (stats.done, stats.failed) == (2, 1)
+    assert (stats.done, stats.failed, stats.tiled) == (3, 1, 1)
+    # The tall image goes last, as several tiles, with the larger output budget.
+    last = requests[-1]
+    assert last["max_tokens"] == 300
+    assert sum(p["type"] == "image_url" for p in last["messages"][1]["content"]) > 1
+    assert all(r["max_tokens"] == 100 for r in requests[:-1])
     rows = conn.execute(
         "SELECT m.width, d.text, mm.low_res FROM doc d JOIN media m ON m.id=d.media_id "
         "JOIN media_meta mm ON mm.media_id=m.id WHERE d.kind='caption' ORDER BY m.width").fetchall()
-    assert [(r[0], r[1].split("\n")[0], r[2]) for r in rows] == [(300, "low", 1), (800, "full", 0)]
-    assert conn.execute("SELECT count(*) FROM doc WHERE kind='ocr'").fetchone()[0] == 2
+    assert [(r[0], r[1].split("\n")[0], r[2]) for r in rows] == [(300, "low", 1), (600, "full", 0), (800, "full", 0)]
+    assert conn.execute("SELECT count(*) FROM doc WHERE kind='ocr'").fetchone()[0] == 3
     assert [r[0] for r in conn.execute("SELECT name FROM tag")] == ["joe biden"]
-    assert conn.execute("SELECT count(*) FROM media_entity").fetchone()[0] == 2
+    assert conn.execute("SELECT count(*) FROM media_entity").fetchone()[0] == 3
     assert conn.execute("SELECT stage FROM failure").fetchone()[0] == "vlm_image"
     assert conn.execute(
-        "SELECT count(*) FROM doc_fts WHERE doc_fts MATCH 'hello'").fetchone()[0] == 2
+        "SELECT count(*) FROM doc_fts WHERE doc_fts MATCH 'hello'").fetchone()[0] == 3
     # Re-run selects only the failed item.
     assert len(extract_images.select_jobs(conn, cfg, None, True)) == 1

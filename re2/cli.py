@@ -148,7 +148,15 @@ def main(argv: list[str] | None = None) -> int:
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
         stream=sys.stderr,
     )
+    logging.getLogger("httpx").setLevel(logging.WARNING)
     cfg = config.load(args.config)
+    if args.command != "status":
+        log_dir = cfg.data_dir / "logs"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        handler = logging.FileHandler(log_dir / f"{args.command}.log")
+        handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
+        logging.getLogger().addHandler(handler)
+        logging.getLogger(__name__).info("start: re2 %s", " ".join(sys.argv[1:]))
     return args.func(cfg, args)
 
 

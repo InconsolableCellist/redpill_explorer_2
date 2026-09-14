@@ -9,6 +9,8 @@ import copy
 import io
 import json
 import logging
+import math
+import re
 import sys
 import time
 from pathlib import Path
@@ -105,48 +107,106 @@ KEYFRAME_SYSTEM_PROMPT = "\n".join(
 )
 
 
+THOUGHT_PREFIX = re.compile(r"^\s*<\|channel>thought.*?<channel\|>", re.DOTALL)
+
+
 class VLMError(Exception):
     pass
 
 
-def prepare_image(source: Path | str | bytes, max_side: int = 1024) -> bytes:
-    """RGB JPEG (quality 90) with the longer side at most max_side; never upscales."""
+def _open_rgb(source: Path | str | bytes) -> Image.Image:
     src = io.BytesIO(source) if isinstance(source, bytes) else source
     with Image.open(src) as im:
-        im.seek(0)
+        im.seek(0)  # first frame of animations
         im = ImageOps.exif_transpose(im)
         if im.mode in ("RGBA", "LA", "P"):
             im = im.convert("RGBA")
             bg = Image.new("RGB", im.size, (255, 255, 255))
             bg.paste(im, mask=im.getchannel("A"))
-            im = bg
-        else:
-            im = im.convert("RGB")
-        longer = max(im.size)
-        if longer > max_side:
-            scale = max_side / longer
-            im = im.resize((max(1, round(im.width * scale)), max(1, round(im.height * scale))), Image.LANCZOS)
-        out = io.BytesIO()
-        im.save(out, "JPEG", quality=90)
-        return out.getvalue()
+            return bg
+        return im.convert("RGB")
 
 
-def extract(client: httpx.Client, cfg, image_bytes: bytes, schema: dict, system_prompt: str,
+def _jpeg(im: Image.Image) -> bytes:
+    out = io.BytesIO()
+    im.save(out, "JPEG", quality=90)
+    return out.getvalue()
+
+
+def prepare_image(source: Path | str | bytes, max_side: int = 1024) -> bytes:
+    """RGB JPEG (quality 90) with the longer side at most max_side; never upscales."""
+    im = _open_rgb(source)
+    longer = max(im.size)
+    if longer > max_side:
+        scale = max_side / longer
+        im = im.resize((max(1, round(im.width * scale)), max(1, round(im.height * scale))), Image.LANCZOS)
+    return _jpeg(im)
+
+
+# Tall screenshots (long threads, articles) become unreadable when the whole
+# image is shrunk to max_side, so they are cut into overlapping slices instead.
+TALL_RATIO = 2.5          # height / width above which an image is sliced
+TILE_WIDTH = 768          # slice width in pixels (never upscaled)
+TILE_ASPECT = 1.25        # nominal slice height / width
+TILE_OVERLAP = 0.10       # fraction of a slice shared with its neighbour
+
+
+def is_tall(width: int | None, height: int | None) -> bool:
+    return bool(width and height and height > width * TALL_RATIO)
+
+
+def tile_boxes(width: int, height: int, max_tiles: int) -> list[tuple[int, int, int, int]]:
+    """Crop boxes (left, top, right, bottom) of overlapping slices covering a tall image."""
+    nominal_h = width * TILE_ASPECT
+    step = nominal_h * (1 - TILE_OVERLAP)
+    n = max(2, min(max_tiles, math.ceil((height - nominal_h * TILE_OVERLAP) / step)))
+    # Solve for slice height so n slices with the overlap fraction exactly cover the image.
+    tile_h = math.ceil(height / (n - (n - 1) * TILE_OVERLAP))
+    stride = (height - tile_h) / (n - 1)
+    return [(0, round(i * stride), width, min(height, round(i * stride) + tile_h)) for i in range(n)]
+
+
+def prepare_images(source: Path | str | bytes, max_side: int = 1024, max_tiles: int = 6) -> list[bytes]:
+    """One JPEG for normal images; top-to-bottom overlapping slices for very tall ones."""
+    im = _open_rgb(source)
+    if not is_tall(im.width, im.height) or max_tiles < 2:
+        return [prepare_image(_jpeg(im), max_side)]
+    if im.width > TILE_WIDTH:
+        im = im.resize((TILE_WIDTH, max(1, round(im.height * TILE_WIDTH / im.width))), Image.LANCZOS)
+    return [_jpeg(im.crop(box)) for box in tile_boxes(im.width, im.height, max_tiles)]
+
+
+def tiles_note(n: int) -> str:
+    if n < 2:
+        return ""
+    return (f" This is one tall image cut into {n} overlapping horizontal slices, given top to bottom."
+            " Catalogue it as a single image and do not repeat text that appears twice in the overlaps.")
+
+
+def extract(client: httpx.Client, cfg, images: bytes | list[bytes], schema: dict, system_prompt: str,
             user_text: str, max_tokens: int | None = None) -> dict:
-    """One structured extraction. Returns the parsed dict plus '_usage' and '_elapsed_s'."""
+    """One structured extraction over one image or its ordered slices.
+
+    Returns the parsed dict plus '_usage' and '_elapsed_s'.
+    """
+    if isinstance(images, bytes):
+        images = [images]
     payload = {
         "model": cfg.vision_model,
         "messages": [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": [
                 {"type": "text", "text": user_text},
-                {"type": "image_url", "image_url": {
-                    "url": "data:image/jpeg;base64," + base64.b64encode(image_bytes).decode("ascii")}},
+                *({"type": "image_url", "image_url": {
+                    "url": "data:image/jpeg;base64," + base64.b64encode(b).decode("ascii")}} for b in images),
             ]},
         ],
         "response_format": {"type": "json_schema", "json_schema": {"name": "catalog", "schema": schema}},
         "temperature": 0.2,
         "max_tokens": max_tokens or cfg.vision_max_tokens,
+        # Gemma 4 thinks by default and the reasoning eats max_tokens before any JSON appears.
+        "chat_template_kwargs": {"enable_thinking": False},
+        "reasoning_budget": 0,
     }
     url = f"{cfg.base_url}/chat/completions"
     started = time.monotonic()
@@ -172,11 +232,12 @@ def extract(client: httpx.Client, cfg, image_bytes: bytes, schema: dict, system_
     body = resp.json()
     try:
         choice = body["choices"][0]
-        content = choice["message"]["content"]
+        content = THOUGHT_PREFIX.sub("", choice["message"]["content"] or "")
         data = json.loads(content)
     except (KeyError, IndexError, TypeError, json.JSONDecodeError) as exc:
         finish = body.get("choices", [{}])[0].get("finish_reason") if isinstance(body, dict) else None
-        raise VLMError(f"unparseable response (finish_reason={finish}): {exc}") from exc
+        raise VLMError(f"unparseable response (finish_reason={finish}, "
+                       f"max_tokens={payload['max_tokens']}): {exc}") from exc
     if not isinstance(data, dict):
         raise VLMError(f"response is not an object: {type(data).__name__}")
     missing = [k for k in schema["required"] if k not in data]
@@ -195,9 +256,10 @@ def main(argv: list[str]) -> int:
         print("usage: python -m re2.vlm <image>", file=sys.stderr)
         return 2
     cfg = config.load()
-    image = prepare_image(Path(argv[0]), cfg.vision_max_side)
+    images = prepare_images(Path(argv[0]), cfg.vision_max_side, cfg.vision_max_tiles)
     with httpx.Client() as client:
-        result = extract(client, cfg, image, IMAGE_SCHEMA, IMAGE_SYSTEM_PROMPT, "Catalogue this image.")
+        result = extract(client, cfg, images, IMAGE_SCHEMA, IMAGE_SYSTEM_PROMPT,
+                         "Catalogue this image." + tiles_note(len(images)))
     print(json.dumps(result, indent=2, ensure_ascii=False))
     return 0
 

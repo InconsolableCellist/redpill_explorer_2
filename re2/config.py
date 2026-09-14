@@ -22,7 +22,9 @@ class Config:
     chat_model: str
     vision_concurrency: int
     vision_max_tokens: int
+    vision_max_tokens_tall: int
     vision_max_side: int
+    vision_max_tiles: int
 
     embed_url: str
     embed_model: str
@@ -63,7 +65,9 @@ def load(path: Path | str | None = None) -> Config:
         chat_model=llm["chat_model"],
         vision_concurrency=int(llm["vision_concurrency"]),
         vision_max_tokens=int(llm["vision_max_tokens"]),
+        vision_max_tokens_tall=int(llm["vision_max_tokens_tall"]),
         vision_max_side=int(llm["vision_max_side"]),
+        vision_max_tiles=int(llm["vision_max_tiles"]),
         embed_url=emb["url"],
         embed_model=emb["model"],
         embed_dims=int(emb["dims"]),
