@@ -18,6 +18,12 @@ def _table(title: str, rows, headers: tuple[str, ...]) -> None:
         print("  " + "  ".join(v.ljust(w) for v, w in zip(r, widths)))
 
 
+def _index_size() -> int:
+    from re2 import embed
+
+    return len(embed.get_index(config.load(), "docs"))
+
+
 def status_counts(conn) -> dict:
     """Progress counts shared by `re2 status` and /api/status."""
     one = lambda sql: conn.execute(sql).fetchone()[0]  # noqa: E731
@@ -38,7 +44,7 @@ def status_counts(conn) -> dict:
         "source_media": one("SELECT COUNT(DISTINCT media_id) FROM source"),
         "legacy_captions": one("SELECT COUNT(*) FROM media WHERE legacy_caption IS NOT NULL"),
         "thumbnails": one("SELECT COUNT(*) FROM media WHERE thumb_path IS NOT NULL"),
-        "embedding_index": 0,
+        "embedding_index": _index_size(),
         "last_scan_at": db.kv_get(conn, "last_scan_at"),
     }
 
@@ -112,6 +118,14 @@ def cmd_extract_images(cfg: config.Config, args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_embed(cfg: config.Config, args: argparse.Namespace) -> int:
+    from re2 import embed
+
+    stats = embed.build_docs(db.open_db(cfg), cfg, limit=args.limit, rebuild=args.rebuild)
+    print(f"embed: {stats.summary()}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="re2")
     parser.add_argument("--config", help="path to config.toml")
@@ -138,6 +152,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--limit", type=int, help="process at most N images")
     p.add_argument("--no-thumbnail-only", action="store_true", help="skip items that only have a thumbnail")
     p.set_defaults(func=cmd_extract_images)
+
+    p = sub.add_parser("embed", help="add new docs to the dense embedding index")
+    p.add_argument("--limit", type=int, help="embed at most N docs")
+    p.add_argument("--rebuild", action="store_true", help="drop the index and embed everything again")
+    p.set_defaults(func=cmd_embed)
     return parser
 
 
