@@ -137,6 +137,14 @@ def cmd_serve(cfg: config.Config, args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_dates(cfg: config.Config, args: argparse.Namespace) -> int:
+    from re2 import dates
+
+    counts = dates.run(db.open_db(cfg))
+    print("dates: " + " ".join(f"{k}={v}" for k, v in sorted(counts.items())))
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="re2")
     parser.add_argument("--config", help="path to config.toml")
@@ -168,6 +176,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--limit", type=int, help="embed at most N docs")
     p.add_argument("--rebuild", action="store_true", help="drop the index and embed everything again")
     p.set_defaults(func=cmd_embed)
+
+    sub.add_parser("dates", help="recompute item dates from sources, filenames, text and mtimes") \
+        .set_defaults(func=cmd_dates)
 
     p = sub.add_parser("serve", help="run the dashboard and API server")
     p.add_argument("--host", help="bind address (default from config.toml)")

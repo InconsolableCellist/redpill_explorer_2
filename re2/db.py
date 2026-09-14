@@ -135,8 +135,18 @@ def connect(path: Path | str) -> sqlite3.Connection:
     return conn
 
 
+# Columns added after a table was first created: (table, column, type).
+ADDED_COLUMNS = [
+    ("media_meta", "item_date", "TEXT"),      # dates.py: YYYY-MM-DD or YYYY-MM
+    ("media_meta", "date_source", "TEXT"),    # source | filename | content | mtime | none
+]
+
+
 def init_schema(conn: sqlite3.Connection) -> None:
     conn.executescript(SCHEMA)
+    for table, column, sql_type in ADDED_COLUMNS:
+        if column not in {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {sql_type}")
     conn.commit()
 
 
