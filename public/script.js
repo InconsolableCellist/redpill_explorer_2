@@ -851,27 +851,10 @@ function fetchAndDisplayItems(selectedNodes) {
   if (selectedTags.length > 0) {
     const tagsText = selectedTags.join(',');
 
-    // Make HTTP POST request to server
-    const url = 'http://bestiary:8000/search?k=5&store_in_db=false';
-    const formData = new FormData();
-    formData.append('file', '');
-    formData.append('image_path', 'string');
-    formData.append('image_hash', 'string');
-    formData.append('text', tagsText);
-
-    fetch(url, {
-      method: 'POST',
-      body: formData
-    })
-    .then(response => response.json())
-    .then(data => {
-      // 'data' contains the response from the server
-      // Display items in the new view
-      displayItems(data.results);
-    })
-    .catch(error => {
-      console.error('Error fetching items:', error);
-    });
+    // The tag search used to POST to a CogVLM2/FAISS server on the host "bestiary",
+    // which no longer exists. Search now lives in the RE2 dashboard.
+    console.info('Tag search moved to the RE2 dashboard:', tagsText);
+    clearItemView();
   } else {
     // No tags selected, clear the item view
     clearItemView();

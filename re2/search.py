@@ -301,6 +301,9 @@ def cards(conn: sqlite3.Connection, media_ids: list[int]) -> dict[int, dict]:
                {"(SELECT date_source FROM media_meta x WHERE x.media_id=m.id)" if has_item_date else "NULL"} AS date_source,
                (SELECT json_extract(d.json, '$.description') FROM doc d
                  WHERE d.media_id=m.id AND d.kind='caption') AS description,
+               (SELECT d.text FROM doc d WHERE d.media_id=m.id AND d.kind != 'caption'
+                 ORDER BY CASE d.kind WHEN 'legacy_caption' THEN 0 WHEN 'keyframe' THEN 1 WHEN 'pdf_page' THEN 2
+                          WHEN 'transcript' THEN 3 ELSE 4 END, d.seq LIMIT 1) AS other_text,
                (SELECT p.rel_path FROM media_path p WHERE p.media_id=m.id ORDER BY p.readable DESC, p.id LIMIT 1) AS rel_path,
                (SELECT s.url FROM source s WHERE s.media_id=m.id ORDER BY s.id LIMIT 1) AS source_url
         FROM media m LEFT JOIN media_meta mm ON mm.media_id=m.id
@@ -310,7 +313,7 @@ def cards(conn: sqlite3.Connection, media_ids: list[int]) -> dict[int, dict]:
         rel_path = r["rel_path"] or ""
         folder = os.path.dirname(rel_path) or "."
         title = (r["digest_title"] or title_from_text(r["description"]) or title_from_text(r["legacy_caption"])
-                 or os.path.basename(rel_path) or f"#{r['id']}")
+                 or title_from_text(r["other_text"]) or os.path.basename(rel_path) or f"#{r['id']}")
         out[r["id"]] = {
             "media_id": r["id"],
             "kind": r["kind"],

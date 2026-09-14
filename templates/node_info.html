@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ item.title }}</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; line-height: 1.45; }
+  img { max-width: 100%; height: auto; margin: 20px 0; }
+  .tags { display: flex; flex-wrap: wrap; gap: 8px; margin: 20px 0; }
+  .tag { background: #f0f0f0; padding: 4px 8px; border-radius: 4px; }
+  .meta { color: #666; font-family: ui-monospace, monospace; font-size: 12px; }
+</style>
+</head>
+<body>
+  <h1>{{ item.title }}</h1>
+  <p class="meta">{{ item.kind }} · {{ item.status }}{% if item.date %} · {{ item.date }}{% endif %} · {{ item.folder }}</p>
+  {% if item.media_url and item.kind == 'image' %}
+    <img src="{{ item.media_url }}" alt="">
+  {% elif item.thumb_url %}
+    <img src="{{ item.thumb_url }}" alt="">
+  {% else %}
+    <p>Image not available</p>
+  {% endif %}
+  <h2>Description</h2>
+  <p>{{ description }}</p>
+  <h2>Sensitivity</h2>
+  <p>{{ '%.2f' % sensitivity if sensitivity is not none else 'n/a' }}</p>
+  <h2>Tags</h2>
+  <div class="tags">
+    {% for tag in item.tags %}<div class="tag">{{ tag.name }}{% if tag.origin == 'legacy' %} ({{ '%.2f' % tag.weight }}){% endif %}</div>{% endfor %}
+  </div>
+  <h2>Paths</h2>
+  <ul>{% for p in item.paths %}<li class="meta">{{ p.rel_path }}</li>{% endfor %}</ul>
+</body>
+</html>

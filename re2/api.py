@@ -1,0 +1,313 @@
+"""FastAPI server: streaming search, item detail, confined media files, legacy pages."""
+from __future__ import annotations
+
+import json
+import logging
+import os
+import sqlite3
+import time
+from contextlib import closing
+from pathlib import Path
+
+import httpx
+from fastapi import FastAPI, HTTPException, Query
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
+from jinja2 import Environment, FileSystemLoader, select_autoescape
+
+from re2 import config, db, embed, search
+from re2.config import REPO_ROOT
+
+log = logging.getLogger(__name__)
+
+HITS_PER_PAGE = 40
+DASHBOARD = REPO_ROOT / "dashboard" / "index.html"
+PUBLIC = REPO_ROOT / "public"
+TEMPLATES = REPO_ROOT / "templates"
+
+
+def open_ro(cfg) -> sqlite3.Connection:
+    conn = sqlite3.connect(f"file:{cfg.db_path}?mode=ro", uri=True, timeout=10, check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def confined_path(cfg, rel_path: str) -> Path | None:
+    """Absolute path under the corpus root, or None if it resolves anywhere else."""
+    root = os.path.realpath(cfg.corpus_root)
+    real = os.path.realpath(os.path.join(root, rel_path))
+    if not real.startswith(root + os.sep) or not os.path.isfile(real):
+        return None
+    return Path(real)
+
+
+def _line(obj) -> bytes:
+    return (search.dumps(obj) + "\n").encode("utf-8")
+
+
+def create_app(cfg: config.Config | None = None) -> FastAPI:
+    cfg = cfg or config.load()
+    app = FastAPI(title="Redpill Explorer 2", docs_url="/api/docs", openapi_url="/api/openapi.json")
+    embed_client = httpx.Client()
+    jinja = Environment(loader=FileSystemLoader(TEMPLATES), autoescape=select_autoescape(["html"]))
+
+    def parse_scopes(conn: sqlite3.Connection, scopes: list[str]) -> tuple[set[int] | None, list[dict]]:
+        try:
+            allowed = search.scope_media_ids(conn, scopes)
+            labels = [{"s": s, "label": search.scope_label(conn, s)} for s in scopes]
+        except (search.ScopeError, ValueError) as exc:
+            raise HTTPException(400, str(exc)) from exc
+        return allowed, labels
+
+    # ── Search ────────────────────────────────────────────────────────────
+
+    @app.get("/api/stream")
+    def stream(q: str = "", s: list[str] = Query(default=[])):
+        conn = open_ro(cfg)
+        try:
+            allowed, labels = parse_scopes(conn, s)
+        except HTTPException:
+            conn.close()
+            raise
+
+        def generate():
+            timings: dict[str, int] = {}
+            started = time.perf_counter()
+
+            def lap(name: str, since: float) -> float:
+                now = time.perf_counter()
+                timings[name] = round((now - since) * 1000)
+                return now
+
+            try:
+                yield _line({"t": "scope", "scopes": labels,
+                             "n_in_scope": None if allowed is None else len(allowed)})
+                query = q.strip()
+                if not query:
+                    order = search.items_in_scope(conn, allowed, limit=search.LENS_MEDIA)
+                    card_map = search.cards(conn, order[:HITS_PER_PAGE])
+                    yield _line({"t": "items", "hits": [card_map[m] for m in order[:HITS_PER_PAGE] if m in card_map],
+                                 "more": len(order) > HITS_PER_PAGE})
+                    yield _line({"t": "lenses", "data": search.lenses(conn, order)})
+                    if allowed is not None:
+                        yield _line({"t": "correlations", "data": search.correlations(conn, order)})
+                    lap("total", started)
+                    yield _line({"t": "done", "ms": timings})
+                    return
+
+                t = time.perf_counter()
+                lex = search.lexical(conn, query, allowed=allowed)
+                hits, order = search.group_by_media(conn, lex, query, limit=HITS_PER_PAGE)
+                t = lap("lexical", t)
+                yield _line({"t": "lexical", "hits": search.hit_dicts(conn, hits),
+                             "more": len(order) > HITS_PER_PAGE})
+                yield _line({"t": "lenses", "data": search.lenses(conn, order)})
+                yield _line({"t": "pages", "hits": []})
+
+                try:
+                    t = time.perf_counter()
+                    dn = search.dense(conn, embed_client, cfg, query, allowed=allowed)
+                    t = lap("dense", t)
+                except (embed.EmbedError, httpx.HTTPError, OSError) as exc:
+                    log.warning("dense search unavailable: %s", exc)
+                    yield _line({"t": "warn", "msg": "dense search unavailable"})
+                    dn = None
+                if dn is not None:
+                    fused = search.fuse([lex, dn])
+                    hits, order = search.group_by_media(conn, fused, query, limit=HITS_PER_PAGE)
+                    yield _line({"t": "fused", "hits": search.hit_dicts(conn, hits),
+                                 "more": len(order) > HITS_PER_PAGE})
+                    yield _line({"t": "lenses", "data": search.lenses(conn, order)})
+                t = time.perf_counter()
+                yield _line({"t": "correlations", "data": search.correlations(conn, order)})
+                lap("correlations", t)
+                lap("total", started)
+                yield _line({"t": "done", "ms": timings})
+            finally:
+                conn.close()
+
+        return StreamingResponse(generate(), media_type="application/x-ndjson",
+                                 headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"})
+
+    @app.get("/api/items")
+    def items(q: str = "", s: list[str] = Query(default=[]), offset: int = 0, limit: int = HITS_PER_PAGE):
+        limit = max(1, min(limit, 200))
+        with closing(open_ro(cfg)) as conn:
+            allowed, _ = parse_scopes(conn, s)
+            query = q.strip()
+            if not query:
+                order = search.items_in_scope(conn, allowed, limit=limit + 1, offset=offset)
+                card_map = search.cards(conn, order[:limit])
+                return {"hits": [card_map[m] for m in order[:limit] if m in card_map], "more": len(order) > limit}
+            ranked = [search.lexical(conn, query, k=1000, allowed=allowed)]
+            try:
+                ranked.append(search.dense(conn, embed_client, cfg, query, k=1000, allowed=allowed))
+            except (embed.EmbedError, httpx.HTTPError, OSError):
+                pass
+            hits, order = search.group_by_media(conn, search.fuse(ranked), query, limit=limit, offset=offset)
+            return {"hits": search.hit_dicts(conn, hits), "more": len(order) > offset + limit}
+
+    # ── Items ─────────────────────────────────────────────────────────────
+
+    @app.get("/api/item/{media_id}")
+    def item(media_id: int):
+        with closing(open_ro(cfg)) as conn:
+            card = search.cards(conn, [media_id]).get(media_id)
+            if card is None or card["status"] in ("EXCLUDED", "UNSUPPORTED"):
+                raise HTTPException(404, "not found")
+            paths = [dict(r) for r in conn.execute(
+                "SELECT rel_path, readable, size FROM media_path WHERE media_id=? ORDER BY id", (media_id,))]
+            sources = [dict(r) for r in conn.execute(
+                "SELECT url, date, folder, restricted, role FROM source WHERE media_id=? ORDER BY date", (media_id,))]
+            meta = conn.execute("SELECT * FROM media_meta WHERE media_id=?", (media_id,)).fetchone()
+            tags = [dict(r) for r in conn.execute(
+                """SELECT t.id, t.name, mt.origin, mt.weight FROM media_tag mt JOIN tag t ON t.id=mt.tag_id
+                   WHERE mt.media_id=? ORDER BY mt.origin DESC, mt.weight DESC, t.name""", (media_id,))]
+            entities = [dict(r) for r in conn.execute(
+                """SELECT e.id, e.name, e.type FROM media_entity me JOIN entity e ON e.id=me.entity_id
+                   WHERE me.media_id=? ORDER BY e.type, e.name""", (media_id,))]
+            docs: dict[str, list] = {}
+            for r in conn.execute(
+                    """SELECT id, kind, seq, start_s, end_s, page, text, json, model FROM doc
+                       WHERE media_id=? ORDER BY kind, seq""", (media_id,)):
+                d = dict(r)
+                d["json"] = json.loads(d["json"]) if d["json"] else None
+                docs.setdefault(d["kind"], []).append(d)
+            keyframes = [dict(r) for r in conn.execute(
+                "SELECT seq, t_s FROM keyframe WHERE media_id=? ORDER BY seq", (media_id,))]
+            for k in keyframes:
+                k["url"] = f"/media/{media_id}/keyframe/{k['seq']}"
+            try:
+                similar_ids = search.similar(conn, cfg, media_id)
+            except Exception:  # noqa: BLE001 - similar items are optional garnish
+                log.exception("similar items failed for %s", media_id)
+                similar_ids = []
+            sim_cards = search.cards(conn, similar_ids)
+            return {
+                **card,
+                "paths": paths,
+                "sources": sources,
+                "meta": dict(meta) if meta else None,
+                "tags": tags,
+                "entities": entities,
+                "docs": docs,
+                "keyframes": keyframes,
+                "pages": [],
+                "similar": [sim_cards[m] for m in similar_ids if m in sim_cards],
+            }
+
+    def _first_readable(conn: sqlite3.Connection, media_id: int) -> Path | None:
+        for (rel_path,) in conn.execute(
+                """SELECT p.rel_path FROM media_path p JOIN media m ON m.id=p.media_id
+                   WHERE p.media_id=? AND p.readable=1 AND m.status NOT IN ('EXCLUDED', 'UNSUPPORTED')
+                   ORDER BY p.id""", (media_id,)):
+            path = confined_path(cfg, rel_path)
+            if path is not None:
+                return path
+        return None
+
+    @app.get("/media/{media_id}/file")
+    def media_file(media_id: int):
+        with closing(open_ro(cfg)) as conn:
+            path = _first_readable(conn, media_id)
+            mime = conn.execute("SELECT mime FROM media WHERE id=?", (media_id,)).fetchone()
+        if path is None:
+            raise HTTPException(404, "not found")
+        return FileResponse(path, media_type=(mime[0] if mime and mime[0] else None),
+                            headers={"Cache-Control": "private, max-age=3600"})
+
+    @app.get("/media/{media_id}/thumb")
+    def media_thumb(media_id: int):
+        with closing(open_ro(cfg)) as conn:
+            row = conn.execute("SELECT thumb_path, status FROM media WHERE id=?", (media_id,)).fetchone()
+        if not row or not row[0] or row[1] in ("EXCLUDED", "UNSUPPORTED"):
+            raise HTTPException(404, "not found")
+        thumbs_root = os.path.realpath(cfg.thumbs_dir)
+        real = os.path.realpath(REPO_ROOT / row[0])
+        if not real.startswith(thumbs_root + os.sep) or not os.path.isfile(real):
+            raise HTTPException(404, "not found")
+        return FileResponse(real, media_type="image/jpeg", headers={"Cache-Control": "private, max-age=86400"})
+
+    @app.get("/media/{media_id}/keyframe/{seq}")
+    def media_keyframe(media_id: int, seq: int):
+        with closing(open_ro(cfg)) as conn:
+            row = conn.execute("SELECT path FROM keyframe WHERE media_id=? AND seq=?", (media_id, seq)).fetchone()
+        keyframes_root = os.path.realpath(Path(cfg.data_dir) / "keyframes")
+        real = os.path.realpath(REPO_ROOT / row[0]) if row else ""
+        if not row or not real.startswith(keyframes_root + os.sep) or not os.path.isfile(real):
+            raise HTTPException(404, "not found")
+        return FileResponse(real, media_type="image/jpeg")
+
+    @app.get("/api/status")
+    def status():
+        from re2 import cli
+
+        with closing(open_ro(cfg)) as conn:
+            return cli.status_counts(conn)
+
+    # ── Dashboard ─────────────────────────────────────────────────────────
+
+    @app.get("/", response_class=HTMLResponse)
+    def home():
+        if DASHBOARD.is_file():
+            return FileResponse(DASHBOARD, media_type="text/html", headers={"Cache-Control": "no-cache"})
+        return HTMLResponse('<!doctype html><title>Redpill</title><p>The dashboard is not built yet. '
+                            '<a href="/legacy/">Legacy views</a></p>')
+
+    # ── Legacy pages (frozen; retired in Phase 9) ─────────────────────────
+
+    legacy_data = Path(cfg.data_dir)
+
+    def _legacy_json(name: str):
+        path = legacy_data / name
+        if not path.is_file():
+            raise HTTPException(404, "not found")
+        return FileResponse(path, media_type="application/json")
+
+    @app.get("/data")
+    def legacy_data_json():
+        return _legacy_json("images_captioned_tagged.json")
+
+    @app.get("/tags")
+    def legacy_tags_json():
+        return _legacy_json("tags_with_sizes.json")
+
+    @app.get("/tag_pairs_with_weights")
+    def legacy_tag_pairs_json():
+        return _legacy_json("tag_pairs_with_weights.json")
+
+    for page in ("matrix", "spicy", "concept-map"):
+        def _page(page=page):
+            return FileResponse(PUBLIC / f"{page}.html", media_type="text/html")
+        app.add_api_route(f"/legacy/{page}", _page, methods=["GET"], name=f"legacy_{page}")
+
+    def _media_id_for_sha(conn: sqlite3.Connection, sha256: str) -> int | None:
+        row = conn.execute("SELECT id FROM media WHERE sha256=? AND status NOT IN ('EXCLUDED', 'UNSUPPORTED')",
+                           (sha256.lower(),)).fetchone()
+        return row[0] if row else None
+
+    @app.get("/hash-to-path/{sha256}")
+    def hash_to_path(sha256: str):
+        with closing(open_ro(cfg)) as conn:
+            media_id = _media_id_for_sha(conn, sha256)
+        if media_id is None:
+            return JSONResponse({"error": "Hash not found"}, status_code=404)
+        return {"url": f"/media/{media_id}/file"}
+
+    @app.get("/node-info/{sha256}", response_class=HTMLResponse)
+    def node_info(sha256: str):
+        with closing(open_ro(cfg)) as conn:
+            media_id = _media_id_for_sha(conn, sha256)
+            if media_id is None:
+                raise HTTPException(404, "Node not found")
+            detail = item(media_id)
+        caption = (detail["docs"].get("caption") or detail["docs"].get("legacy_caption") or [{}])[0]
+        html = jinja.get_template("node_info.html").render(
+            item=detail, description=caption.get("text", ""),
+            sensitivity=detail["sensitivity"])
+        return HTMLResponse(html)
+
+    if (REPO_ROOT / "node_modules" / "three").is_dir():
+        app.mount("/node_modules/three", StaticFiles(directory=REPO_ROOT / "node_modules" / "three"), name="three")
+    app.mount("/legacy", StaticFiles(directory=PUBLIC, html=True), name="legacy")
+    return app

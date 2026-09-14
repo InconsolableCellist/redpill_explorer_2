@@ -126,6 +126,17 @@ def cmd_embed(cfg: config.Config, args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_serve(cfg: config.Config, args: argparse.Namespace) -> int:
+    import uvicorn
+
+    from re2 import api
+
+    db.open_db(cfg).close()  # create or migrate the schema before read-only connections open it
+    uvicorn.run(api.create_app(cfg), host=args.host or cfg.server_host, port=args.port or cfg.server_port,
+                log_level="info")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="re2")
     parser.add_argument("--config", help="path to config.toml")
@@ -157,6 +168,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--limit", type=int, help="embed at most N docs")
     p.add_argument("--rebuild", action="store_true", help="drop the index and embed everything again")
     p.set_defaults(func=cmd_embed)
+
+    p = sub.add_parser("serve", help="run the dashboard and API server")
+    p.add_argument("--host", help="bind address (default from config.toml)")
+    p.add_argument("--port", type=int, help="port (default from config.toml)")
+    p.set_defaults(func=cmd_serve)
     return parser
 
 
