@@ -1,0 +1,14 @@
+node_modules/
+data/
+legacy/
+public/thumbnails/
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+*.npy
+.venv/
+__pycache__/
+.idea/
+hash_path_cache.json
+images_captioned.json
+backup/

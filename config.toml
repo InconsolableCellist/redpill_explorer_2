@@ -1,0 +1,30 @@
+[paths]
+corpus_root = "/home/offipso/Downloads/redpills"
+data_dir = "data"
+legacy_dir = "legacy"
+thumbs_dir = "public/thumbnails"
+archive_metadata = "/home/offipso/Downloads/redpills/archive_metadata.json"
+legacy_output_json = "/home/offipso/Downloads/redpills/output.json"
+
+[llm]
+base_url = "https://cube.tail99c274.ts.net:5000/v1"
+vision_model = "gemma-4-31b-heretic-ara-batch-parallel6-q8-8k-cube"
+chat_model = "qwen38-27b-heretic-uncensored-q8-cube"
+vision_concurrency = 3
+vision_max_tokens = 1200
+vision_max_side = 1024
+
+[embed]
+url = "http://cube:5010/v1/embeddings"
+model = "nomic-embed-text-v1.5"
+dims = 768
+max_chars = 2000
+
+[asr]
+model = "large-v3"
+device = "cuda"
+compute_type = "int8_float32"
+
+[server]
+host = "127.0.0.1"
+port = 4001
