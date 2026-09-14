@@ -1,0 +1,1505 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>Redpill</title>
+<link rel="icon" href="data:,">
+</head>
+<body>
+<style>
+/* ─────────────────────────────────────────────────────────────
+   Reset
+   ───────────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; }
+* { margin: 0; }
+html { height: 100%; }
+body { min-height: 100%; }
+button, input, textarea, select { font: inherit; color: inherit; }
+button { background: none; border: 0; cursor: pointer; text-align: inherit; }
+a { color: inherit; }
+img, video { display: block; max-width: 100%; }
+[hidden] { display: none !important; }
+
+/* ─────────────────────────────────────────────────────────────
+   Tokens — DEN's two-ink riso palette on cool stock, verbatim
+   ───────────────────────────────────────────────────────────── */
+:root {
+  --stock:      #E4E6EA;
+  --stock-well: #D6D9E0;
+  --stock-card: #F4F5F7;
+  --stock-bar:  #EDEEF1;
+  --rule:       #C0C5D0;
+  --rule-soft:  #D0D4DC;
+  --dot:        #B9BFCB;
+
+  --ink:    #14161D;
+  --ink-2:  #4C5364;
+  --ink-3:  #79808F;
+
+  --blue:   #2A3BD0;
+  --blue-w: #E2E4FA;
+  --hot:    #E1550A;
+  --hot-w:  #FBE3D4;
+
+  --on-ink: #F6F7F9;
+
+  --shadow: 0 1px 0 rgba(20,22,29,.05), 0 6px 18px -10px rgba(20,22,29,.35);
+  --shadow-lift: 0 2px 2px rgba(20,22,29,.08), 0 22px 40px -18px rgba(20,22,29,.55);
+
+  --font-display: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
+  --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", "IBM Plex Mono", "Roboto Mono", Menlo, Consolas, monospace;
+  --font-ui: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+
+  --lens-w: 280px;
+  --reader-w: 460px;
+  --top-h: 0px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --stock:      #0F1116;
+    --stock-well: #0A0C10;
+    --stock-card: #191D25;
+    --stock-bar:  #14171E;
+    --rule:       #2B313D;
+    --rule-soft:  #22272F;
+    --dot:        #1C212A;
+
+    --ink:    #E9EBF0;
+    --ink-2:  #A3AAB9;
+    --ink-3:  #737A89;
+
+    --blue:   #7285FF;
+    --blue-w: #1B2140;
+    --hot:    #FF8A44;
+    --hot-w:  #3A2214;
+
+    --on-ink: #0B0D11;
+
+    --shadow: 0 1px 0 rgba(0,0,0,.4), 0 8px 20px -12px rgba(0,0,0,.9);
+    --shadow-lift: 0 2px 4px rgba(0,0,0,.5), 0 26px 44px -20px rgba(0,0,0,1);
+  }
+}
+
+:root[data-theme="light"] {
+  --stock:#E4E6EA; --stock-well:#D6D9E0; --stock-card:#F4F5F7; --stock-bar:#EDEEF1;
+  --rule:#C0C5D0; --rule-soft:#D0D4DC; --dot:#B9BFCB;
+  --ink:#14161D; --ink-2:#4C5364; --ink-3:#79808F;
+  --blue:#2A3BD0; --blue-w:#E2E4FA; --hot:#E1550A; --hot-w:#FBE3D4;
+  --on-ink:#F6F7F9;
+  --shadow: 0 1px 0 rgba(20,22,29,.05), 0 6px 18px -10px rgba(20,22,29,.35);
+  --shadow-lift: 0 2px 2px rgba(20,22,29,.08), 0 22px 40px -18px rgba(20,22,29,.55);
+}
+:root[data-theme="dark"] {
+  --stock:#0F1116; --stock-well:#0A0C10; --stock-card:#191D25; --stock-bar:#14171E;
+  --rule:#2B313D; --rule-soft:#22272F; --dot:#1C212A;
+  --ink:#E9EBF0; --ink-2:#A3AAB9; --ink-3:#737A89;
+  --blue:#7285FF; --blue-w:#1B2140; --hot:#FF8A44; --hot-w:#3A2214;
+  --on-ink:#0B0D11;
+  --shadow: 0 1px 0 rgba(0,0,0,.4), 0 8px 20px -12px rgba(0,0,0,.9);
+  --shadow-lift: 0 2px 4px rgba(0,0,0,.5), 0 26px 44px -20px rgba(0,0,0,1);
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Shell
+   ───────────────────────────────────────────────────────────── */
+body {
+  font-family: var(--font-ui);
+  background: var(--stock);
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+}
+#app { min-height: 100vh; display: flex; flex-direction: column; }
+
+:where(a, button, input, textarea, select, [tabindex]):focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+.mono { font-family: var(--font-mono); }
+.tnum { font-variant-numeric: tabular-nums; }
+.label {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: .13em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+.btn {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+  padding: 7px 11px;
+  border: 1px solid var(--rule);
+  background: transparent;
+  transition: background-color .12s, color .12s, border-color .12s;
+  white-space: nowrap;
+}
+.btn:hover { color: var(--ink); border-color: var(--ink-3); background: color-mix(in srgb, var(--ink) 5%, transparent); }
+.btn[aria-pressed="true"] { background: var(--blue); border-color: var(--blue); color: var(--on-ink); }
+.btn:disabled { opacity: .4; cursor: not-allowed; }
+
+kbd {
+  font-family: var(--font-mono); font-size: 10.5px;
+  border: 1px solid var(--rule); padding: 1px 5px;
+  background: var(--stock-well); color: var(--ink);
+  white-space: nowrap;
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Top bar: brand, scope stack + omnibox, modes
+   ───────────────────────────────────────────────────────────── */
+.topbar {
+  position: sticky; top: 0; z-index: 40;
+  background: var(--stock-bar);
+  border-bottom: 1px solid var(--rule);
+  padding-top: env(safe-area-inset-top);
+}
+.bar {
+  display: flex; align-items: center;
+  gap: 16px;
+  padding: 11px 20px;
+}
+.brand { display: flex; align-items: baseline; gap: 10px; flex: none; }
+.brand__mark {
+  width: 11px; height: 22px;
+  background: var(--blue);
+  box-shadow: 5px 0 0 var(--hot);
+  margin-right: 8px;
+  align-self: center;
+}
+.brand__title {
+  font-family: var(--font-display);
+  font-size: 23px; font-weight: 600;
+  letter-spacing: -.015em; line-height: 1.1;
+  text-decoration: none;
+}
+.brand__sub { font-size: 11.5px; color: var(--ink-3); white-space: nowrap; }
+
+/* The omnibox is the page's centre of gravity: scopes read left to right as
+   the path you took to get here, and the text you are typing is the next step. */
+.omni {
+  flex: 1 1 auto; min-width: 0;
+  display: flex; align-items: center; gap: 6px;
+  border: 1px solid var(--rule);
+  background: var(--stock-card);
+  padding: 5px 8px;
+}
+.omni:focus-within { border-color: var(--blue); }
+.omni svg { flex: none; color: var(--ink-3); }
+.scopes { display: flex; align-items: center; gap: 4px; flex: none; max-width: 55%; overflow-x: auto; scrollbar-width: none; }
+.scopes::-webkit-scrollbar { display: none; }
+.chip {
+  display: inline-flex; align-items: baseline; gap: 6px;
+  font-family: var(--font-mono); font-size: 11px;
+  padding: 3px 7px;
+  border: 1px solid var(--rule);
+  background: var(--stock-well);
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+.chip b { font-weight: 500; font-size: 9.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-3); }
+.chip:hover { border-color: var(--ink-3); color: var(--ink); }
+.scope-chip { background: var(--blue-w); border-color: color-mix(in srgb, var(--blue) 45%, var(--rule)); color: var(--ink); }
+.scope-chip::after { content: "×"; color: var(--ink-3); margin-left: 2px; }
+.scope-chip:hover::after { color: var(--hot); }
+.scope-sep { color: var(--ink-3); font-family: var(--font-mono); font-size: 11px; }
+.omni input {
+  flex: 1 1 120px; min-width: 60px;
+  border: 0; background: none; outline: none;
+  font-family: var(--font-mono); font-size: 13px;
+  padding: 3px 2px;
+}
+.omni input::placeholder { color: var(--ink-3); }
+.omni__n { flex: none; font-family: var(--font-mono); font-size: 10.5px; color: var(--ink-3); white-space: nowrap; }
+
+.modes { display: flex; gap: 6px; flex: none; }
+.modes .btn { padding: 7px 9px; }
+
+/* ─────────────────────────────────────────────────────────────
+   Three columns: lenses · results · reader
+   ───────────────────────────────────────────────────────────── */
+.shell {
+  flex: 1 0 auto;
+  display: grid;
+  grid-template-columns: var(--lens-w) minmax(0, 1fr) var(--reader-w);
+  grid-template-areas: "lenses results reader";
+  align-items: start;
+  position: relative;
+}
+.shell.no-reader { grid-template-columns: var(--lens-w) minmax(0, 1fr); grid-template-areas: "lenses results"; }
+.shell::before {
+  content: "";
+  position: absolute; inset: 0;
+  background-image: radial-gradient(var(--dot) 1px, transparent 1.3px);
+  background-size: 15px 15px;
+  pointer-events: none;
+  opacity: .55;
+}
+.col { position: relative; min-width: 0; }
+.col.is-focus::after {
+  /* Which column the motions go to: a hot hairline along its top edge. */
+  content: ""; position: absolute; left: 0; right: 0; top: 0; height: 2px; background: var(--hot);
+}
+
+.lenses {
+  grid-area: lenses;
+  position: sticky; top: var(--top-h);
+  max-height: calc(100vh - var(--top-h) - 34px);
+  overflow-y: auto;
+  background: var(--stock-well);
+  border-right: 1px solid var(--rule);
+  padding: 12px 0 20px;
+  scrollbar-width: thin;
+}
+.lens-group { padding: 0 14px; }
+.lens-group + .lens-group { margin-top: 16px; }
+.lens-group h3 { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 5px; }
+.lens {
+  position: relative;
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px;
+  width: 100%;
+  padding: 4px 6px 5px;
+  font-size: 12.5px; color: var(--ink-2);
+  border-left: 2px solid transparent;
+}
+.lens__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lens__type { font-family: var(--font-mono); font-size: 9.5px; color: var(--ink-3); margin-right: 5px; }
+.lens__n { font-family: var(--font-mono); font-size: 10.5px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+.lens__bar { position: absolute; left: 6px; bottom: 1px; height: 2px; width: calc((100% - 12px) * var(--w, 0)); background: color-mix(in srgb, var(--blue) 40%, transparent); }
+.lens:hover { color: var(--ink); background: color-mix(in srgb, var(--ink) 5%, transparent); }
+.lens.is-cursor { border-left-color: var(--hot); color: var(--ink); background: var(--stock-card); }
+.lens.is-cursor .lens__bar { background: var(--hot); }
+.lens__lift { font-family: var(--font-mono); font-size: 10.5px; color: var(--blue); font-variant-numeric: tabular-nums; }
+.spark { display: flex; align-items: flex-end; gap: 1px; height: 34px; margin: 2px 6px 6px; }
+.spark span { flex: 1 1 0; min-width: 1px; background: color-mix(in srgb, var(--blue) 55%, transparent); }
+.lenses.is-stale, .results.is-stale .list { opacity: .55; transition: opacity .15s; }
+
+.results { grid-area: results; padding: 14px 18px 40px; }
+.results__head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin: 0 0 10px; }
+.results__head .label { white-space: nowrap; }
+.list { display: flex; flex-direction: column; gap: 8px; }
+
+/* ── Result card ─────────────────────────────────────────── */
+.hit {
+  position: relative;
+  display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 12px;
+  padding: 10px 12px 10px 10px;
+  background: var(--stock-card);
+  border: 1px solid var(--rule-soft);
+  border-left: 3px solid var(--rule);
+  box-shadow: var(--shadow);
+  cursor: pointer;
+}
+.hit.k-image { border-left-color: var(--blue); }
+.hit.k-video { border-left-color: var(--ink); }
+.hit.k-pdf { border-left-color: var(--ink-3); }
+.hit:hover { border-color: var(--rule); }
+.hit.is-cursor {
+  border-color: var(--hot);
+  box-shadow: 0 0 0 2px var(--hot), var(--shadow-lift);
+}
+.hit.is-cursor::after { content: ""; position: absolute; top: -1px; right: -1px; width: 7px; height: 7px; background: var(--hot); }
+.hit.is-open { background: color-mix(in srgb, var(--blue-w) 60%, var(--stock-card)); }
+.thumb {
+  position: relative;
+  width: 96px; height: 96px;
+  background: var(--stock-well);
+  overflow: hidden;
+  display: grid; place-items: center;
+}
+.thumb img { width: 100%; height: 100%; object-fit: cover; object-position: top; }
+.thumb__kind { font-family: var(--font-mono); font-size: 10px; letter-spacing: .1em; color: var(--ink-3); text-transform: uppercase; }
+.thumb__dur {
+  position: absolute; right: 3px; bottom: 3px;
+  font-family: var(--font-mono); font-size: 9.5px;
+  background: var(--ink); color: var(--stock); padding: 0 3px;
+}
+/* Veiled, not filtered: the item is there, you chose not to look yet. */
+.is-veiled img { filter: blur(14px) saturate(.6); transform: scale(1.15); }
+.is-veiled::after {
+  content: "x";
+  position: absolute; left: 3px; top: 3px;
+  font-family: var(--font-mono); font-size: 9.5px;
+  border: 1px solid var(--rule); background: var(--stock-card); color: var(--ink-2); padding: 0 4px;
+}
+.hit__body { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.hit__title {
+  font-family: var(--font-display); font-size: 16.5px; font-weight: 600;
+  line-height: 1.22; letter-spacing: -.005em;
+  overflow-wrap: anywhere;
+}
+.hit__snip { font-size: 13px; line-height: 1.45; color: var(--ink-2); overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+mark { background: var(--hot-w); color: var(--ink); padding: 0 1px; }
+.meta { font-family: var(--font-mono); font-size: 10.5px; color: var(--ink-3); display: flex; flex-wrap: wrap; gap: 3px 10px; align-items: baseline; }
+.meta .weak { opacity: .75; }
+.badge { font-family: var(--font-mono); font-size: 9.5px; letter-spacing: .1em; text-transform: uppercase; padding: 1px 5px; border: 1px solid var(--rule); color: var(--ink-2); }
+.badge.is-offline { background: var(--hot); border-color: var(--hot); color: var(--on-ink); }
+.badge.is-thumb { border-color: var(--hot); color: var(--hot); }
+.badge.is-time { border-color: var(--blue); color: var(--blue); }
+.more-btn { margin: 14px auto 0; display: block; }
+.empty { padding: 40px 10px; text-align: center; color: var(--ink-3); font-family: var(--font-mono); font-size: 12px; }
+
+/* ── Reader ──────────────────────────────────────────────── */
+.reader {
+  grid-area: reader;
+  position: sticky; top: var(--top-h);
+  max-height: calc(100vh - var(--top-h) - 34px);
+  overflow-y: auto;
+  background: var(--stock-card);
+  border-left: 1px solid var(--rule);
+  scrollbar-width: thin;
+}
+.reader__bar {
+  position: sticky; top: 0; z-index: 2;
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 8px 12px;
+  background: var(--stock-bar); border-bottom: 1px solid var(--rule-soft);
+}
+.reader__body { padding: 14px 16px 30px; display: flex; flex-direction: column; gap: 14px; }
+.preview { background: var(--stock-well); display: grid; place-items: center; min-height: 120px; position: relative; }
+.preview img { max-height: 70vh; width: auto; margin: 0 auto; }
+.preview video { width: 100%; max-height: 60vh; background: #000; }
+.preview .is-veiled { position: relative; overflow: hidden; }
+.reader h2 { font-family: var(--font-display); font-size: 21px; font-weight: 600; line-height: 1.2; letter-spacing: -.01em; }
+.reader section h3 { margin-bottom: 5px; }
+.reader p, .reader li { font-size: 13.5px; line-height: 1.55; color: var(--ink-2); }
+.reader ul { padding-left: 18px; }
+.reader pre {
+  font-family: var(--font-mono); font-size: 11.5px; line-height: 1.55;
+  white-space: pre-wrap; overflow-wrap: anywhere;
+  background: var(--stock-well); border: 1px solid var(--rule-soft); padding: 9px 10px;
+  color: var(--ink-2);
+}
+.chips { display: flex; flex-wrap: wrap; gap: 5px; }
+.r-focus { outline: 2px solid var(--hot); outline-offset: 1px; }
+.tline { display: grid; grid-template-columns: 44px 1fr; gap: 8px; width: 100%; padding: 3px 4px; font-size: 13px; line-height: 1.45; color: var(--ink-2); }
+.tline span:first-child { font-family: var(--font-mono); font-size: 10.5px; color: var(--blue); padding-top: 2px; }
+.tline:hover { background: color-mix(in srgb, var(--ink) 5%, transparent); }
+.frames { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 6px; }
+.frames button { position: relative; }
+.frames span { position: absolute; left: 2px; bottom: 2px; font-family: var(--font-mono); font-size: 9.5px; background: var(--ink); color: var(--stock); padding: 0 3px; }
+.sim { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 8px; }
+.sim button { display: flex; flex-direction: column; gap: 4px; text-align: left; }
+.sim .thumb { width: 100%; height: 90px; }
+.sim .t { font-size: 11.5px; line-height: 1.3; color: var(--ink-2); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.paths li { font-family: var(--font-mono); font-size: 11px; overflow-wrap: anywhere; list-style: none; }
+.paths { padding-left: 0 !important; }
+.src a { color: var(--blue); overflow-wrap: anywhere; font-size: 13px; }
+.src a:hover { color: var(--hot); }
+
+/* ── Timeline ────────────────────────────────────────────── */
+.tl { background: var(--stock-card); border: 1px solid var(--rule-soft); box-shadow: var(--shadow); padding: 10px 12px 6px; margin-bottom: 12px; }
+.tl canvas { width: 100%; height: 190px; display: block; cursor: crosshair; }
+.tl__legend { display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: baseline; margin-top: 4px; }
+.sw { display: inline-block; width: 9px; height: 9px; margin-right: 5px; vertical-align: -1px; }
+
+/* ─────────────────────────────────────────────────────────────
+   Mode line and key panel
+   ───────────────────────────────────────────────────────────── */
+.foot {
+  position: sticky; bottom: 0; z-index: 30;
+  border-top: 1px solid var(--rule);
+  background: var(--stock-bar);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+.foot__bar { display: flex; align-items: center; gap: 12px; padding: 6px 20px; min-height: 33px; }
+.mode { display: flex; align-items: center; gap: 9px; font-family: var(--font-mono); font-size: 10.5px; letter-spacing: .12em; }
+.mode__tag { padding: 3px 8px; background: var(--ink); color: var(--stock); }
+.mode__tag.is-insert { background: var(--hot); color: var(--on-ink); }
+.mode__buf { color: var(--hot); min-width: 3ch; font-variant-numeric: tabular-nums; }
+.say { font-family: var(--font-mono); font-size: 11px; color: var(--ink-2); flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.timing { font-family: var(--font-mono); font-size: 10.5px; color: var(--ink-3); white-space: nowrap; }
+.panel {
+  border-top: 1px solid var(--rule-soft);
+  padding: 18px 20px 22px;
+  display: grid; gap: 22px 30px;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  max-height: 60vh; overflow-y: auto;
+}
+.panel h3 {
+  font-family: var(--font-mono); font-size: 11px; letter-spacing: .12em; text-transform: uppercase;
+  color: var(--ink); margin-bottom: 9px; padding-bottom: 7px; border-bottom: 2px solid var(--blue);
+}
+.panel p { font-size: 13px; line-height: 1.55; color: var(--ink-2); }
+.panel .lede { grid-column: 1 / -1; font-size: 14px; color: var(--ink); max-width: 80ch; }
+.keys { display: grid; grid-template-columns: auto 1fr; gap: 5px 12px; font-size: 12.5px; color: var(--ink-2); align-items: baseline; }
+
+.mobile-close { display: none; }
+
+/* ─────────────────────────────────────────────────────────────
+   Tablet: lenses become a strip, the reader a drawer
+   ───────────────────────────────────────────────────────────── */
+@media (max-width: 1099px) {
+  .shell, .shell.no-reader { grid-template-columns: minmax(0, 1fr); grid-template-areas: "lenses" "results"; }
+  .lenses {
+    position: relative; top: 0; max-height: none;
+    display: flex; gap: 18px; overflow-x: auto; overflow-y: hidden;
+    border-right: 0; border-bottom: 1px solid var(--rule);
+    padding: 10px 14px;
+  }
+  .lens-group { padding: 0; flex: none; width: 220px; }
+  .lens-group + .lens-group { margin-top: 0; }
+  .lens-group .lens:nth-child(n+8) { display: none; }
+  .reader {
+    position: fixed; z-index: 60; top: 0; right: 0; bottom: 0;
+    width: min(560px, 92vw); max-height: none;
+    box-shadow: var(--shadow-lift);
+    padding-top: env(safe-area-inset-top);
+  }
+  .mobile-close { display: inline-block; }
+  .modes .btn span { display: none; }
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Phone: one column, reader as a sheet, modes at the bottom
+   ───────────────────────────────────────────────────────────── */
+@media (max-width: 699px) {
+  .bar { flex-wrap: wrap; gap: 8px; padding: 9px 12px; }
+  .brand__sub { display: none; }
+  .omni { order: 3; flex-basis: 100%; }
+  .scopes { max-width: 45%; }
+  .modes { margin-left: auto; }
+  .modes .mode-btn { display: none; }
+  .results { padding: 10px 10px 30px; }
+  .hit { grid-template-columns: 72px minmax(0, 1fr); gap: 10px; padding: 8px; }
+  .thumb { width: 72px; height: 72px; }
+  .hit__title { font-size: 15px; }
+  .reader { width: 100vw; }
+  .foot__bar { padding: 6px 12px; }
+  .timing, .mode { display: none; }
+  .phone-modes { display: flex !important; }
+}
+.phone-modes { display: none; gap: 4px; }
+</style>
+
+<div id="app">
+  <div class="topbar" id="topbar">
+    <header class="bar">
+      <div class="brand">
+        <span class="brand__mark" aria-hidden="true"></span>
+        <a class="brand__title" href="#/search" title="Home">Redpill</a>
+        <span class="brand__sub mono tnum" id="brandSub"></span>
+      </div>
+      <label class="omni" for="q">
+        <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+          <circle cx="7" cy="7" r="4.6" stroke="currentColor" stroke-width="1.5"/>
+          <path d="M10.5 10.5 L14 14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+        </svg>
+        <span class="scopes" id="scopes"></span>
+        <input id="q" type="search" placeholder="search the archive…  (/ to focus)" autocomplete="off" spellcheck="false" aria-label="Search">
+        <span class="omni__n" id="omniN"></span>
+      </label>
+      <nav class="modes" aria-label="Modes">
+        <button class="btn mode-btn" data-mode="search" title="Search (gs)">Search</button>
+        <button class="btn mode-btn" data-mode="timeline" title="Timeline (gt)">Timeline</button>
+        <button class="btn mode-btn" data-mode="wiki" disabled title="Wiki (gw) — arrives with Phase 6">Wiki</button>
+        <button class="btn mode-btn" data-mode="graph" disabled title="Graph (gn) — arrives with Phase 8.4">Graph</button>
+        <button class="btn mode-btn" data-mode="map" disabled title="Map (gm) — arrives with Phase 8.4">Map</button>
+        <button class="btn mode-btn" data-mode="ask" disabled title="Ask (ga) — arrives with Phase 7">Ask</button>
+        <button class="btn" id="themeBtn" title="Theme">◐</button>
+        <button class="btn" id="helpBtn" aria-expanded="false" aria-controls="panel" title="Keys (?)">?</button>
+      </nav>
+    </header>
+  </div>
+
+  <main class="shell no-reader" id="shell">
+    <aside class="col lenses" id="lenses" aria-label="Lenses"></aside>
+    <section class="col results" id="results" aria-label="Results">
+      <div id="timeline" hidden></div>
+      <div class="results__head"><span class="label" id="resultsLabel">Recent</span><span class="label tnum" id="resultsCount"></span></div>
+      <div class="list" id="list"></div>
+      <button class="btn more-btn" id="moreBtn" hidden>Load more</button>
+    </section>
+    <aside class="col reader" id="reader" aria-label="Reader" hidden></aside>
+  </main>
+
+  <footer class="foot">
+    <div class="panel" id="panel" hidden>
+      <p class="lede">Everything is reachable from the keyboard. Type to search; results stream in as you type and the
+        lenses on the left show who, what, where and when the results are about. Narrow with <kbd>&gt;</kbd>
+        and step back out with <kbd>&lt;</kbd> — the chips in the search box are the path you took.</p>
+      <div>
+        <h3>Moving</h3>
+        <div class="keys">
+          <kbd>j k</kbd><span>Down / up in the focused column. Arrows too. Counts work: <kbd>5j</kbd></span>
+          <kbd>h l</kbd><span>Focus lenses / results / reader. <kbd>Tab</kbd> cycles.</span>
+          <kbd>g g</kbd><span>First in the column</span>
+          <kbd>G</kbd><span>Last in the column (loads more at the end of results)</span>
+          <kbd>Ctrl-d</kbd><span>Half a page down · <kbd>Ctrl-u</kbd> up</span>
+          <kbd>[ ]</kbd><span>Previous / next result while the reader is open</span>
+        </div>
+      </div>
+      <div>
+        <h3>Searching</h3>
+        <div class="keys">
+          <kbd>/</kbd><span>Focus the search box</span>
+          <kbd>Enter</kbd><span>In the box: keep the words as a scope and search within them</span>
+          <kbd>Backspace</kbd><span>In an empty box: drop the last scope</span>
+          <kbd>&gt;</kbd><span>Narrow to what's under the cursor: an entity, tag, folder, year, a result's main entity — in the timeline, the month or marked range</span>
+          <kbd>*</kbd><span>Narrow to the main entity of the item under the cursor</span>
+          <kbd>&lt;</kbd><span>Drop the last scope</span>
+          <kbd>Esc</kbd><span>Close the panel, then the count, then the box, then the reader, then the query. Never drops scopes.</span>
+        </div>
+      </div>
+      <div>
+        <h3>Items</h3>
+        <div class="keys">
+          <kbd>Enter</kbd><span>Open in the reader (<kbd>o</kbd> too). On a lens: narrow.</span>
+          <kbd>x</kbd><span>Reveal / veil the item under the cursor · <kbd>X</kbd> cycles the veil threshold</span>
+          <kbd>y y</kbd><span>Copy a citation: title — date — source — link</span>
+          <kbd>n N</kbd><span>Next / previous highlighted match in the reader</span>
+          <kbd>Space</kbd><span>Play / pause the reader's video</span>
+          <kbd>← →</kbd><span>In the reader: seek 5 s · <kbd>t</kbd> jumps to the matching moment</span>
+        </div>
+      </div>
+      <div>
+        <h3>Views</h3>
+        <div class="keys">
+          <kbd>g s</kbd><span>Search</span>
+          <kbd>g t</kbd><span>Timeline. There <kbd>h l</kbd> move by month, <kbd>H L</kbd> by year, <kbd>v</kbd> marks a range, <kbd>&gt;</kbd> narrows to it</span>
+          <kbd>g w</kbd><span>Wiki · <kbd>g n</kbd> graph · <kbd>g m</kbd> map · <kbd>g a</kbd> ask — as they are built</span>
+          <kbd>?</kbd><span>This panel</span>
+        </div>
+      </div>
+    </div>
+    <div class="foot__bar">
+      <div class="mode"><span class="mode__tag" id="modeTag">NORMAL</span><span class="mode__buf" id="modeBuf"></span></div>
+      <span class="say" id="say" role="status" aria-live="polite"></span>
+      <span class="timing tnum" id="timing"></span>
+      <nav class="phone-modes">
+        <button class="btn" data-mode="search">Search</button>
+        <button class="btn" data-mode="timeline">Time</button>
+      </nav>
+    </div>
+  </footer>
+</div>
+
+<script>
+"use strict";
+
+/* ── Helpers ──────────────────────────────────────────────── */
+const $ = (sel, root = document) => root.querySelector(sel);
+const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+/* The server marks matches with \x02…\x03 so escaping can happen first. */
+function markSnippet(s) {
+  return escapeHtml(s).replace(/\x02/g, "<mark>").replace(/\x03/g, "</mark>");
+}
+const fmtN = (n) => (n ?? 0).toLocaleString("en-US");
+function fmtTime(s) {
+  if (s == null) return "";
+  s = Math.max(0, Math.round(s));
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+  const mm = String(m).padStart(h ? 2 : 1, "0"), ss = String(sec).padStart(2, "0");
+  return h ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
+}
+function store(key, value) {
+  try { if (value === undefined) return JSON.parse(localStorage.getItem("rp." + key)); localStorage.setItem("rp." + key, JSON.stringify(value)); }
+  catch { return null; }
+}
+let sayTimer = 0;
+function say(msg, sticky = false) {
+  const el = $("#say");
+  el.textContent = msg;
+  clearTimeout(sayTimer);
+  if (!sticky) sayTimer = setTimeout(() => { if (el.textContent === msg) el.textContent = ""; }, 5000);
+}
+
+/* ── State ────────────────────────────────────────────────── */
+const COLS = ["lenses", "results", "reader"];
+const VEILS = [null, 0.8, 0.6, 0.3];
+const S = {
+  mode: "search",
+  q: "",
+  scopes: [],          // ["entity:12", "text:missiles", ...]
+  labels: {},          // scope -> label
+  hits: [],            // current result cards
+  more: false,
+  focus: "results",
+  cursor: { lenses: 0, results: 0, reader: 0 },
+  open: null,          // media id in the reader
+  item: null,          // /api/item payload for the reader
+  openHit: null,       // the hit that opened it (for start_s)
+  veil: store("veil") ?? 0.6,
+  revealed: new Set(),
+  lenses: null,
+  corr: [],
+  count: "",
+  pending: "",
+  tl: { data: null, cursor: -1, mark: null },
+};
+
+/* ── URL hash ─────────────────────────────────────────────── */
+function writeHash(replace = false) {
+  const p = new URLSearchParams();
+  if (S.q) p.set("q", S.q);
+  for (const s of S.scopes) p.append("s", s);
+  if (S.open != null) p.set("open", S.open);
+  const hash = `#/${S.mode}${p.toString() ? "?" + p : ""}`;
+  if (location.hash === hash) return;
+  if (replace) history.replaceState(null, "", hash);
+  else history.pushState(null, "", hash);
+}
+function readHash() {
+  const raw = location.hash.replace(/^#\/?/, "");
+  const [path, qs] = raw.split("?");
+  const p = new URLSearchParams(qs || "");
+  const parts = path.split("/");
+  let mode = parts[0] || "search";
+  let open = p.get("open");
+  if (mode === "item") { mode = "search"; open = parts[1]; }
+  if (!["search", "timeline"].includes(mode)) mode = "search";
+  return { mode, q: p.get("q") || "", scopes: p.getAll("s"), open: open ? Number(open) : null };
+}
+
+/* ── Streaming search ─────────────────────────────────────── */
+let ctl = null, gen = 0, debounce = 0;
+
+function queryParams(extra = {}) {
+  const p = new URLSearchParams();
+  if (S.q.trim()) p.set("q", S.q);
+  for (const s of S.scopes) p.append("s", s);
+  for (const [k, v] of Object.entries(extra)) p.set(k, v);
+  return p;
+}
+
+function scheduleSearch(delay = 90) {
+  clearTimeout(debounce);
+  debounce = setTimeout(runSearch, delay);
+}
+
+async function runSearch() {
+  ctl?.abort();
+  ctl = new AbortController();
+  const my = ++gen;
+  $("#results").classList.add("is-stale");
+  $("#lenses").classList.add("is-stale");
+  let resp;
+  try {
+    resp = await fetch(`/api/stream?${queryParams()}`, { signal: ctl.signal });
+  } catch (err) {
+    if (err.name !== "AbortError") say("Search failed: " + err.message);
+    return;
+  }
+  if (!resp.ok) {
+    const detail = await resp.json().catch(() => ({}));
+    say(`Search failed: ${detail.detail || resp.status}`);
+    return finishStale(my);
+  }
+  const reader = resp.body.getReader();
+  const dec = new TextDecoder();
+  let buf = "";
+  try {
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      let nl;
+      while ((nl = buf.indexOf("\n")) >= 0) {
+        const line = buf.slice(0, nl); buf = buf.slice(nl + 1);
+        if (line && my === gen) onMessage(JSON.parse(line));
+      }
+    }
+  } catch (err) {
+    if (err.name !== "AbortError") say("Stream interrupted: " + err.message);
+  }
+  finishStale(my);
+  if (S.mode === "timeline" && my === gen) loadTimeline();
+}
+function finishStale(my) {
+  if (my !== gen) return;
+  $("#results").classList.remove("is-stale");
+  $("#lenses").classList.remove("is-stale");
+}
+
+function onMessage(m) {
+  switch (m.t) {
+    case "scope":
+      for (const s of m.scopes) S.labels[s.s] = s.label;
+      renderScopes(m.n_in_scope);
+      break;
+    case "items":
+    case "lexical":
+    case "fused":
+      S.hits = m.hits; S.more = m.more;
+      $("#resultsLabel").textContent = m.t === "items" ? (S.scopes.length ? "In scope, newest first" : "Recent") :
+        m.t === "lexical" ? "Matches" : "Matches · words + meaning";
+      renderResults();
+      $("#results").classList.remove("is-stale");
+      break;
+    case "lenses":
+      S.lenses = m.data; renderLenses();
+      $("#lenses").classList.remove("is-stale");
+      break;
+    case "correlations":
+      S.corr = m.data; renderLenses();
+      break;
+    case "warn":
+      say(m.msg);
+      break;
+    case "done": {
+      const ms = m.ms || {};
+      $("#timing").textContent = [ms.lexical != null && `${ms.lexical}ms words`, ms.dense != null && `${ms.dense}ms meaning`,
+        ms.total != null && `${ms.total}ms total`].filter(Boolean).join(" · ");
+      break;
+    }
+  }
+}
+
+async function loadMore() {
+  if (!S.more) return;
+  const resp = await fetch(`/api/items?${queryParams({ offset: S.hits.length, limit: 40 })}`);
+  if (!resp.ok) return say("Could not load more.");
+  const data = await resp.json();
+  const seen = new Set(S.hits.map((h) => h.media_id));
+  S.hits = S.hits.concat(data.hits.filter((h) => !seen.has(h.media_id)));
+  S.more = data.more;
+  renderResults();
+}
+
+/* ── Scopes ───────────────────────────────────────────────── */
+const SCOPE_NAMES = { text: "words", entity: "", tag: "tag", folder: "folder", kind: "kind", status: "status", date: "date", page: "page", media: "item" };
+
+function renderScopes(n) {
+  $("#scopes").innerHTML = S.scopes.map((s, i) => {
+    const [type, ...rest] = s.split(":");
+    const label = S.labels[s] ?? rest.join(":");
+    return `${i ? '<span class="scope-sep">›</span>' : ""}<button class="chip scope-chip" data-i="${i}" title="Drop this scope">` +
+      `${SCOPE_NAMES[type] ? `<b>${escapeHtml(SCOPE_NAMES[type])}</b>` : ""}${escapeHtml(label)}</button>`;
+  }).join("");
+  $("#omniN").textContent = n == null ? "" : `${fmtN(n)} in scope`;
+}
+function pushScope(scope, label) {
+  if (!scope || S.scopes.includes(scope)) return say("Already narrowed to that.");
+  if (label) S.labels[scope] = label;
+  S.scopes.push(scope);
+  S.cursor.results = 0; S.cursor.lenses = 0;
+  say(`Narrowed to ${label || scope}. < steps back out.`);
+  navigate();
+}
+function popScope(i = S.scopes.length - 1) {
+  if (!S.scopes.length) return say("No scopes to drop.");
+  const [gone] = S.scopes.splice(i, 1);
+  say(`Dropped ${S.labels[gone] || gone}.`);
+  S.cursor.results = 0;
+  navigate();
+}
+function navigate(replace = false) {
+  writeHash(replace);
+  renderScopes();
+  renderModes();
+  scheduleSearch(0);
+}
+
+/* ── Lenses ───────────────────────────────────────────────── */
+const TYPE_GLYPH = { person: "P", organization: "O", place: "L", event: "E", platform: "S" };
+
+function lensRow(scope, name, n, max, opts = {}) {
+  const w = max ? Math.max(.02, n / max) : 0;
+  // Correlated rows lead with lift (how much likelier than across the whole archive); the count rides in the title.
+  const right = opts.lift != null
+    ? `<span class="lens__lift" title="${fmtN(n)} results · ${opts.lift}× the archive rate">×${opts.lift >= 10 ? Math.round(opts.lift) : opts.lift.toFixed(1)}</span>`
+    : `<span class="lens__n">${fmtN(n)}</span>`;
+  return `<button class="lens" data-scope="${escapeHtml(scope)}" data-label="${escapeHtml(name)}" style="--w:${w.toFixed(3)}">` +
+    `<span class="lens__name">${opts.glyph ? `<span class="lens__type">${escapeHtml(opts.glyph)}</span>` : ""}${escapeHtml(name)}</span>` +
+    `${right}<span class="lens__bar"></span></button>`;
+}
+
+function renderLenses() {
+  const L = S.lenses;
+  const el = $("#lenses");
+  if (!L) { el.innerHTML = ""; return; }
+  const groups = [];
+  const active = new Set(S.scopes);
+  if (S.corr?.length) {
+    const max = Math.max(...S.corr.map((c) => c.n));
+    groups.push(["Correlated", S.corr.filter((c) => !active.has(c.scope)).slice(0, 12).map((c) =>
+      lensRow(c.scope, c.name, c.n, max, { lift: c.lift, glyph: c.type === "tag" ? "#" : TYPE_GLYPH[c.type] }))]);
+  }
+  const ent = L.entities.filter((e) => !active.has(`entity:${e.id}`));
+  if (ent.length) {
+    const max = ent[0].n;
+    groups.push(["Entities", ent.map((e) => lensRow(`entity:${e.id}`, e.name, e.n, max, { glyph: TYPE_GLYPH[e.type] }))]);
+  }
+  if (L.months?.length) {
+    const years = {};
+    for (const m of L.months) years[m.month.slice(0, 4)] = (years[m.month.slice(0, 4)] || 0) + m.n;
+    const ys = Object.entries(years).sort((a, b) => b[0].localeCompare(a[0]));
+    const max = Math.max(...ys.map((y) => y[1]));
+    const mmax = Math.max(...L.months.map((m) => m.n));
+    const spark = `<div class="spark" aria-hidden="true">${L.months.map((m) =>
+      `<span style="height:${Math.max(4, 100 * m.n / mmax).toFixed(1)}%" title="${escapeHtml(m.month)}: ${m.n}"></span>`).join("")}</div>`;
+    groups.push(["Dates", ys.map(([y, n]) => lensRow(`date:${y}`, y, n, max)), spark]);
+  }
+  const folders = L.folders.filter((f) => !active.has(`folder:${f.folder}`));
+  if (folders.length) {
+    const max = folders[0].n;
+    groups.push(["Folders", folders.map((f) => lensRow(`folder:${f.folder}`, f.folder === "." ? "(top level)" : f.folder, f.n, max))]);
+  }
+  const tags = L.tags.filter((t) => !active.has(`tag:${t.id}`));
+  if (tags.length) {
+    const max = tags[0].n;
+    groups.push(["Tags", tags.slice(0, 12).map((t) => lensRow(`tag:${t.id}`, t.name, t.n, max, { glyph: "#" }))]);
+  }
+  const kinds = Object.entries(L.kinds || {});
+  if (kinds.length > 1) {
+    const max = Math.max(...kinds.map((k) => k[1]));
+    groups.push(["Kind", kinds.map(([k, n]) => lensRow(`kind:${k}`, k, n, max))]);
+  }
+  const statuses = Object.entries(L.statuses || {}).filter(([s]) => s !== "READY");
+  if (statuses.length) {
+    const max = Math.max(...statuses.map((k) => k[1]));
+    groups.push(["Availability", statuses.map(([s, n]) => lensRow(`status:${s}`, s === "THUMBNAIL_ONLY" ? "thumbnail only" : "offline", n, max))]);
+  }
+  el.innerHTML = groups.map(([title, rows, extra]) =>
+    `<div class="lens-group"><h3><span class="label">${escapeHtml(title)}</span>` +
+    `${title === "Correlated" ? '<span class="label" title="How much more often than in the whole archive">lift</span>' : ""}</h3>` +
+    `${extra || ""}${rows.join("")}</div>`).join("") ||
+    `<div class="empty">No lenses for these results.</div>`;
+  paintCursor("lenses");
+}
+
+/* ── Results ──────────────────────────────────────────────── */
+function veiled(card) {
+  return S.veil != null && card.sensitivity != null && card.sensitivity >= S.veil && !S.revealed.has(card.media_id);
+}
+function thumbHtml(card, cls = "thumb") {
+  const inner = card.thumb_url
+    ? `<img src="${escapeHtml(card.thumb_url)}" alt="" loading="lazy" decoding="async">`
+    : `<span class="thumb__kind">${escapeHtml(card.kind)}</span>`;
+  const dur = card.duration ? `<span class="thumb__dur">${fmtTime(card.duration)}</span>` : "";
+  return `<div class="${cls}${veiled(card) ? " is-veiled" : ""}">${inner}${dur}</div>`;
+}
+function dateHtml(card) {
+  if (!card.date) return "";
+  const weak = card.date_source === "mtime";
+  return `<span class="${weak ? "weak" : ""}" title="date from ${escapeHtml(card.date_source || "?")}">${weak ? "~" : ""}${escapeHtml(card.date)}</span>`;
+}
+function badges(card) {
+  const out = [];
+  if (card.status === "SOURCE_OFFLINE") out.push('<span class="badge is-offline">offline</span>');
+  if (card.status === "THUMBNAIL_ONLY") out.push('<span class="badge is-thumb">thumb only</span>');
+  const hit = card.hit;
+  if (hit && hit.start_s != null) out.push(`<span class="badge is-time">${fmtTime(hit.start_s)}–${fmtTime(hit.end_s)}</span>`);
+  if (hit && hit.page != null) out.push(`<span class="badge is-time">p. ${hit.page}</span>`);
+  return out.join("");
+}
+function cardHtml(card, i) {
+  const hit = card.hit;
+  const snippet = hit ? `<div class="hit__snip">${markSnippet(hit.snippet)}</div>` : "";
+  const sens = card.sensitivity != null ? `<span title="sensitivity">${card.sensitivity.toFixed(1)}</span>` : "";
+  return `<article class="hit k-${escapeHtml(card.kind)}${card.media_id === S.open ? " is-open" : ""}" data-i="${i}" data-id="${card.media_id}">` +
+    thumbHtml(card) +
+    `<div class="hit__body"><div class="hit__title">${escapeHtml(card.title)}</div>${snippet}` +
+    `<div class="meta"><span>${escapeHtml(card.kind.toUpperCase())}</span>${dateHtml(card)}<span>${escapeHtml(card.folder === "." ? "/" : card.folder + "/")}</span>${sens}${badges(card)}</div>` +
+    `</div></article>`;
+}
+function renderResults() {
+  const list = $("#list");
+  const keepId = S.hits.length ? list.querySelector(".hit.is-cursor")?.dataset.id : null;
+  list.innerHTML = S.hits.length ? S.hits.map(cardHtml).join("") :
+    `<div class="empty">${S.q ? "Nothing matches. Try fewer words, or drop a scope with <kbd>&lt;</kbd>." : "Nothing in this scope."}</div>`;
+  if (keepId) {
+    // Streaming reorders results; the cursor stays on the item it was on.
+    const idx = S.hits.findIndex((h) => String(h.media_id) === keepId);
+    if (idx >= 0) S.cursor.results = idx;
+  }
+  S.cursor.results = Math.min(S.cursor.results, Math.max(0, S.hits.length - 1));
+  $("#resultsCount").textContent = S.hits.length ? `${fmtN(S.hits.length)}${S.more ? "+" : ""}` : "";
+  $("#moreBtn").hidden = !S.more;
+  paintCursor("results", false);
+}
+
+/* ── Cursor ───────────────────────────────────────────────── */
+function rowsOf(col) {
+  if (col === "lenses") return $$(".lens", $("#lenses"));
+  if (col === "results") return $$(".hit", $("#list"));
+  return $$("[data-r]", $("#reader"));
+}
+function paintCursor(col, scroll = true) {
+  const rows = rowsOf(col);
+  const cls = col === "reader" ? "r-focus" : "is-cursor";
+  rows.forEach((r) => r.classList.remove(cls));
+  if (!rows.length) return;
+  S.cursor[col] = Math.max(0, Math.min(S.cursor[col], rows.length - 1));
+  const row = rows[S.cursor[col]];
+  if (S.focus === col || col !== "reader") row.classList.add(cls);
+  if (scroll && S.focus === col) row.scrollIntoView({ block: "nearest" });
+}
+function setFocus(col) {
+  if (col === "reader" && S.open == null) return;
+  S.focus = col;
+  for (const c of COLS) $("#" + c).classList.toggle("is-focus", c === col);
+  paintCursor(col);
+}
+function move(delta) {
+  const col = S.focus;
+  const rows = rowsOf(col);
+  if (!rows.length) return;
+  const next = S.cursor[col] + delta;
+  if (col === "results" && next >= rows.length && S.more) {
+    loadMore().then(() => { S.cursor.results = next; paintCursor("results"); });
+    return;
+  }
+  S.cursor[col] = Math.max(0, Math.min(next, rows.length - 1));
+  paintCursor(col);
+  if (col === "reader" && rows[S.cursor[col]]) rows[S.cursor[col]].focus({ preventScroll: true });
+}
+function currentCard() {
+  if (S.focus === "reader" && S.item) return S.item;
+  return S.hits[S.cursor.results] || null;
+}
+
+/* ── Reader ───────────────────────────────────────────────── */
+async function openItem(mediaId, hit = null) {
+  if (mediaId == null) return;
+  S.open = mediaId;
+  S.openHit = hit || S.hits.find((h) => h.media_id === mediaId)?.hit || null;
+  S.cursor.reader = 0;
+  writeHash(true);
+  $("#shell").classList.remove("no-reader");
+  const el = $("#reader");
+  el.hidden = false;
+  el.innerHTML = `<div class="reader__bar"><span class="label">Loading…</span></div>`;
+  $$(".hit").forEach((h) => h.classList.toggle("is-open", Number(h.dataset.id) === mediaId));
+  const resp = await fetch(`/api/item/${mediaId}`);
+  if (S.open !== mediaId) return;
+  if (!resp.ok) { el.innerHTML = `<div class="reader__bar"><span class="label">Not found</span></div>`; return; }
+  S.item = await resp.json();
+  renderReader();
+}
+function closeReader() {
+  if (S.open == null) return false;
+  const v = $("#reader video"); if (v) v.pause();
+  S.open = null; S.item = null;
+  $("#reader").hidden = true;
+  $("#shell").classList.add("no-reader");
+  $$(".hit.is-open").forEach((h) => h.classList.remove("is-open"));
+  if (S.focus === "reader") setFocus("results");
+  writeHash(true);
+  return true;
+}
+
+function section(title, body) {
+  return body ? `<section><h3 class="label">${escapeHtml(title)}</h3>${body}</section>` : "";
+}
+function renderReader() {
+  const d = S.item;
+  const el = $("#reader");
+  const cap = d.docs.caption?.[0]?.json || null;
+  const legacy = d.docs.legacy_caption?.[0]?.text;
+  let preview;
+  if (d.kind === "video" && d.media_url) {
+    preview = `<video controls preload="metadata" src="${escapeHtml(d.media_url)}"${d.thumb_url ? ` poster="${escapeHtml(d.thumb_url)}"` : ""}></video>`;
+  } else if (d.kind === "image" && (d.media_url || d.thumb_url)) {
+    preview = `<div class="${veiled(d) ? "is-veiled" : ""}" data-veil><img src="${escapeHtml(d.media_url || d.thumb_url)}" alt=""></div>`;
+  } else if (d.kind === "pdf" && d.media_url) {
+    const page = S.openHit?.page;
+    preview = `<a class="btn" target="_blank" rel="noopener" href="${escapeHtml(d.media_url)}${page ? `#page=${page}` : ""}" data-r>Open PDF${page ? ` at page ${page}` : ""}</a>`;
+  } else {
+    preview = d.thumb_url ? `<img src="${escapeHtml(d.thumb_url)}" alt="">` : `<span class="label">No preview</span>`;
+  }
+  const chips = [
+    ...d.entities.map((e) => `<button class="chip" data-r data-scope="entity:${e.id}" data-label="${escapeHtml(e.name)}"><b>${escapeHtml(TYPE_GLYPH[e.type] || "")}</b>${escapeHtml(e.name)}</button>`),
+    ...d.tags.slice(0, 24).map((t) => `<button class="chip" data-r data-scope="tag:${t.id}" data-label="${escapeHtml(t.name)}"><b>#</b>${escapeHtml(t.name)}</button>`),
+  ].join("");
+  const sources = d.sources.map((s) =>
+    `<p class="src"><a href="${escapeHtml(s.url)}" target="_blank" rel="noopener noreferrer" data-r>${escapeHtml(s.url)}</a> <span class="meta">${escapeHtml((s.date || "").slice(0, 10))} · ${escapeHtml(s.role || "")}</span></p>`).join("");
+  const transcript = (d.docs.transcript || []).map((t) =>
+    `<button class="tline" data-r data-seek="${t.start_s}"><span>${fmtTime(t.start_s)}</span><span>${escapeHtml(t.text)}</span></button>`).join("");
+  const frames = d.keyframes.length ? `<div class="frames">${d.keyframes.map((k) =>
+    `<button data-r data-seek="${k.t_s}"><img src="${escapeHtml(k.url)}" alt="" loading="lazy"><span>${fmtTime(k.t_s)}</span></button>`).join("")}</div>` : "";
+  const similar = d.similar.length ? `<div class="sim">${d.similar.map((c) =>
+    `<button data-r data-open="${c.media_id}">${thumbHtml(c)}<span class="t">${escapeHtml(c.title)}</span></button>`).join("")}</div>` : "";
+
+  el.innerHTML =
+    `<div class="reader__bar"><span class="label">${escapeHtml(d.kind)} · #${d.media_id}</span>` +
+    `<span><button class="btn" data-copy title="Copy citation (yy)">Cite</button> <button class="btn mobile-close" data-close>Close</button></span></div>` +
+    `<div class="reader__body">` +
+    `<div class="preview">${preview}</div>` +
+    `<h2>${escapeHtml(d.title)}</h2>` +
+    `<div class="meta"><span>${escapeHtml(d.kind.toUpperCase())}</span>${dateHtml(d)}<span>${escapeHtml(d.folder)}/</span>` +
+    `${d.sensitivity != null ? `<span>sensitivity ${d.sensitivity.toFixed(2)}</span>` : ""}` +
+    `${d.legacy_spicy != null ? `<span title="The 2024 tagger's guess; not used for veiling">old spicy ${d.legacy_spicy.toFixed(1)}</span>` : ""}${d.width ? `<span>${d.width}×${d.height}</span>` : ""}${badges({ ...d, hit: S.openHit })}</div>` +
+    section("Source", sources) +
+    (chips ? `<div class="chips">${chips}</div>` : "") +
+    section("Description", cap ? `<p>${escapeHtml(cap.description)}</p>` : "") +
+    section("Text in the image", cap?.ocr_text ? `<pre>${escapeHtml(cap.ocr_text)}</pre>` : "") +
+    section("Meaning", cap?.meaning ? `<p>${escapeHtml(cap.meaning)}</p>` : "") +
+    section("Claims", cap?.claims?.length ? `<ul>${cap.claims.map((c) => `<li>${escapeHtml(c)}</li>`).join("")}</ul>` : "") +
+    section("Intent", cap?.intent ? `<p>${escapeHtml(cap.intent)}</p>` : "") +
+    section("Humor", cap?.humor && cap.humor !== "none" ? `<p>${escapeHtml(cap.humor)}</p>` : "") +
+    section(cap ? "Earlier caption" : "Caption", legacy ? `<p>${escapeHtml(legacy)}</p>` : "") +
+    section("Transcript", transcript) +
+    section("Keyframes", frames) +
+    section("Similar", similar) +
+    section("Paths", `<ul class="paths">${d.paths.map((p) => `<li>${escapeHtml(p.rel_path)}${p.readable ? "" : " (unreadable)"}</li>`).join("")}</ul>`) +
+    `</div>`;
+  highlightReader();
+  const v = $("#reader video");
+  if (v && S.openHit?.start_s != null) v.addEventListener("loadedmetadata", () => { v.currentTime = S.openHit.start_s; }, { once: true });
+  paintCursor("reader", false);
+}
+
+/* Highlight the query's words inside the reader, as text nodes, never as HTML. */
+let marks = [], markAt = -1;
+function highlightReader() {
+  marks = []; markAt = -1;
+  const words = S.q.toLowerCase().match(/[\p{L}\p{N}][\p{L}\p{N}'.@-]*/gu)?.filter((w) => w.length >= 2) || [];
+  if (!words.length) return;
+  const re = new RegExp(`(${words.map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")})`, "giu");
+  const body = $("#reader .reader__body");
+  const walker = document.createTreeWalker(body, NodeFilter.SHOW_TEXT, {
+    acceptNode: (n) => n.parentElement.closest("button, a, .meta, h3") ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT,
+  });
+  const nodes = [];
+  while (walker.nextNode()) nodes.push(walker.currentNode);
+  for (const node of nodes) {
+    const parts = node.nodeValue.split(re);
+    if (parts.length < 2) continue;
+    const frag = document.createDocumentFragment();
+    parts.forEach((part, i) => {
+      if (i % 2) { const m = document.createElement("mark"); m.textContent = part; frag.append(m); marks.push(m); }
+      else if (part) frag.append(part);
+    });
+    node.replaceWith(frag);
+  }
+}
+function nextMark(dir) {
+  if (!marks.length) return say("No highlighted matches in the reader.");
+  markAt = (markAt + dir + marks.length) % marks.length;
+  marks.forEach((m, i) => { m.style.outline = i === markAt ? "2px solid var(--hot)" : ""; });
+  marks[markAt].scrollIntoView({ block: "center" });
+  say(`Match ${markAt + 1} of ${marks.length}`);
+}
+
+/* ── Timeline ─────────────────────────────────────────────── */
+async function loadTimeline() {
+  const resp = await fetch(`/api/timeline?${queryParams()}`);
+  if (!resp.ok) return;
+  S.tl.data = await resp.json();
+  const months = fillMonths(S.tl.data.months);
+  S.tl.months = months;
+  if (S.tl.cursor < 0 || S.tl.cursor >= months.length) S.tl.cursor = months.length - 1;
+  renderTimeline();
+}
+function fillMonths(rows) {
+  if (!rows.length) return [];
+  const by = Object.fromEntries(rows.map((r) => [r.month, r]));
+  const out = [];
+  let [y, m] = rows[0].month.split("-").map(Number);
+  const [ey, em] = rows[rows.length - 1].month.split("-").map(Number);
+  while (y < ey || (y === ey && m <= em)) {
+    const key = `${y}-${String(m).padStart(2, "0")}`;
+    out.push(by[key] || { month: key, image: 0, video: 0, pdf: 0, weak: 0 });
+    if (++m > 12) { m = 1; y++; }
+  }
+  return out;
+}
+function cssVar(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+function renderTimeline() {
+  const host = $("#timeline");
+  const months = S.tl.months || [];
+  if (!host.firstChild) {
+    host.innerHTML = `<div class="tl"><canvas id="tlCanvas" aria-label="Items per month"></canvas>` +
+      `<div class="tl__legend"><span class="label" id="tlCur"></span><span class="meta">` +
+      `<span><i class="sw" style="background:var(--blue)"></i>images</span><span><i class="sw" style="background:var(--ink)"></i>videos</span>` +
+      `<span><i class="sw" style="background:var(--ink-3)"></i>pdfs</span></span><span class="meta" id="tlUndated"></span></div></div>`;
+    const canvas = $("#tlCanvas");
+    canvas.addEventListener("click", (e) => {
+      const r = canvas.getBoundingClientRect();
+      const i = Math.floor((e.clientX - r.left) / r.width * months.length);
+      tlMove(i - S.tl.cursor);
+    });
+    new ResizeObserver(() => drawTimeline()).observe(canvas);
+  }
+  drawTimeline();
+}
+function drawTimeline() {
+  const canvas = $("#tlCanvas");
+  if (!canvas || !S.tl.months) return;
+  const months = S.tl.months;
+  const dpr = window.devicePixelRatio || 1;
+  const w = canvas.clientWidth, h = canvas.clientHeight;
+  canvas.width = w * dpr; canvas.height = h * dpr;
+  const g = canvas.getContext("2d");
+  g.scale(dpr, dpr);
+  g.clearRect(0, 0, w, h);
+  if (!months.length) return;
+  const max = Math.max(1, ...months.map((m) => m.image + m.video + m.pdf));
+  const top = 8, bottom = h - 18, bw = w / months.length;
+  const colors = { image: cssVar("--blue"), video: cssVar("--ink"), pdf: cssVar("--ink-3") };
+  const [ms, me] = S.tl.mark != null ? [Math.min(S.tl.mark, S.tl.cursor), Math.max(S.tl.mark, S.tl.cursor)] : [-1, -1];
+  months.forEach((m, i) => {
+    let y = bottom;
+    const inMark = i >= ms && i <= me;
+    if (inMark) { g.fillStyle = cssVar("--hot-w"); g.fillRect(i * bw, top, bw, bottom - top); }
+    for (const k of ["image", "video", "pdf"]) {
+      const bh = (bottom - top) * m[k] / max;
+      g.fillStyle = i === S.tl.cursor ? cssVar("--hot") : colors[k];
+      g.globalAlpha = i === S.tl.cursor ? 1 : (k === "image" ? .85 : .9);
+      g.fillRect(i * bw + (bw > 3 ? .5 : 0), y - bh, Math.max(1, bw - (bw > 3 ? 1 : 0)), bh);
+      y -= bh;
+    }
+    g.globalAlpha = 1;
+    if (m.month.endsWith("-01")) {
+      g.fillStyle = cssVar("--ink-3");
+      g.font = `10px ${cssVar("--font-mono")}`;
+      g.fillRect(i * bw, bottom, 1, 4);
+      if (bw * 12 > 34 || Number(m.month.slice(0, 4)) % 2 === 0) g.fillText(m.month.slice(0, 4), i * bw + 2, h - 4);
+    }
+  });
+  g.fillStyle = cssVar("--rule");
+  g.fillRect(0, bottom, w, 1);
+  const cur = months[S.tl.cursor];
+  if (cur) {
+    const n = cur.image + cur.video + cur.pdf;
+    $("#tlCur").textContent = `${cur.month} · ${fmtN(n)} items${cur.weak ? ` (${fmtN(cur.weak)} dated by file time)` : ""}` +
+      (S.tl.mark != null ? ` · range ${months[ms].month} – ${months[me].month}` : "");
+  }
+  $("#tlUndated").textContent = S.tl.data?.undated ? `${fmtN(S.tl.data.undated)} undated` : "";
+}
+let tlListTimer = 0;
+function tlMove(delta) {
+  const months = S.tl.months || [];
+  if (!months.length) return;
+  S.tl.cursor = Math.max(0, Math.min(months.length - 1, S.tl.cursor + delta));
+  drawTimeline();
+  clearTimeout(tlListTimer);
+  tlListTimer = setTimeout(tlListMonth, 160);
+}
+async function tlListMonth() {
+  const cur = S.tl.months?.[S.tl.cursor];
+  if (!cur) return;
+  const p = queryParams({ limit: 40 });
+  p.append("s", `date:${cur.month}`);
+  const resp = await fetch(`/api/items?${p}`);
+  if (!resp.ok) return;
+  const data = await resp.json();
+  S.hits = data.hits; S.more = false;
+  $("#resultsLabel").textContent = `${cur.month}${S.q ? " · matching" : ""}`;
+  S.cursor.results = 0;
+  renderResults();
+}
+function tlNarrow() {
+  const months = S.tl.months || [];
+  if (!months.length) return;
+  let scope;
+  if (S.tl.mark != null && S.tl.mark !== S.tl.cursor) {
+    const a = months[Math.min(S.tl.mark, S.tl.cursor)].month, b = months[Math.max(S.tl.mark, S.tl.cursor)].month;
+    scope = `date:${a}..${b}`;
+  } else {
+    scope = `date:${months[S.tl.cursor].month}`;
+  }
+  S.tl.mark = null;
+  pushScope(scope, scope.slice(5));
+}
+
+/* ── Modes ────────────────────────────────────────────────── */
+function setMode(mode) {
+  if (!["search", "timeline"].includes(mode)) return say(`${mode[0].toUpperCase() + mode.slice(1)} arrives in a later phase.`);
+  S.mode = mode;
+  navigate();
+}
+function renderModes() {
+  $$("[data-mode]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.mode === S.mode)));
+  const tl = $("#timeline");
+  tl.hidden = S.mode !== "timeline";
+  if (S.mode === "timeline") loadTimeline();
+}
+
+/* ── Actions ──────────────────────────────────────────────── */
+function narrowHere() {
+  // In the timeline, > narrows to the month (or marked range) on the axis; * still takes an item's entity.
+  if (S.mode === "timeline" && S.focus === "results" && S.tl.months?.length) return tlNarrow();
+  if (S.focus === "lenses") {
+    const row = rowsOf("lenses")[S.cursor.lenses];
+    if (row) return pushScope(row.dataset.scope, row.dataset.label);
+    return;
+  }
+  if (S.focus === "reader") {
+    const row = rowsOf("reader")[S.cursor.reader];
+    if (row?.dataset.scope) return pushScope(row.dataset.scope, row.dataset.label);
+  }
+  return narrowToMainEntity();
+}
+const entityCache = new Map();
+async function narrowToMainEntity() {
+  const card = currentCard();
+  if (!card) return;
+  let detail = S.item?.media_id === card.media_id ? S.item : entityCache.get(card.media_id);
+  if (!detail) {
+    const resp = await fetch(`/api/item/${card.media_id}`);
+    if (!resp.ok) return;
+    detail = await resp.json();
+    entityCache.set(card.media_id, detail);
+  }
+  const ent = detail.entities.find((e) => e.type === "person") || detail.entities[0];
+  if (ent) return pushScope(`entity:${ent.id}`, ent.name);
+  const tag = detail.tags[0];
+  if (tag) return pushScope(`tag:${tag.id}`, tag.name);
+  pushScope(`folder:${detail.folder}`, detail.folder);
+}
+function activateReaderRow(row) {
+  if (!row) return;
+  if (row.dataset.scope) return pushScope(row.dataset.scope, row.dataset.label);
+  if (row.dataset.open) return openItem(Number(row.dataset.open));
+  if (row.dataset.seek != null) return seek(Number(row.dataset.seek), true);
+  if (row.tagName === "A") row.click();
+}
+function seek(t, absolute = false) {
+  const v = $("#reader video");
+  if (!v) return say("No video in the reader.");
+  v.currentTime = Math.max(0, absolute ? t : v.currentTime + t);
+  if (absolute) v.play().catch(() => {});
+}
+function toggleVeil() {
+  const card = currentCard();
+  if (!card) return;
+  if (S.revealed.has(card.media_id)) S.revealed.delete(card.media_id); else S.revealed.add(card.media_id);
+  renderResults();
+  if (S.item) {
+    const box = $("#reader [data-veil]");
+    if (box) box.classList.toggle("is-veiled", veiled(S.item));
+  }
+}
+function cycleVeil() {
+  const i = VEILS.indexOf(S.veil);
+  S.veil = VEILS[(i + 1) % VEILS.length];
+  store("veil", S.veil);
+  renderResults();
+  say(S.veil == null ? "Veil off: nothing is blurred." : `Veiling items with sensitivity ≥ ${S.veil}.`);
+}
+async function copyCitation() {
+  const card = currentCard();
+  if (!card) return;
+  const link = `${location.origin}/#/item/${card.media_id}`;
+  const text = [card.title, card.date, card.source_url, link].filter(Boolean).join(" — ");
+  try { await navigator.clipboard.writeText(text); say("Citation copied."); }
+  catch { say(text, true); }
+}
+function stepResult(delta) {
+  if (!S.hits.length) return;
+  S.cursor.results = Math.max(0, Math.min(S.hits.length - 1, S.cursor.results + delta));
+  paintCursor("results");
+  openItem(S.hits[S.cursor.results].media_id);
+}
+
+/* ── Keys ─────────────────────────────────────────────────── */
+function paintMode() {
+  const insert = document.activeElement === $("#q");
+  const tag = $("#modeTag");
+  tag.textContent = insert ? "SEARCH" : "NORMAL";
+  tag.classList.toggle("is-insert", insert);
+  $("#modeBuf").textContent = S.count + S.pending;
+}
+function clearPending() { S.count = ""; S.pending = ""; paintMode(); }
+
+function onKey(e) {
+  const t = e.target;
+  if (t === $("#q")) return omniKey(e);
+  if (t instanceof Element && t.matches("input, textarea, select")) return;
+
+  const k = e.key;
+  if (k === "Escape") {
+    e.preventDefault();
+    if (!$("#panel").hidden) return toggleHelp(false);
+    if (S.count || S.pending) return clearPending();
+    if (S.tl.mark != null) { S.tl.mark = null; drawTimeline(); return; }
+    if (closeReader()) return;
+    if (S.q) { S.q = ""; $("#q").value = ""; say("Query cleared."); return navigate(); }
+    return;
+  }
+  if (e.metaKey || e.altKey) return;
+  if (e.ctrlKey) {
+    if (k === "d" || k === "u") {
+      e.preventDefault();
+      const rows = rowsOf(S.focus);
+      const col = $("#" + S.focus);
+      const page = Math.max(1, Math.floor(rows.length && rows[0].offsetHeight ? col.clientHeight / 2 / rows[0].offsetHeight : 5));
+      move(k === "d" ? page : -page);
+    }
+    return;
+  }
+
+  // Count prefix. 0 is a motion only in the timeline, where it means the first month.
+  if (/^[0-9]$/.test(k) && !(k === "0" && !S.count)) {
+    S.count += k; paintMode(); e.preventDefault(); return;
+  }
+  const n = Math.min(parseInt(S.count || "1", 10), 999);
+  const seq = S.pending;
+  const done = (fn) => { e.preventDefault(); clearPending(); fn(); };
+
+  if (seq === "g") return done(() => {
+    if (k === "g") { S.cursor[S.focus] = 0; paintCursor(S.focus); if (S.focus === "reader") $("#reader").scrollTop = 0; }
+    else if (k === "s") setMode("search");
+    else if (k === "t") setMode("timeline");
+    else if (k === "w") setMode("wiki");
+    else if (k === "n") setMode("graph");
+    else if (k === "m") setMode("map");
+    else if (k === "a") setMode("ask");
+  });
+  if (seq === "y") return done(() => { if (k === "y") copyCitation(); });
+
+  const timelineAxis = S.mode === "timeline" && S.focus === "results";
+  const inReaderVideo = S.focus === "reader" && $("#reader video");
+
+  switch (k) {
+    case "g": case "y": e.preventDefault(); S.pending = k; paintMode(); return;
+    case "j": case "ArrowDown": return done(() => move(n));
+    case "k": case "ArrowUp": return done(() => move(-n));
+    case "h": return done(() => timelineAxis ? tlMove(-n) : setFocus(COLS[Math.max(0, COLS.indexOf(S.focus) - 1)]));
+    case "l": return done(() => timelineAxis ? tlMove(n) : setFocus(S.open != null ? COLS[Math.min(2, COLS.indexOf(S.focus) + 1)] : "results"));
+    case "H": if (timelineAxis) return done(() => tlMove(-12 * n)); break;
+    case "L": if (timelineAxis) return done(() => tlMove(12 * n)); break;
+    case "v": if (timelineAxis) return done(() => { S.tl.mark = S.tl.mark == null ? S.tl.cursor : null; drawTimeline(); say(S.tl.mark == null ? "Range cleared." : "Range started: move, then > to narrow."); }); break;
+    case "ArrowLeft": return done(() => inReaderVideo ? seek(-5 * n) : timelineAxis ? tlMove(-n) : setFocus(COLS[Math.max(0, COLS.indexOf(S.focus) - 1)]));
+    case "ArrowRight": return done(() => inReaderVideo ? seek(5 * n) : timelineAxis ? tlMove(n) : setFocus(S.open != null ? COLS[Math.min(2, COLS.indexOf(S.focus) + 1)] : "results"));
+    case "Tab": return done(() => {
+      const order = S.open != null ? COLS : COLS.slice(0, 2);
+      const i = order.indexOf(S.focus);
+      setFocus(order[(i + (e.shiftKey ? order.length - 1 : 1)) % order.length]);
+    });
+    case "G": return done(() => {
+      if (S.focus === "results" && S.more) return loadMore().then(() => { S.cursor.results = S.hits.length - 1; paintCursor("results"); });
+      S.cursor[S.focus] = rowsOf(S.focus).length - 1; paintCursor(S.focus);
+    });
+    case "Enter": case "o": return done(() => {
+      if (S.focus === "lenses") return narrowHere();
+      if (S.focus === "reader") return activateReaderRow(rowsOf("reader")[S.cursor.reader]);
+      const card = S.hits[S.cursor.results];
+      if (card) openItem(card.media_id, card.hit);
+    });
+    case ">": return done(narrowHere);
+    case "<": return done(() => popScope());
+    case "*": return done(narrowToMainEntity);
+    case "/": return done(() => { $("#q").focus(); $("#q").select(); });
+    case "?": return done(() => toggleHelp());
+    case "n": return done(() => nextMark(1));
+    case "N": return done(() => nextMark(-1));
+    case "[": return done(() => stepResult(-n));
+    case "]": return done(() => stepResult(n));
+    case " ": return done(() => { const v = $("#reader video"); if (!v) return; v.paused ? v.play() : v.pause(); });
+    case "t": return done(() => { if (S.openHit?.start_s != null) seek(S.openHit.start_s, true); else say("No timestamp for this hit."); });
+    case "x": return done(toggleVeil);
+    case "X": return done(cycleVeil);
+    case "0": if (timelineAxis) return done(() => tlMove(-1e6)); break;
+    case "$": if (timelineAxis) return done(() => tlMove(1e6)); break;
+  }
+  clearPending();
+}
+
+function omniKey(e) {
+  const input = e.target;
+  if (e.key === "Escape") { e.preventDefault(); input.blur(); paintMode(); return; }
+  if (e.key === "Enter") {
+    e.preventDefault();
+    const words = input.value.trim();
+    if (words) {
+      S.q = ""; input.value = "";
+      pushScope(`text:${words}`, words);
+    }
+    input.blur(); setFocus("results"); paintMode();
+    return;
+  }
+  if (e.key === "Backspace" && !input.value && S.scopes.length) { e.preventDefault(); popScope(); return; }
+  if (e.key === "ArrowDown" || (e.ctrlKey && e.key === "j")) { e.preventDefault(); input.blur(); setFocus("results"); paintMode(); }
+}
+
+function toggleHelp(force) {
+  const panel = $("#panel");
+  const show = force ?? panel.hidden;
+  panel.hidden = !show;
+  $("#helpBtn").setAttribute("aria-expanded", String(show));
+}
+
+/* ── Wiring ───────────────────────────────────────────────── */
+document.addEventListener("keydown", onKey);
+$("#q").addEventListener("input", (e) => { S.q = e.target.value; writeHash(true); scheduleSearch(); });
+$("#q").addEventListener("focus", paintMode);
+$("#q").addEventListener("blur", paintMode);
+$("#scopes").addEventListener("click", (e) => {
+  const chip = e.target.closest(".scope-chip");
+  if (chip) { e.preventDefault(); popScope(Number(chip.dataset.i)); }
+});
+$("#lenses").addEventListener("click", (e) => {
+  const row = e.target.closest(".lens");
+  if (!row) return;
+  S.cursor.lenses = rowsOf("lenses").indexOf(row);
+  pushScope(row.dataset.scope, row.dataset.label);
+});
+$("#list").addEventListener("click", (e) => {
+  const hit = e.target.closest(".hit");
+  if (!hit) return;
+  S.cursor.results = Number(hit.dataset.i);
+  setFocus("results");
+  const card = S.hits[S.cursor.results];
+  if (e.target.closest(".is-veiled") && veiled(card)) return toggleVeil();
+  openItem(card.media_id, card.hit);
+});
+$("#reader").addEventListener("click", (e) => {
+  if (e.target.closest("[data-close]")) return closeReader();
+  if (e.target.closest("[data-copy]")) { S.focus = "reader"; return copyCitation(); }
+  if (e.target.closest("[data-veil].is-veiled")) return toggleVeil();
+  const row = e.target.closest("[data-r]");
+  if (!row || row.tagName === "A") return;
+  S.cursor.reader = rowsOf("reader").indexOf(row);
+  setFocus("reader");
+  activateReaderRow(row);
+});
+$("#moreBtn").addEventListener("click", loadMore);
+$$("[data-mode]").forEach((b) => b.addEventListener("click", () => setMode(b.dataset.mode)));
+$("#helpBtn").addEventListener("click", () => toggleHelp());
+$("#themeBtn").addEventListener("click", () => {
+  const cur = document.documentElement.dataset.theme ||
+    (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+  const next = cur === "dark" ? "light" : "dark";
+  document.documentElement.dataset.theme = next;
+  store("theme", next);
+  drawTimeline();
+});
+window.addEventListener("popstate", fromHash);
+new ResizeObserver(() => {
+  document.documentElement.style.setProperty("--top-h", $("#topbar").offsetHeight + "px");
+}).observe($("#topbar"));
+
+function fromHash() {
+  const h = readHash();
+  const openChanged = h.open !== S.open;
+  Object.assign(S, { mode: h.mode, q: h.q, scopes: h.scopes });
+  $("#q").value = S.q;
+  renderScopes();
+  renderModes();
+  scheduleSearch(0);
+  if (openChanged) { if (h.open != null) openItem(h.open); else closeReader(); }
+}
+
+(async function init() {
+  const theme = store("theme");
+  if (theme) document.documentElement.dataset.theme = theme;
+  if (!location.hash) history.replaceState(null, "", "#/search");
+  fromHash();
+  setFocus("results");
+  paintMode();
+  try {
+    const st = await (await fetch("/api/status")).json();
+    const total = st.media.filter((r) => ["image", "video", "pdf"].includes(r.kind)).reduce((a, r) => a + r.n, 0);
+    const caps = (st.docs.find((d) => d.kind === "caption") || {}).n || 0;
+    $("#brandSub").textContent = `${fmtN(total)} items · ${fmtN(caps)} read by the vision model`;
+  } catch { /* the status line is a nicety */ }
+})();
+</script>
+</body>
+</html>

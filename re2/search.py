@@ -303,7 +303,7 @@ def cards(conn: sqlite3.Connection, media_ids: list[int]) -> dict[int, dict]:
         "(SELECT substr(MIN(s.date), 1, 10) FROM source s WHERE s.media_id=m.id)"
     rows = conn.execute(f"""
         SELECT m.id, m.kind, m.status, m.thumb_path, m.width, m.height, m.duration, m.legacy_caption,
-               COALESCE(mm.sensitivity, m.legacy_spicy) AS sensitivity, mm.media_type, mm.low_res,
+               mm.sensitivity, m.legacy_spicy, mm.media_type, mm.low_res,
                {digest_sql} AS digest_title, {date_sql} AS item_date,
                {"(SELECT date_source FROM media_meta x WHERE x.media_id=m.id)" if has_item_date else "NULL"} AS date_source,
                (SELECT json_extract(d.json, '$.description') FROM doc d
@@ -330,7 +330,8 @@ def cards(conn: sqlite3.Connection, media_ids: list[int]) -> dict[int, dict]:
             "folder": folder,
             "date": r["item_date"],
             "date_source": r["date_source"] or ("source" if r["item_date"] else None),
-            "sensitivity": r["sensitivity"],
+            "sensitivity": r["sensitivity"],    # from the vision model; the only value used to veil
+            "legacy_spicy": r["legacy_spicy"],  # the 2024 tagger's guess, shown but not trusted
             "media_type": r["media_type"],
             "low_res": bool(r["low_res"]),
             "width": r["width"], "height": r["height"], "duration": r["duration"],

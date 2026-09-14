@@ -97,3 +97,11 @@ def test_legacy_routes(env):
     assert client.get("/legacy/matrix").status_code == 200
     assert client.get("/legacy/script.js").status_code == 200
     assert client.get("/hash-to-path/" + "0" * 64).status_code == 404
+
+
+def test_timeline_counts_months(env):
+    client, ids = env
+    data = client.get("/api/timeline").json()
+    assert sum(m["image"] + m["video"] for m in data["months"]) + data["undated"] == 2
+    assert client.get("/api/timeline", params={"q": "missiles"}).json()["undated"] + \
+        sum(m["image"] for m in client.get("/api/timeline", params={"q": "missiles"}).json()["months"]) == 1

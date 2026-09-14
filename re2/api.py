@@ -147,6 +147,35 @@ def create_app(cfg: config.Config | None = None) -> FastAPI:
             hits, order = search.group_by_media(conn, search.fuse(ranked), query, limit=limit, offset=offset)
             return {"hits": search.hit_dicts(conn, hits), "more": len(order) > offset + limit}
 
+    @app.get("/api/timeline")
+    def timeline(q: str = "", s: list[str] = Query(default=[])):
+        """Items per month by kind, for the scope (and the query's lexical matches when given)."""
+        with closing(open_ro(cfg)) as conn:
+            allowed, _ = parse_scopes(conn, s)
+            if q.strip():
+                matched = {m for m in search.group_by_media(
+                    conn, search.lexical(conn, q.strip(), k=20000, allowed=allowed), q, limit=0)[1]}
+                allowed = matched if allowed is None else allowed & matched
+            restrict = ""
+            if allowed is not None:
+                restrict = f"AND m.id IN (SELECT id FROM {search._temp_ids(conn, 'timeline_media', allowed)})"
+            months: dict[str, dict] = {}
+            undated = 0
+            for month, kind, weak, n in conn.execute(
+                    f"""SELECT substr(mm.item_date, 1, 7), m.kind, mm.date_source = 'mtime', COUNT(*)
+                        FROM media m LEFT JOIN media_meta mm ON mm.media_id=m.id
+                        WHERE m.kind IN ('image', 'video', 'pdf')
+                          AND m.status NOT IN ('EXCLUDED', 'UNSUPPORTED') {restrict}
+                        GROUP BY 1, 2, 3"""):
+                if not month:
+                    undated += n
+                    continue
+                row = months.setdefault(month, {"month": month, "image": 0, "video": 0, "pdf": 0, "weak": 0})
+                row[kind] += n
+                if weak:
+                    row["weak"] += n
+            return {"months": [months[k] for k in sorted(months)], "undated": undated, "events": []}
+
     # ── Items ─────────────────────────────────────────────────────────────
 
     @app.get("/api/item/{media_id}")
