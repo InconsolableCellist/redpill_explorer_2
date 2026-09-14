@@ -6,7 +6,7 @@ import dataclasses
 import logging
 import sys
 
-from re2 import config
+from re2 import config, db
 
 
 def cmd_status(cfg: config.Config, args: argparse.Namespace) -> int:
@@ -17,6 +17,15 @@ def cmd_status(cfg: config.Config, args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_scan(cfg: config.Config, args: argparse.Namespace) -> int:
+    from re2 import scan
+
+    conn = db.open_db(cfg)
+    stats = scan.scan(conn, cfg, limit=args.limit, rehash=args.rehash)
+    print(f"scan: {stats.summary()}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="re2")
     parser.add_argument("--config", help="path to config.toml")
@@ -24,6 +33,11 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", required=True)
 
     sub.add_parser("status", help="show config and progress").set_defaults(func=cmd_status)
+
+    p = sub.add_parser("scan", help="build the read-only manifest of the corpus")
+    p.add_argument("--limit", type=int, help="hash at most N new or changed files")
+    p.add_argument("--rehash", action="store_true", help="re-hash files even if size/mtime match")
+    p.set_defaults(func=cmd_scan)
     return parser
 
 
