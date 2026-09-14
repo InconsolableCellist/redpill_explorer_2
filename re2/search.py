@@ -268,17 +268,24 @@ def group_by_media(conn: sqlite3.Connection, ranked: list[tuple[int, float]], q:
 
 
 _BOILERPLATE = re.compile(
-    r"^(the |this )?(image|picture|photo|photograph|screenshot)\s+(is|shows|appears to be|appears to show|"
-    r"contains|depicts|displays|features)\s+(a |an )?((screenshot|photo|photograph|picture|image) of\s+)?(a |an |the )?",
+    r"^((the |this )?(image|picture|photo|photograph|screenshot)\s+(is|shows|appears to be|appears to show|"
+    r"contains|depicts|displays|features)|this is|it is|here is)\s+(a |an )?"
+    r"((screenshot|photo|photograph|picture|image|capture) (of|from)\s+)?(a |an |the )?",
     re.IGNORECASE)
+MIN_TITLE = 30
 
 
 def title_from_text(text: str | None, max_len: int = 90) -> str | None:
     if not text:
         return None
-    text = " ".join(text.split())
-    sentence = re.split(r"(?<=[.!?])\s", text, maxsplit=1)[0]
-    sentence = _BOILERPLATE.sub("", sentence).rstrip(".")
+    text = _BOILERPLATE.sub("", " ".join(text.split()))
+    sentences = re.split(r"(?<=[.!?])\s", text)
+    sentence = sentences[0]
+    for extra in sentences[1:]:
+        if len(sentence) >= MIN_TITLE:
+            break
+        sentence = sentence.rstrip(".") + ": " + _BOILERPLATE.sub("", extra)
+    sentence = sentence.rstrip(".")
     if not sentence:
         return None
     sentence = sentence[0].upper() + sentence[1:]

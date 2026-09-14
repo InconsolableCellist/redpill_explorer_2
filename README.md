@@ -2,7 +2,9 @@
 
 ## AI-Driven Content Archival & Organization System
 
-[Demo Video](images/demo1.mp4)
+(So-named because its current and most exciting purpose is unleashing it on controversial content)
+
+![Demo Video](images/demo1.mp4)
 
 ## 🌟 Overview
 
