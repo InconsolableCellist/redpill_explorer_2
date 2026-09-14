@@ -1,0 +1,5 @@
+# Normalized tag name = canonical tag name. Both sides are compared after
+# tags.normalize (lowercase, "_" and "-" become spaces, whitespace collapsed).
+"coronavirus" = "covid 19"
+"antisemitism" = "anti semitism"
+"judiasm" = "judaism"
