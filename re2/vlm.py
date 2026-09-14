@@ -114,6 +114,10 @@ class VLMError(Exception):
     pass
 
 
+class VLMLengthError(VLMError):
+    """The model ran out of output tokens before closing the JSON."""
+
+
 def _open_rgb(source: Path | str | bytes) -> Image.Image:
     src = io.BytesIO(source) if isinstance(source, bytes) else source
     with Image.open(src) as im:
@@ -236,8 +240,9 @@ def extract(client: httpx.Client, cfg, images: bytes | list[bytes], schema: dict
         data = json.loads(content)
     except (KeyError, IndexError, TypeError, json.JSONDecodeError) as exc:
         finish = body.get("choices", [{}])[0].get("finish_reason") if isinstance(body, dict) else None
-        raise VLMError(f"unparseable response (finish_reason={finish}, "
-                       f"max_tokens={payload['max_tokens']}): {exc}") from exc
+        error = VLMLengthError if finish == "length" else VLMError
+        raise error(f"unparseable response (finish_reason={finish}, "
+                    f"max_tokens={payload['max_tokens']}): {exc}") from exc
     if not isinstance(data, dict):
         raise VLMError(f"response is not an object: {type(data).__name__}")
     missing = [k for k in schema["required"] if k not in data]

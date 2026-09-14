@@ -87,7 +87,7 @@ class Job:
     media_id: int
     path: Path
     low_res: bool
-    tall: bool = False
+    long_output: bool = False  # tall image, or ran out of tokens before
 
 
 @dataclass
@@ -96,6 +96,7 @@ class ExtractStats:
     done: int = 0
     failed: int = 0
     tiled: int = 0
+    retried_long: int = 0
     completion_tokens: int = 0
     prompt_tokens: int = 0
     interrupted: bool = False
@@ -109,6 +110,7 @@ class ExtractStats:
         avg_out = self.completion_tokens / self.done if self.done else 0
         avg_in = self.prompt_tokens / self.done if self.done else 0
         return (f"selected={self.selected} done={self.done} failed={self.failed} tiled={self.tiled} "
+                f"retried_long={self.retried_long} "
                 f"rate={self.rate_per_min():.1f}/min avg_prompt_tokens={avg_in:.0f} "
                 f"avg_completion_tokens={avg_out:.0f}" + (" INTERRUPTED" if self.interrupted else ""))
 
@@ -116,6 +118,8 @@ class ExtractStats:
 def select_jobs(conn: sqlite3.Connection, cfg, limit: int | None, include_thumbnail_only: bool) -> list[Job]:
     statuses = ("READY", "THUMBNAIL_ONLY") if include_thumbnail_only else ("READY",)
     skip = db.pending_failures(conn, STAGE)
+    ran_out = {r[0] for r in conn.execute(
+        "SELECT media_id FROM failure WHERE stage=? AND error LIKE '%finish_reason=length%'", (STAGE,))}
     rows = conn.execute(
         f"""SELECT m.id, m.status, m.width, m.height, m.thumb_path,
                    (SELECT p.rel_path FROM media_path p WHERE p.media_id=m.id AND p.readable=1
@@ -132,10 +136,13 @@ def select_jobs(conn: sqlite3.Connection, cfg, limit: int | None, include_thumbn
             continue
         if r["status"] == "READY" and r["rel_path"]:
             small = r["width"] is not None and max(r["width"], r["height"] or 0) < LOW_RES_SIDE
-            jobs.append(Job(r["id"], Path(cfg.corpus_root) / r["rel_path"], small,
-                            vlm.is_tall(r["width"], r["height"])))
+            path, low_res = Path(cfg.corpus_root) / r["rel_path"], small
         elif r["thumb_path"]:
-            jobs.append(Job(r["id"], REPO_ROOT / r["thumb_path"], True, vlm.is_tall(r["width"], r["height"])))
+            path, low_res = REPO_ROOT / r["thumb_path"], True
+        else:
+            continue
+        long_output = vlm.is_tall(r["width"], r["height"]) or r["id"] in ran_out
+        jobs.append(Job(r["id"], path, low_res, long_output))
         if limit is not None and len(jobs) >= limit:
             break
     return jobs
@@ -172,24 +179,31 @@ def run(conn: sqlite3.Connection, cfg, limit: int | None = None, include_thumbna
         if stats.done % 50 == 0:
             log.info("progress: %s", stats.summary())
 
+    # Tall images (sliced into tiles) and text-dense images that ran out of
+    # tokens need long outputs. The vision model shares one small context across
+    # concurrent requests, so these run last, one at a time, with a larger budget.
+    normal = [j for j in jobs if not j.long_output]
+    long_jobs = [j for j in jobs if j.long_output]
+
     def on_error(job: Job, exc: BaseException) -> None:
-        stats.failed += 1
-        log.warning("media %s failed: %s", job.media_id, exc)
         with conn:
             db.upsert_failure(conn, STAGE, job.media_id, None, f"{type(exc).__name__}: {exc}"[:2000])
+        if isinstance(exc, vlm.VLMLengthError) and not job.long_output:
+            job.long_output = True
+            long_jobs.append(job)
+            stats.retried_long += 1
+            log.info("media %s ran out of tokens; will retry with %d", job.media_id, cfg.vision_max_tokens_tall)
+            return
+        stats.failed += 1
+        log.warning("media %s failed: %s", job.media_id, exc)
 
-    # Tall images are sliced into several tiles and need long outputs. The vision
-    # model shares one small context across concurrent requests, so they run
-    # afterwards, one at a time, with a larger output budget.
-    normal = [j for j in jobs if not j.tall]
-    tall = [j for j in jobs if j.tall]
     try:
         finished = runner.run_jobs(normal, work, on_result, on_error, cfg.vision_concurrency,
                                    total=len(normal), desc="extract-images")
-        if finished and tall:
-            log.info("extracting %d tall images sequentially", len(tall))
-            finished = runner.run_jobs(tall, lambda j: work(j, cfg.vision_max_tokens_tall), on_result, on_error,
-                                       1, total=len(tall), desc="extract-images (tall)")
+        if finished and long_jobs:
+            log.info("extracting %d long-output images one at a time", len(long_jobs))
+            finished = runner.run_jobs(long_jobs, lambda j: work(j, cfg.vision_max_tokens_tall), on_result,
+                                       on_error, 1, total=len(long_jobs), desc="extract-images (long)")
         stats.interrupted = not finished
     finally:
         for client in clients:
