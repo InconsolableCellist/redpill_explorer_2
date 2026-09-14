@@ -9,7 +9,6 @@ const port = 4001;
 
 // Define base paths for images
 const IMAGE_PATHS = [
-    '/mnt/hanoi_data/storage/redpills',
     '/home/offipso/Downloads/redpills'
 ];
 
@@ -51,6 +50,12 @@ app.use('/images', (req, res, next) => {
         // Check if file exists in this path
         try {
             await fs.access(fullPath);
+            // Refuse anything that resolves outside the base path (../, symlinks)
+            const real = await fs.realpath(fullPath);
+            const realBase = await fs.realpath(IMAGE_PATHS[index]);
+            if (!real.startsWith(realBase + '/')) {
+                return next();
+            }
             // File exists, serve it
             res.sendFile(fullPath, (err) => {
                 if (err) {
@@ -127,7 +132,7 @@ app.get('/tags', (req, res) => {
     res.sendFile(path.join(__dirname, 'data', 'tags_with_sizes.json'));
 });
 
-app.listen(port, () => {
+app.listen(port, '127.0.0.1', () => {
     console.log(`Server is running at http://localhost:${port}`);
 });
 
@@ -139,6 +144,15 @@ app.get('/matrix', (req, res) => {
 app.get('/spicy', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'spicy.html'));
 });
+
+function escapeHtml(value) {
+    return String(value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
 
 app.get('/node-info/:hash', async (req, res) => {
     const hash = req.params.hash;
@@ -204,18 +218,18 @@ app.get('/node-info/:hash', async (req, res) => {
                 <h1>Node Information</h1>
                 ${imageUrl ? `
                     <div class="image">
-                        <img src="${imageUrl}" alt="Node image">
+                        <img src="${escapeHtml(encodeURI(imageUrl))}" alt="Node image">
                     </div>
                 ` : '<p>Image not found</p>'}
                 <h2>Description</h2>
-                <p>${nodeData.description}</p>
+                <p>${escapeHtml(nodeData.description)}</p>
                 <h2>Spiciness Level</h2>
-                <p>${nodeData.spicy.toFixed(2)}</p>
+                <p>${typeof nodeData.spicy === 'number' ? nodeData.spicy.toFixed(2) : 'n/a'}</p>
                 <h2>Tags</h2>
                 <div class="tags">
                     ${Object.entries(nodeData.tags)
             .map(([tag, weight]) =>
-                `<div class="tag">${tag} (${weight.toFixed(2)})</div>`)
+                `<div class="tag">${escapeHtml(tag)} (${Number(weight).toFixed(2)})</div>`)
             .join('')}
                 </div>
             </body>
