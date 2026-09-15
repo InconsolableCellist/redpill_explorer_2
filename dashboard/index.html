@@ -1211,8 +1211,9 @@ async function openItem(mediaId, hit = null) {
   const el = $("#reader");
   el.hidden = false;
   el.innerHTML = `<div class="reader__bar"><span class="label">Loading…</span></div>`;
+  // toggle() flips the class when its second argument is undefined, so the test must be a real boolean.
   $$(".hit").forEach((h) => h.classList.toggle("is-open", Number(h.dataset.id) === mediaId ||
-    S.hits[Number(h.dataset.i)]?.post?.members.some((m) => m.media_id === mediaId)));
+    !!S.hits[Number(h.dataset.i)]?.post?.members.some((m) => m.media_id === mediaId)));
   const resp = await fetch(`/api/item/${mediaId}`);
   if (S.open !== mediaId) return;
   if (!resp.ok) { el.innerHTML = `<div class="reader__bar"><span class="label">Not found</span></div>`; return; }
