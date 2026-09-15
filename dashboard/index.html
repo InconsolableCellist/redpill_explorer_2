@@ -533,6 +533,17 @@ mark { background: var(--hot-w); color: var(--ink); padding: 0 1px; }
 .gr { background: var(--stock-card); border: 1px solid var(--rule-soft); box-shadow: var(--shadow); padding: 8px 10px 6px; margin-bottom: 12px; }
 .gr canvas { width: 100%; height: min(62vh, 620px); display: block; cursor: grab; touch-action: none; }
 .gr__bar { display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: baseline; justify-content: space-between; margin-top: 4px; }
+.gr__foot { display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: baseline; margin-top: 5px; min-height: 22px; }
+.gr__links { display: flex; flex-wrap: wrap; gap: 2px 10px; align-items: baseline; font-family: var(--font-mono); font-size: 10.5px; color: var(--ink-3); }
+.gr__links button { color: var(--ink-2); border-bottom: 1px solid transparent; }
+.gr__links button:hover { color: var(--ink); border-bottom-color: var(--ink-3); }
+.gr__links button b { font-weight: 600; color: var(--ink); margin-right: 3px; }
+.gr__links button i, .preview-chip i { font-style: normal; color: var(--ink-3); }
+/* A preview is not a scope: dashed and unfilled, where scope chips are solid blue. */
+.preview-chip { border-style: dashed; border-color: var(--ink-3); background: transparent; color: var(--ink); padding: 2px 3px 2px 7px; }
+.preview-chip button:hover { text-decoration: underline; }
+.preview-chip .preview-chip__x { color: var(--ink-3); padding: 0 4px; }
+.preview-chip .preview-chip__x:hover { color: var(--hot); text-decoration: none; }
 
 /* ── Timeline ────────────────────────────────────────────── */
 .tl { background: var(--stock-card); border: 1px solid var(--rule-soft); box-shadow: var(--shadow); padding: 10px 12px 6px; margin-bottom: 12px; }
@@ -747,7 +758,7 @@ mark { background: var(--hot-w); color: var(--ink); padding: 0 1px; }
         <div class="keys">
           <kbd>g s</kbd><span>Search</span>
           <kbd>g t</kbd><span>Timeline. With the chart focused, <kbd>h l</kbd> move by month, <kbd>H L</kbd> by year, <kbd>v</kbd> marks a range (or drag across the bars), <kbd>&gt;</kbd> narrows to it. Scroll or <kbd>+ -</kbd> to zoom; shift-scroll, shift-drag or middle-drag to pan; <kbd>Z</kbd> or double-click shows every month.</span>
-          <kbd>g r</kbd><span>Graph (<kbd>g n</kbd> too): entities that appear together, tags that appear together, or tags related in meaning — <kbd>T</kbd> cycles. With the chart focused, <kbd>h l</kbd> step through nodes, <kbd>+ -</kbd> zoom, <kbd>0</kbd> resets, <kbd>&gt;</kbd> narrows to the cursor node (orange). Clicking a node moves the cursor and lists its items without narrowing; double-click narrows. Scroll to zoom, drag to pan, double-click empty space to reset.</span>
+          <kbd>g r</kbd><span>Graph (<kbd>g n</kbd> too), for exploring how tags connect: tags that appear together, tags related in meaning, or entities that appear together — <kbd>T</kbd> cycles. Thicker, darker lines are stronger links. With the chart focused, <kbd>h l</kbd> step through nodes (orange = cursor), <kbd>w</kbd> follows the cursor's strongest link (<kbd>2w</kbd> the second, as numbered under the graph), <kbd>b</kbd> steps back, <kbd>space</kbd> picks the cursor node, <kbd>&gt;</kbd> narrows to the picked nodes (any of them) or else the cursor node, <kbd>Esc</kbd> clears the picks, then the preview, <kbd>+ -</kbd> zoom, <kbd>0</kbd> resets. Moving the cursor previews its items below (the dashed chip) without narrowing. Click a node to preview it, shift-click (or ctrl-click) to pick it, double-click to narrow; scroll to zoom, drag to pan, double-click empty space to reset.</span>
           <kbd>g m</kbd><span>Map of the whole archive by meaning; your scope lights up. With the chart focused, <kbd>h l</kbd> step through topics (<kbd>T</kbd> for themes), <kbd>z</kbd> zooms to one, <kbd>+ -</kbd> zoom, <kbd>0</kbd> resets, <kbd>space</kbd> picks the cursor topic (orange), <kbd>&gt;</kbd> narrows to the picked topics and netted dots (or the cursor topic), <kbd>Esc</kbd> clears them, <kbd>f</kbd> finds a tag or entity (arrows preview it, <kbd>Enter</kbd> narrows). Scroll to zoom, drag to pan, click a dot to open it, shift-click (or ctrl-click) a dot or label to pick its topic, shift-drag to net the dots inside. Close in, dots show their titles.</span>
           <kbd>D</kbd><span>Discuss the item under the cursor: a new Ask conversation with its full record attached, and related items (near in time or meaning) if <b>+ related</b> is on. Depth sets how much is read; period and topics narrow it.</span>
           <kbd>d d</kbd><span>On a conversation in Ask's left column: delete it</span>
@@ -835,7 +846,11 @@ const S = {
   count: "",
   pending: "",
   tl: { data: null, cursor: -1, mark: null, view: null, picked: false },  // view: {start, count} in months, null = all; picked: the list shows the cursor month (or marked range)
-  gr: { data: null, kind: store("graphKind") || "entity", cursor: 0, order: [], pos: null, hover: -1, view: { s: 1, tx: 0, ty: 0 } },
+  gr: { data: null, kind: store("graphKind") || "tag", cursor: 0, order: [], pos: null, hover: -1, view: { s: 1, tx: 0, ty: 0 },
+        sel: new Set(),      // picked node ids
+        preview: false,      // the list shows the cursor node (or the picked nodes) rather than the scope
+        trail: [],           // node ids the cursor came from, newest last, for b
+        adj: [], idx: new Map(), key: "" },
   mp: { data: null, level: "topic", order: [], cursor: 0, scope: null, view: { s: 1, x: 0, y: 0 }, hover: -1,
         sel: new Set(),      // picked topic or theme ids
         picked: new Set(),   // netted point indices
@@ -2701,13 +2716,35 @@ async function loadGraph() {
   const resp = await fetch(`/api/graph?${queryParams({ kind: S.gr.kind })}`);
   if (!resp.ok || my !== grReq) return;
   const data = await resp.json();
+  // Another scope or kind is another graph: picks, preview and trail belonged to the old one.
+  // A reload of the same graph (a new sort, a refresh) keeps them.
+  const key = JSON.stringify([S.q.trim(), S.scopes, data.kind]);
+  const fresh = key !== S.gr.key;
+  S.gr.key = key;
   S.gr.data = data;
+  S.gr.idx = new Map(data.nodes.map((nd, i) => [nd.id, i]));
+  S.gr.adj = grAdjacency(data);
   S.gr.order = data.nodes.map((_, i) => i).sort((a, b) => data.nodes[b].n - data.nodes[a].n);
+  if (fresh) { S.gr.sel.clear(); S.gr.trail = []; S.gr.preview = false; S.gr.cursor = 0; }
+  else for (const id of S.gr.sel) if (!S.gr.idx.has(id)) S.gr.sel.delete(id);
   S.gr.cursor = Math.min(S.gr.cursor, Math.max(0, S.gr.order.length - 1));
   S.gr.pos = layoutGraph(data);
   S.gr.view = { s: 1, tx: 0, ty: 0 };
   renderGraph();
-  grListNode();
+  // The search already listed the scope; only a preview needs listing again.
+  if (S.gr.preview) grList();
+}
+/* Each node's links, strongest first. */
+function grAdjacency(data) {
+  const idx = new Map(data.nodes.map((nd, i) => [nd.id, i]));
+  const adj = data.nodes.map(() => []);
+  for (const e of data.edges) {
+    const a = idx.get(e.a), b = idx.get(e.b);
+    if (a == null || b == null) continue;
+    adj[a].push({ j: b, w: e.w, n: e.n }); adj[b].push({ j: a, w: e.w, n: e.n });
+  }
+  for (const links of adj) links.sort((x, y) => y.w - x.w || y.n - x.n);
+  return adj;
 }
 
 /* Fruchterman–Reingold on at most a few hundred nodes: a few hundred iterations,
@@ -2759,7 +2796,16 @@ function renderGraph() {
   const host = $("#graph");
   if (!host.firstChild) {
     host.innerHTML = `<div class="gr"><canvas id="grCanvas" aria-label="Co-occurrence graph"></canvas>` +
-      `<div class="gr__bar"><span class="label" id="grCur"></span><span class="meta" id="grInfo"></span></div></div>`;
+      `<div class="gr__bar"><span class="label" id="grCur"></span><span class="meta" id="grInfo"></span></div>` +
+      `<div class="gr__foot" id="grFoot"></div></div>`;
+    $("#grFoot").addEventListener("click", (e) => {
+      const el = e.target.closest("[data-gr]");
+      if (!el) return;
+      S.onChart = true; setFocus("results");
+      if (el.dataset.gr === "narrow") grNarrow();
+      else if (el.dataset.gr === "clear") grClear(true);
+      else grGo(Number(el.dataset.gr));
+    });
     const canvas = $("#grCanvas");
     const at = (e) => { const r = canvas.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
     const pick = (e) => {
@@ -2794,11 +2840,14 @@ function renderGraph() {
     canvas.addEventListener("click", (e) => {
       if (dragged) return;   // the end of a pan is not a click
       const i = pick(e); if (i < 0) return;
-      S.gr.cursor = S.gr.order.indexOf(i); S.onChart = true; setFocus("results"); drawGraph(); grListNode();
+      S.onChart = true; setFocus("results");
+      if (e.shiftKey || e.ctrlKey || e.metaKey) grToggle(i); else grGo(i);
     });
     canvas.addEventListener("dblclick", (e) => {
+      if (e.shiftKey || e.ctrlKey || e.metaKey) return;   // two quick picks, not a narrow
       const i = pick(e);
-      if (i >= 0) { S.gr.cursor = S.gr.order.indexOf(i); grNarrow(); } else grReset();
+      // Double-click narrows to the node under the pointer, even with others picked.
+      if (i >= 0) { S.gr.cursor = S.gr.order.indexOf(i); grNarrow(true); } else grReset();
     });
     new ResizeObserver(() => drawGraph()).observe(canvas);
     paintCursor("results", false);
@@ -2835,11 +2884,13 @@ function drawGraph() {
   const links = data.kind === "related" ? "linked when the model rates them related" : "linked when they share 3+ items";
   $("#grInfo").textContent = `${whole} ${scoped ? "in the current scope" : "in the whole archive (no scope)"}` +
     `${data.kind === "related" ? "" : ", each on 2+ items"}, ${links} · ${fmtN(data.edges.length)} links · ${fmtN(data.n_items)} items · ` +
-    `zoom ${S.gr.view.s.toFixed(1)}× · scroll zooms, drag pans, 0 or double-click empty space resets · T switches`;
+    `zoom ${S.gr.view.s.toFixed(1)}× · thicker line = stronger link · scroll zooms, drag pans, 0 or double-click empty space resets · ` +
+    `shift-click or space picks nodes · T switches`;
   if (!data.nodes.length) {
     $("#grCur").textContent = data.kind === "entity" ? "No entities here yet — they arrive as the vision model reads images. T for tags." :
-      data.kind === "related" ? "No relatedness scores yet: run scripts/tag_relations.sh. T for entities." : "No tags here.";
+      data.kind === "related" ? "No relatedness scores yet: run scripts/tag_relations.sh. T for entities." : "No tags here. T for tags related in meaning.";
     S.gr.screen = [];
+    grPaintFoot();
     return;
   }
   const pad = 36, v = S.gr.view;
@@ -2850,103 +2901,258 @@ function drawGraph() {
     r: 2.5 + 11 * Math.sqrt(data.nodes[i].n / maxN),
   }));
   S.gr.screen = screen;
-  const idx = new Map(data.nodes.map((nd, i) => [nd.id, i]));
+  const idx = S.gr.idx;
   const cur = S.gr.order[S.gr.cursor];
   const hover = S.gr.hover;
+  const picked = (i) => S.gr.sel.has(data.nodes[i].id);
+  // The node whose links stand out: the hovered one, else the cursor.
   const focus = hover >= 0 ? hover : cur;
-  const neighbors = new Set();
-  const ink = cssVar("--ink"), ink3 = cssVar("--ink-3"), rule = cssVar("--rule"), blue = cssVar("--blue"), hot = cssVar("--hot");
+  const neighbors = new Set((S.gr.adj[focus] || []).map((l) => l.j));
+  const ink = cssVar("--ink"), ink3 = cssVar("--ink-3"), blue = cssVar("--blue"), hot = cssVar("--hot");
   // Orange only ever means the cursor; hovering another node traces its links in ink.
   const focusInk = focus === cur ? hot : ink;
-  for (const e of data.edges) {
-    const a = idx.get(e.a), b = idx.get(e.b);
-    const on = a === focus || b === focus;
-    if (on) { neighbors.add(a); neighbors.add(b); }
-    g.strokeStyle = on ? focusInk : rule;
-    g.globalAlpha = on ? 0.35 + 0.6 * e.w : 0.12 + 0.5 * e.w;
-    g.lineWidth = on ? 1.5 : 1;
-    g.beginPath(); g.moveTo(screen[a].x, screen[a].y); g.lineTo(screen[b].x, screen[b].y); g.stroke();
+  // Strength is relative to this graph's strongest link: npmi and model scores live on different ranges.
+  const maxW = Math.max(1e-3, ...data.edges.map((e) => e.w));
+  // Faint links first, so the focus node's links and links between picked nodes draw on top.
+  for (const pass of [0, 1]) {
+    for (const e of data.edges) {
+      const a = idx.get(e.a), b = idx.get(e.b);
+      if (a == null || b == null) continue;
+      const on = a === focus || b === focus, both = picked(a) && picked(b);
+      if ((on || both) !== (pass === 1)) continue;
+      const t = e.w / maxW;
+      g.strokeStyle = on ? focusInk : both ? blue : ink3;
+      g.globalAlpha = on ? 0.4 + 0.55 * t : both ? 0.35 + 0.55 * t : 0.05 + 0.25 * t;
+      g.lineWidth = on ? 1 + 4 * t : both ? 1 + 3 * t : 0.5 + 1.5 * t;
+      g.beginPath(); g.moveTo(screen[a].x, screen[a].y); g.lineTo(screen[b].x, screen[b].y); g.stroke();
+    }
   }
-  g.globalAlpha = 1;
+  const ring = (p, r, color, width) => { g.strokeStyle = color; g.lineWidth = width; g.beginPath(); g.arc(p.x, p.y, r, 0, Math.PI * 2); g.stroke(); };
   data.nodes.forEach((nd, i) => {
-    const p = screen[i];
-    const dim = focus != null && focus >= 0 && neighbors.size && !neighbors.has(i) && i !== focus && i !== cur;
-    g.globalAlpha = dim ? 0.35 : 1;
-    g.fillStyle = i === cur ? hot : blue;
+    const p = screen[i], isSel = picked(i);
+    g.globalAlpha = i === focus || i === cur || isSel || neighbors.has(i) ? 1 : 0.3;
+    // Picked nodes are ink with a blue ring; the cursor stays orange even when picked.
+    g.fillStyle = i === cur ? hot : isSel ? ink : blue;
     g.beginPath(); g.arc(p.x, p.y, p.r, 0, Math.PI * 2); g.fill();
-    if (i === cur) { g.strokeStyle = hot; g.lineWidth = 2; g.beginPath(); g.arc(p.x, p.y, p.r + 4, 0, Math.PI * 2); g.stroke(); }
-    else if (i === hover) { g.strokeStyle = ink; g.lineWidth = 2; g.beginPath(); g.arc(p.x, p.y, p.r + 3, 0, Math.PI * 2); g.stroke(); }
+    if (isSel) ring(p, p.r + 3, blue, 2.5);
+    if (i === cur) ring(p, p.r + (isSel ? 7 : 4), hot, 2);
+    else if (i === hover) ring(p, p.r + (isSel ? 6 : 3), ink, 2);
   });
   g.globalAlpha = 1;
-  // More names fit as you zoom in. The cursor and hovered node are always named, drawn last so nothing covers them.
-  const forced = [cur, hover].filter((i, j, arr) => i != null && i >= 0 && arr.indexOf(i) === j);
+  // Labels. The cursor, hovered and picked nodes are always named, drawn last so nothing covers them; then
+  // the focus node's neighbours, strongest link first; then the biggest nodes, more as you zoom in.
+  // The cursor's links carry the number w follows them by, and the node b returns to says so.
+  const follow = new Map(focus === cur ? grFollowable().slice(0, 9).map((l, r) => [l.j, r + 1]) : []);
+  const back = focus === cur ? grBackIndex() : -1;
+  const forced = [cur, hover, ...[...S.gr.sel].map((id) => idx.get(id))].filter((i, j, arr) => i != null && i >= 0 && arr.indexOf(i) === j);
   const wanted = [...neighbors, ...S.gr.order.slice(0, Math.round(28 * v.s))].filter((i) => !forced.includes(i));
   const mono = cssVar("--font-mono"), card = cssVar("--stock-card");
   g.font = `11px ${mono}`;
   g.textBaseline = "middle";
   const boxes = forced.map((i) => labelBox(i));
-  function labelBox(i) {
+  function labelBox(i, left = false) {
     const p = screen[i], nd = data.nodes[i];
-    const text = nd.name.length > 28 ? nd.name.slice(0, 27) + "…" : nd.name;
-    const x = p.x + p.r + (i === cur ? 7 : 4);
-    return { i, text, x, y: p.y, b: [x - 2, p.y - 7, g.measureText(text).width + 4, 14] };
+    const mark = picked(i) ? "✓ " : follow.has(i) ? `${follow.get(i)} ` : i === back ? "b " : "";
+    const text = mark + (nd.name.length > 28 ? nd.name.slice(0, 27) + "…" : nd.name);
+    const tw = g.measureText(text).width, gap = p.r + (i === cur ? 7 : picked(i) ? 6 : 4);
+    if (p.x + gap + tw + 2 > w) left = true;   // names at the right edge go on the node's left
+    const x = left ? p.x - gap - tw : p.x + gap;
+    return { i, text, x, y: p.y, b: [x - 2, p.y - 7, tw + 4, 14] };
   }
   const drawn = new Set();
   const paint = (lb, bold) => {
     const { i, text, x, y, b } = lb;
+    const isSel = picked(i);
     g.font = `${bold ? "600 " : ""}11px ${mono}`;
-    g.fillStyle = card; g.globalAlpha = bold ? 0.95 : 0.8;
+    g.fillStyle = isSel ? ink : card; g.globalAlpha = isSel ? 0.92 : bold ? 0.95 : 0.8;
     g.fillRect(...b);
     g.globalAlpha = 1;
-    g.fillStyle = i === cur ? hot : (neighbors.has(i) || i === focus ? ink : ink3);
+    g.fillStyle = i === cur ? hot : isSel ? cssVar("--on-ink") : (neighbors.has(i) || i === focus ? ink : ink3);
     g.fillText(text, x, y);
   };
+  const clash = (lb) => boxes.some(({ b }) => lb.b[0] < b[0] + b[2] && b[0] < lb.b[0] + lb.b[2] && lb.b[1] < b[1] + b[3] && b[1] < lb.b[1] + lb.b[3]);
   for (const i of wanted) {
     if (drawn.has(i)) continue;
     drawn.add(i);
     const p = screen[i];
     if (p.x < -20 || p.y < 0 || p.x > w || p.y > h) continue;
-    const lb = labelBox(i);
-    if (boxes.some(({ b }) => lb.b[0] < b[0] + b[2] && b[0] < lb.b[0] + lb.b[2] && lb.b[1] < b[1] + b[3] && b[1] < lb.b[1] + lb.b[3])) continue;
+    // Linked nodes crowd together; a name that collides on the right may fit on the left.
+    let lb = labelBox(i);
+    if (clash(lb)) { lb = labelBox(i, true); if (clash(lb)) continue; }
     boxes.push(lb);
     paint(lb, false);
   }
   for (const lb of boxes.slice(0, forced.length).reverse()) paint(lb, true);
-  const nd = data.nodes[cur];
-  const linked = (i) => new Set(data.edges.flatMap((e) => (idx.get(e.a) === i ? [e.b] : idx.get(e.b) === i ? [e.a] : []))).size;
+  $("#grCur").textContent = grStatus();
+  grPaintFoot();
+}
+const grHash = () => (S.gr.data?.kind === "entity" ? "" : "#");
+/* What > would do, in words. */
+function grStatus() {
+  const data = S.gr.data, cur = S.gr.order[S.gr.cursor], nd = data.nodes[cur], hover = S.gr.hover;
   const typeName = (x) => (x.type && x.type !== "tag" ? ` (${x.type})` : data.kind === "entity" ? "" : " (tag)");
-  if (nd) {
-    const hv = hover >= 0 && hover !== cur ? data.nodes[hover] : null;
-    $("#grCur").textContent = hv
-      ? `Pointing at ${hv.name}${typeName(hv)} · on ${fmtN(hv.n)} items · ${linked(hover)} linked — click to move the cursor there`
-      : `Cursor (orange): ${nd.name}${typeName(nd)} · listing its ${fmtN(nd.n)} items below · ${linked(cur)} linked — > or double-click narrows to it`;
+  if (hover >= 0 && hover !== cur) {
+    const hv = data.nodes[hover];
+    return `Pointing at ${hv.name}${typeName(hv)} · on ${fmtN(hv.n)} items · ${S.gr.adj[hover].length} linked — ` +
+      `click previews it, shift-click picks it, double-click narrows`;
   }
+  const nSel = S.gr.sel.size, kind = data.kind === "entity" ? ["entity", "entities"] : ["tag", "tags"];
+  if (nSel) return `${nSel} ${kind[nSel === 1 ? 0 : 1]} picked (blue rings) · listed below · > narrows to any of them · Esc clears`;
+  if (!nd) return "";
+  return `Cursor (orange) ${S.gr.cursor + 1}/${S.gr.order.length}: ${nd.name}${typeName(nd)} · on ${fmtN(nd.n)} items · ` +
+    `${S.gr.adj[cur].length} linked` + (S.gr.preview ? " · listed below · > narrows · space picks it" : " — h l or a click previews its items · > narrows · space picks it");
+}
+/* Under the graph: the preview chip, then the cursor's strongest links, which w follows by number. */
+function grPaintFoot() {
+  const foot = $("#grFoot"), data = S.gr.data;
+  if (!foot || !data) return;
+  const hash = grHash(), name = (i) => escapeHtml(hash + data.nodes[i].name);
+  const target = S.gr.preview && grTarget();
+  const chip = !target ? "" :
+    `<span class="chip preview-chip" title="Not a filter yet: the list below previews it"><b>preview</b>` +
+    `<button type="button" data-gr="narrow" title="Narrow to ${target.many ? "any of them" : "it"} (>)">${escapeHtml(target.shown)}` +
+    `${target.n != null ? ` · ${fmtN(target.n)} items` : ""} <i>— &gt; narrows${target.many ? " to any" : ""}, Esc clears</i></button>` +
+    `<button type="button" class="preview-chip__x" data-gr="clear" title="Clear the preview (Esc)" aria-label="Clear the preview">×</button></span>`;
+  const cur = S.gr.order[S.gr.cursor];
+  let links = "";
+  if (cur != null) {
+    const all = S.gr.adj[cur], follow = grFollowable(), back = grBackIndex();
+    const backNote = back >= 0 ? ` · b back to ${name(back)}` : "";
+    links = !all.length ? `<span>no links from ${name(cur)} in this scope${backNote}</span>` :
+      `<span>linked most:</span>` + follow.slice(0, 6).map((l, r) =>
+        `<button type="button" data-gr="${l.j}" title="${r ? r + 1 : ""}w follows this link">` +
+        `<b>${r + 1}</b>${name(l.j)} <i>${l.w.toFixed(2)}</i></button>`).join("") +
+      (follow.length > 6 ? `<span>+${follow.length - 6} more</span>` : "") +
+      `<span>· w follows the strongest${follow.length > 1 ? ", 2w the second" : ""}${backNote}</span>`;
+  }
+  const html = `${chip}<span class="gr__links">${links}</span>`;
+  // Hovering redraws the canvas constantly; leave the buttons alone unless they change.
+  if (foot.innerHTML !== html) foot.innerHTML = html;
 }
 
 let grListTimer = 0;
-function grMove(delta) {
-  if (!S.gr.order.length) return;
-  S.gr.cursor = Math.max(0, Math.min(S.gr.order.length - 1, S.gr.cursor + delta));
+/* Every cursor move comes through here, so b can retrace it and the list follows the cursor. */
+function grGo(i, trail = true) {
+  const at = S.gr.order.indexOf(i);
+  if (at < 0) return;
+  const from = S.gr.order[S.gr.cursor];
+  if (trail && from != null && from !== i) {
+    S.gr.trail.push(S.gr.data.nodes[from].id);
+    if (S.gr.trail.length > 200) S.gr.trail.shift();
+  }
+  S.gr.cursor = at;
+  S.gr.preview = true;
   drawGraph();
   clearTimeout(grListTimer);
-  grListTimer = setTimeout(grListNode, 160);
+  // While nodes are picked the list shows the picks, not the cursor.
+  if (!S.gr.sel.size) grListTimer = setTimeout(grList, 160);
 }
-async function grListNode() {
-  const nd = S.gr.data?.nodes[S.gr.order[S.gr.cursor]];
-  if (!nd) return;
+function grMove(delta) {
+  if (!S.gr.order.length) return;
+  grGo(S.gr.order[Math.max(0, Math.min(S.gr.order.length - 1, S.gr.cursor + delta))]);
+}
+/* The node b returns to, as an index into the nodes, or -1. */
+function grBackIndex() {
+  const id = S.gr.trail.at(-1);
+  return id == null ? -1 : S.gr.idx.get(id) ?? -1;
+}
+/* The cursor's links w can follow: strongest first, leaving out the node it came from, so w w walks on rather than back. */
+function grFollowable() {
+  const back = grBackIndex();
+  return (S.gr.adj[S.gr.order[S.gr.cursor]] || []).filter((l) => l.j !== back);
+}
+function grFollow(nth) {
+  const links = grFollowable();
+  if (!links.length) return say(grBackIndex() >= 0 ? "No links onward from here; b goes back." : "No links from this node in this scope.");
+  if (nth > links.length) say(`Only ${links.length} ${links.length === 1 ? "link" : "links"} onward; following the last.`);
+  grGo(links[Math.min(nth, links.length) - 1].j);
+}
+function grBackStep(steps) {
+  let i = -1;
+  while (steps-- > 0 && S.gr.trail.length) {
+    const id = S.gr.trail.pop();
+    if (S.gr.idx.has(id)) i = S.gr.idx.get(id);
+  }
+  if (i < 0) return say("Nowhere to go back to.");
+  grGo(i, false);
+}
+function grToggle(i) {
+  const id = S.gr.data.nodes[i].id;
+  if (S.gr.sel.has(id)) S.gr.sel.delete(id); else S.gr.sel.add(id);
+  S.gr.preview = true;
+  drawGraph();
+  clearTimeout(grListTimer);
+  grListTimer = setTimeout(grList, 160);
+}
+function grToggleCursor() {
+  if (S.gr.order.length) grToggle(S.gr.order[S.gr.cursor]);
+}
+/* What the list previews and > narrows to: the picked nodes as one any-of scope (tag:a,b), else the cursor node. */
+function grTarget(cursorOnly = false) {
+  const data = S.gr.data;
+  if (!data) return null;
+  const nds = S.gr.sel.size && !cursorOnly ? [...S.gr.sel].map((id) => data.nodes[S.gr.idx.get(id)]).filter(Boolean)
+    : [data.nodes[S.gr.order[S.gr.cursor]]].filter(Boolean);
+  if (!nds.length) return null;
+  const or = (names) => (names.length <= 2 ? names.join(" or ") : `${names[0]} or ${names[1]} or ${names.length - 2} more`);
+  return { scope: `${nds[0].scope.split(":")[0]}:${nds.map((nd) => nd.id).join(",")}`,
+           label: or(nds.map((nd) => nd.name)), shown: or(nds.map((nd) => grHash() + nd.name)),
+           n: nds.length === 1 ? nds[0].n : null, many: nds.length > 1 };
+}
+let grListReq = 0;
+async function grList() {
+  const target = S.gr.preview && grTarget();
+  if (!target) return;
+  const my = ++grListReq;
   const p = queryParams({ limit: 40 });
-  p.append("s", nd.scope);
+  p.append("s", target.scope);
   const resp = await fetch(`/api/items?${p}`);
-  if (!resp.ok) return;
+  if (!resp.ok || my !== grListReq || !S.gr.preview) return;
   const data = await resp.json();
   S.hits = data.hits; S.more = false;
-  $("#resultsLabel").textContent = `${nd.name}${S.q ? " · matching" : ""}`;
+  $("#resultsLabel").textContent = `Preview: ${target.label}${S.q.trim() ? " · matching" : ""}`;
   S.cursor.results = 0;
   renderResults();
 }
-function grNarrow() {
-  const nd = S.gr.data?.nodes[S.gr.order[S.gr.cursor]];
-  if (nd) pushScope(nd.scope, nd.name);
+/* Back to the scope's own list, as the search left it, without reloading the graph. */
+async function grListScope() {
+  const my = ++grListReq;
+  const resp = await fetch(`/api/items?${queryParams({ limit: 40 })}`);
+  if (!resp.ok || my !== grListReq) return;
+  const data = await resp.json();
+  S.hits = data.hits; S.more = data.more;
+  $("#resultsLabel").textContent = S.q.trim() ? "Matches · words + meaning" : "";
+  S.cursor.results = 0;
+  renderResults();
+}
+function grNarrow(cursorOnly = false) {
+  const target = grTarget(cursorOnly);
+  if (!target) return;
+  if (S.scopes.includes(target.scope)) return say("Already narrowed to that.");
+  clearTimeout(grListTimer);
+  S.gr.sel.clear(); S.gr.preview = false;
+  pushScope(target.scope, target.label);
+}
+/* Esc: drop the picks, then the preview (all: both at once). Returns whether there was anything to clear. */
+function grClear(all = false) {
+  const had = S.gr.sel.size;
+  if (!had && !S.gr.preview) return false;
+  S.gr.sel.clear();
+  clearTimeout(grListTimer);
+  if (had && !all) { say("Selection cleared."); drawGraph(); grList(); return true; }
+  S.gr.preview = false;
+  say(had ? "Selection and preview cleared." : "Preview cleared.");
+  drawGraph(); grListScope();
+  return true;
+}
+function grCycleKind() {
+  S.gr.kind = { tag: "related", related: "entity", entity: "tag" }[S.gr.kind] || "tag";
+  store("graphKind", S.gr.kind);
+  S.gr.cursor = 0; S.gr.sel.clear(); S.gr.trail = [];
+  if (S.gr.preview) { S.gr.preview = false; grListScope(); }
+  loadGraph();
+  say({ entity: "Graph of entities that appear together.", tag: "Graph of tags that appear together.",
+        related: "Graph of tags related in meaning (scored by the model)." }[S.gr.kind]);
 }
 
 /* ── Modes ────────────────────────────────────────────────── */
@@ -3156,6 +3362,7 @@ function onKey(e) {
     if (closeReader()) return;
     if (S.mode === "timeline" && S.tl.picked) return tlDeselect();
     if (S.mode === "map" && mpClear()) return;
+    if (S.mode === "graph" && grClear()) return;
     if (S.q) { S.q = ""; $("#q").value = ""; say("Query cleared."); return navigate(); }
     return;
   }
@@ -3226,14 +3433,11 @@ function onKey(e) {
     case "+": case "=": if (mapAxis) return done(() => mpZoom(1.5 ** n)); if (timelineAxis) return done(() => tlZoom(1.5 ** n)); if (graphAxis) return done(() => grZoom(1.5 ** n)); break;
     case "-": if (mapAxis) return done(() => mpZoom(1 / 1.5 ** n)); if (timelineAxis) return done(() => tlZoom(1 / 1.5 ** n)); if (graphAxis) return done(() => grZoom(1 / 1.5 ** n)); break;
     case "f": if (S.mode === "map" && $("#mpFind")) return done(() => $("#mpFind").focus()); break;
-    case "T": if (S.mode === "graph") return done(() => {
-        S.gr.kind = { entity: "tag", tag: "related", related: "entity" }[S.gr.kind] || "entity";
-        store("graphKind", S.gr.kind); S.gr.cursor = 0; loadGraph();
-        say({ entity: "Graph of entities that appear together.", tag: "Graph of tags that appear together.",
-              related: "Graph of tags related in meaning (scored by the model)." }[S.gr.kind]);
-      });
+    case "T": if (S.mode === "graph") return done(grCycleKind);
       if (S.mode === "map") return done(() => { S.mp.level = S.mp.level === "topic" ? "theme" : "topic"; mpOrder(); S.mp.cursor = 0; drawMap(); mpListCluster(); say(`Stepping through ${S.mp.level}s.`); });
       break;
+    case "w": if (graphAxis) return done(() => grFollow(n)); break;
+    case "b": if (graphAxis) return done(() => grBackStep(n)); break;
     case "H": if (timelineAxis) return done(() => tlMove(-12 * n)); break;
     case "L": if (timelineAxis) return done(() => tlMove(12 * n)); break;
     case "Z": if (timelineAxis) return done(() => { S.tl.view = null; drawTimeline(); }); break;
@@ -3269,7 +3473,7 @@ function onKey(e) {
     case "N": return done(() => nextMark(-1));
     case "[": return done(() => stepResult(-n));
     case "]": return done(() => stepResult(n));
-    case " ": if (mapAxis) return done(mpToggleCursor); return done(() => { const v = $("#reader video"); if (!v) return; v.paused ? v.play() : v.pause(); });
+    case " ": if (mapAxis) return done(mpToggleCursor); if (graphAxis) return done(grToggleCursor); return done(() => { const v = $("#reader video"); if (!v) return; v.paused ? v.play() : v.pause(); });
     case "t": return done(() => { if (S.openHit?.start_s != null) seek(S.openHit.start_s, true); else say("No timestamp for this hit."); });
     case "x": return done(toggleVeil);
     case "X": return done(cycleVeil);
