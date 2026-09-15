@@ -28,3 +28,46 @@
 "transgender" = "trans people"
 "transgender people" = "trans people"
 "gays" = "gay people"
+
+# ── Suggested by tag relatedness, 2026-09-15 ─────────────────────────────────
+# Pairs the model scored 0.95 or more from both sides (scripts/tag_relations.sh).
+# Active: the same tag in another spelling, number or phrasing.
+"conspiracy theories" = "conspiracy theory"
+"democratic party" = "democrats"
+"republican party" = "republicans"
+"drones" = "drone"
+"economics" = "economy"
+"fact checking" = "fact check"
+"freedom of expression" = "free speech"
+"natural disaster" = "natural disasters"
+"photos" = "photograph"
+"photographs" = "photograph"
+"public figures" = "public figure"
+"tv" = "television"
+"the new york times" = "new york times"
+"vaccines" = "vaccine"
+"vaccination" = "vaccine"
+"verified user" = "verified account"
+"animal cruelty" = "animal abuse"
+"demonstration" = "protest"
+
+# Needs your judgement: close, but merging loses a distinction. Uncomment to merge, then
+# run `uv run re2 normalize-tags --dry-run` to preview and `uv run re2 normalize-tags` to apply.
+# "fox" = "fox news"                         # "fox" may be the animal; the two co-occur on only 3 items
+# "judicial proceedings" = "court case"      # proceedings include hearings and inquiries, not only cases
+# "legal proceedings" = "court case"
+# "disinformation" = "misinformation"        # disinformation is deliberate; misinformation need not be
+# "pedos" = "pedophilia"                     # slang for the people, not the topic; "pedophiles" may be better
+# "disaster" = "natural disasters"           # disaster is broader (crashes, industrial accidents)
+# "far right" = "right wing"                 # degree matters for political content
+# "riot" = "civil unrest"                    # a riot is one kind of unrest
+# "nsfw" = "graphic content"                 # nsfw is mostly sexual, graphic content mostly gore
+# "healthcare" = "medical"
+
+# Related but different (not synonyms; noted so they are not suggested again):
+#   jews ~ antisemitism ~ judaism, muslims ~ islam, racism ~ race, covid 19 ~ pandemic, war ~ conflict,
+#   kamala harris ~ joe biden, george floyd ~ black lives matter, immigration ~ illegal immigration,
+#   illegal immigration ~ illegal immigrants, haiti ~ haitians, police ~ law enforcement, privacy ~ data
+#   protection ~ privacy policy, sexual assault ~ rape, gun control ~ guns, arrest ~ mugshot, celebrity ~
+#   public figures, scientific research ~ science, historical photograph ~ photograph,
+#   healthcare professional ~ medical

@@ -226,6 +226,12 @@ def cmd_merge_entities(cfg: config.Config, args: argparse.Namespace) -> int:
 def cmd_normalize_tags(cfg: config.Config, args: argparse.Namespace) -> int:
     from re2 import tags
 
+    if args.dry_run:
+        plan = tags.renormalize(db.open_db(cfg), dry_run=True)
+        for old, new, n in plan:
+            print(f"  {old!r} -> {new!r}  ({n} items)")
+        print(f"normalize-tags (dry run): {len(plan)} tags would be renamed or merged")
+        return 0
     changed, moved = tags.renormalize(db.open_db(cfg))
     print(f"normalize-tags: renamed_or_merged={changed} rows_moved={moved}")
     return 0
@@ -302,8 +308,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--dry-run", action="store_true", help="print the merges without applying them")
     p.set_defaults(func=cmd_merge_entities)
 
-    sub.add_parser("normalize-tags", help="re-apply tag normalization and tag_synonyms.toml to stored tags") \
-        .set_defaults(func=cmd_normalize_tags)
+    p = sub.add_parser("normalize-tags", help="re-apply tag normalization and tag_synonyms.toml to stored tags")
+    p.add_argument("--dry-run", action="store_true", help="print the renames and merges without applying them")
+    p.set_defaults(func=cmd_normalize_tags)
 
     p = sub.add_parser("tag-relations", help="observed and semantic relatedness between the most used tags")
     p.add_argument("--limit", type=int, help="score at most N anchor tags with the model")

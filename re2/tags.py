@@ -55,12 +55,21 @@ def set_media_tags(conn: sqlite3.Connection, media_id: int, weights: dict[str, f
     return len(merged)
 
 
-def renormalize(conn: sqlite3.Connection) -> tuple[int, int]:
+def renormalize(conn: sqlite3.Connection, dry_run: bool = False) -> tuple[int, int] | list[tuple[str, str, int]]:
     """Re-apply normalize() and the synonym map to stored tags, merging duplicates.
 
-    Returns (tags renamed or merged, media_tag rows moved).
+    Returns (tags renamed or merged, media_tag rows moved); with dry_run, the planned
+    (old name, new name, items) changes instead, and nothing is written.
     """
     synonyms.cache_clear()
+    if dry_run:
+        plan = []
+        for tag_id_, name in conn.execute("SELECT id, name FROM tag").fetchall():
+            canonical = normalize(name)
+            if canonical != name:
+                n = conn.execute("SELECT COUNT(DISTINCT media_id) FROM media_tag WHERE tag_id=?", (tag_id_,)).fetchone()[0]
+                plan.append((name, canonical, n))
+        return sorted(plan, key=lambda p: -p[2])
     changed = moved = 0
     with conn:
         for tag_id_, name in conn.execute("SELECT id, name FROM tag").fetchall():
@@ -86,4 +95,8 @@ def renormalize(conn: sqlite3.Connection) -> tuple[int, int]:
                 moved += 1
             conn.execute("DELETE FROM media_tag WHERE tag_id=?", (tag_id_,))
             conn.execute("DELETE FROM tag WHERE id=?", (tag_id_,))
+        # Relatedness rows of merged-away tags point at nothing now.
+        if conn.execute("SELECT 1 FROM sqlite_master WHERE name='tag_relation'").fetchone():
+            conn.execute("DELETE FROM tag_relation WHERE a NOT IN (SELECT id FROM tag) OR b NOT IN (SELECT id FROM tag)")
+            conn.execute("DELETE FROM tag_relation_done WHERE tag_id NOT IN (SELECT id FROM tag)")
     return changed, moved
