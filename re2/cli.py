@@ -127,6 +127,7 @@ def cmd_extract_images(cfg: config.Config, args: argparse.Namespace) -> int:
 def cmd_embed(cfg: config.Config, args: argparse.Namespace) -> int:
     from re2 import embed
 
+    embed.ensure_local_server(cfg)
     stats = embed.build_docs(db.open_db(cfg), cfg, limit=args.limit, rebuild=args.rebuild)
     print(f"embed: {stats.summary()}")
     return 0
@@ -135,9 +136,10 @@ def cmd_embed(cfg: config.Config, args: argparse.Namespace) -> int:
 def cmd_serve(cfg: config.Config, args: argparse.Namespace) -> int:
     import uvicorn
 
-    from re2 import api
+    from re2 import api, embed
 
     db.open_db(cfg).close()  # create or migrate the schema before read-only connections open it
+    embed.ensure_local_server(cfg)
     # Ask streams stay open while a tab watches a run, so don't wait on them at shutdown; runs don't survive it anyway.
     uvicorn.run(api.create_app(cfg), host=args.host or cfg.server_host, port=args.port or cfg.server_port,
                 log_level="info", timeout_graceful_shutdown=3)

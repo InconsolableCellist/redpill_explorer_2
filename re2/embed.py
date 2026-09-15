@@ -1,4 +1,4 @@
-"""Dense embeddings: client for the nomic-embed server on cube and .npy indexes."""
+"""Dense embeddings: client for the nomic-embed server (local, scripts/start_embed_server.sh) and .npy indexes."""
 from __future__ import annotations
 
 import logging
@@ -28,6 +28,30 @@ QUERY_PREFIX = "search_query: "
 
 class EmbedError(Exception):
     pass
+
+
+def ensure_local_server(cfg) -> None:
+    """When the embedding URL points at this machine and nothing answers, start the local server."""
+    from urllib.parse import urlparse
+
+    from re2.config import REPO_ROOT
+
+    url = urlparse(cfg.embed_url)
+    if url.hostname not in ("127.0.0.1", "localhost"):
+        return
+    try:
+        httpx.get(f"{url.scheme}://{url.netloc}/health", timeout=2).raise_for_status()
+        return
+    except httpx.HTTPError:
+        pass
+    script = REPO_ROOT / "scripts" / "start_embed_server.sh"
+    import subprocess
+
+    done = subprocess.run([str(script)], capture_output=True, text=True, timeout=60)
+    if done.returncode:
+        log.warning("local embedding server not started: %s", (done.stderr or done.stdout).strip())
+    else:
+        log.info("%s", done.stdout.strip())
 
 
 def embed_texts(client: httpx.Client, cfg, texts: list[str], prefix: str,

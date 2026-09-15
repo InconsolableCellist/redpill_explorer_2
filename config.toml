@@ -17,7 +17,9 @@ vision_max_side = 1024
 vision_max_tiles = 6
 
 [embed]
-url = "http://cube:5010/v1/embeddings"
+# Served on this machine by scripts/start_embed_server.sh (re2 serve and re2 embed start it), so search
+# works when cube is down. Queries must use the model and build the index was made with.
+url = "http://127.0.0.1:5010/v1/embeddings"
 model = "nomic-embed-text-v1.5"
 dims = 768
 max_chars = 2000
