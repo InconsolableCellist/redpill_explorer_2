@@ -527,6 +527,7 @@ mark { background: var(--hot-w); color: var(--ink); padding: 0 1px; }
 .tl { background: var(--stock-card); border: 1px solid var(--rule-soft); box-shadow: var(--shadow); padding: 10px 12px 6px; margin-bottom: 12px; }
 .tl canvas { width: 100%; height: 190px; display: block; cursor: crosshair; touch-action: pan-y; }
 .tl__legend { display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: baseline; margin-top: 4px; }
+.tl__hint { flex: 1 1 100%; opacity: .7; font-size: 10px; }
 .sw { display: inline-block; width: 9px; height: 9px; margin-right: 5px; vertical-align: -1px; }
 
 /* ─────────────────────────────────────────────────────────────
@@ -822,7 +823,7 @@ const S = {
   corr: [],
   count: "",
   pending: "",
-  tl: { data: null, cursor: -1, mark: null, view: null },  // view: {start, count} in months, null = all
+  tl: { data: null, cursor: -1, mark: null, view: null, picked: false },  // view: {start, count} in months, null = all; picked: the list shows the cursor month (or marked range)
   gr: { data: null, kind: store("graphKind") || "entity", cursor: 0, order: [], pos: null, hover: -1 },
   mp: { data: null, level: "topic", order: [], cursor: 0, scope: null, view: { s: 1, x: 0, y: 0 }, hover: -1 },
   ask: { session: null, turns: [], mode: store("askMode") || "informed", sessions: [],
@@ -1511,6 +1512,7 @@ async function loadTimeline() {
   const resp = await fetch(`/api/timeline?${queryParams()}`);
   if (!resp.ok) return;
   S.tl.data = await resp.json();
+  S.tl.picked = false;   // a fresh search lists the whole scope again
   const months = fillMonths(S.tl.data.months);
   // A new scope or query can move the first month; keep cursor, mark and view on the same calendar months.
   const shift = S.tl.months?.length && months.length && S.tl.cursor >= 0 ? monthNo(S.tl.months[0].month) - monthNo(months[0].month) : 0;
@@ -1544,16 +1546,17 @@ function renderTimeline() {
     host.innerHTML = `<div class="tl"><canvas id="tlCanvas" aria-label="Items per month"></canvas>` +
       `<div class="tl__legend"><span class="label" id="tlCur"></span><span class="meta">` +
       `<span><i class="sw" style="background:var(--blue)"></i>images</span><span><i class="sw" style="background:var(--ink)"></i>videos</span>` +
-      `<span><i class="sw" style="background:var(--ink-3)"></i>pdfs</span></span><span class="meta" id="tlUndated"></span></div></div>`;
+      `<span><i class="sw" style="background:var(--ink-3)"></i>pdfs</span></span><span class="meta" id="tlUndated"></span>` +
+      `<span class="meta tl__hint">click a month · drag a range · click again or Esc to deselect · &gt; narrows · scroll zooms · shift-drag pans · Z shows all</span></div></div>`;
     const canvas = $("#tlCanvas");
     // Plain drag marks a range, as v then moving would; shift-drag or the middle button pans.
-    let drag = null;
+    let drag = null, lastPick = 0;
     const endDrag = () => { drag = null; canvas.style.cursor = ""; };
     canvas.addEventListener("mousedown", (e) => e.preventDefault());  // no text selection, no middle-button autoscroll
     canvas.addEventListener("pointerdown", (e) => {
       if (!S.tl.months?.length || e.button > 1) return;
       const pan = e.button === 1 || e.shiftKey;
-      drag = { pan, x: e.clientX, i: tlIndexAt(e.clientX), start: tlView().start, moved: false };
+      drag = { pan, x: e.clientX, i: tlIndexAt(e.clientX), start: tlView().start, moved: false, pickedAt: lastPick };
       canvas.setPointerCapture(e.pointerId);
       if (pan) canvas.style.cursor = "grabbing";
     });
@@ -1573,8 +1576,11 @@ function renderTimeline() {
       if (!d || d.pan) return;
       S.onChart = true; setFocus("results");
       if (d.moved) return say("Range marked: > narrows to it, Esc clears.");
+      // Clicking the selected month again deselects it, unless it is the second click of a double-click (zoom reset).
+      if (S.tl.picked && S.tl.mark == null && d.i === S.tl.cursor && performance.now() - (d.pickedAt || 0) > 400) return tlDeselect();
       S.tl.mark = null;
       tlMove(d.i - S.tl.cursor);
+      lastPick = performance.now();
     });
     canvas.addEventListener("pointercancel", endDrag);
     canvas.addEventListener("dblclick", () => { S.tl.view = null; drawTimeline(); });
@@ -1649,8 +1655,9 @@ function drawTimeline() {
     let y = bottom;
     for (const k of ["image", "video", "pdf"]) {
       const bh = m[k] ? Math.max(1, (bottom - top) * m[k] / max) : 0;  // zoomed into a sparse year, one item still shows
-      g.fillStyle = i === S.tl.cursor ? cssVar("--hot") : colors[k];
-      g.globalAlpha = i === S.tl.cursor ? 1 : (k === "image" ? .85 : .9);
+      const hot = i === S.tl.cursor && (S.tl.picked || S.tl.mark != null);
+      g.fillStyle = hot ? cssVar("--hot") : colors[k];
+      g.globalAlpha = hot ? 1 : (k === "image" ? .85 : .9);
       g.fillRect(x + (bw > 3 ? .5 : 0), y - bh, Math.max(1, bw - (bw > 3 ? 1 : 0)), bh);
       y -= bh;
     }
@@ -1682,7 +1689,8 @@ function drawTimeline() {
   g.fillStyle = cssVar("--rule");
   g.fillRect(0, bottom, w, 1);
   const cur = months[S.tl.cursor];
-  if (cur) {
+  if (cur && !S.tl.picked && S.tl.mark == null) $("#tlCur").textContent = "all months";
+  else if (cur) {
     const n = cur.image + cur.video + cur.pdf;
     $("#tlCur").textContent = `${cur.month} · ${fmtN(n)} items${cur.weak ? ` (${fmtN(cur.weak)} dated by file time)` : ""}` +
       (S.tl.mark != null ? ` · range ${months[ms].month} – ${months[me].month}` : "");
@@ -1695,21 +1703,32 @@ function tlMove(delta) {
   const months = S.tl.months || [];
   if (!months.length) return;
   S.tl.cursor = Math.max(0, Math.min(months.length - 1, S.tl.cursor + delta));
+  S.tl.picked = true;
   tlReveal();
   drawTimeline();
   clearTimeout(tlListTimer);
   tlListTimer = setTimeout(tlListMonth, 160);
 }
+function tlDeselect() {
+  S.tl.picked = false; S.tl.mark = null;
+  clearTimeout(tlListTimer);
+  drawTimeline();
+  scheduleSearch(0);
+  say("Showing every month.");
+}
 async function tlListMonth() {
   const cur = S.tl.months?.[S.tl.cursor];
-  if (!cur) return;
+  if (!cur || !S.tl.picked) return;
   const p = queryParams({ limit: 40 });
-  p.append("s", `date:${cur.month}`);
+  // While a range is marked, list the whole range rather than the month under the cursor.
+  const [a, b] = S.tl.mark == null ? [cur.month, cur.month] :
+    [S.tl.months[Math.min(S.tl.mark, S.tl.cursor)].month, S.tl.months[Math.max(S.tl.mark, S.tl.cursor)].month];
+  p.append("s", a === b ? `date:${a}` : `date:${a}..${b}`);
   const resp = await fetch(`/api/items?${p}`);
   if (!resp.ok) return;
   const data = await resp.json();
   S.hits = data.hits; S.more = false;
-  $("#resultsLabel").textContent = `${cur.month}${S.q ? " · matching" : ""}`;
+  $("#resultsLabel").textContent = `${a === b ? a : `${a} – ${b}`}${S.q ? " · matching" : ""}`;
   S.cursor.results = 0;
   renderResults();
 }
@@ -2783,8 +2802,9 @@ function onKey(e) {
     e.preventDefault();
     if (!$("#panel").hidden) return toggleHelp(false);
     if (S.count || S.pending) return clearPending();
-    if (S.tl.mark != null) { S.tl.mark = null; drawTimeline(); return; }
+    if (S.tl.mark != null) { S.tl.mark = null; drawTimeline(); if (S.tl.picked) tlListMonth(); return; }
     if (closeReader()) return;
+    if (S.mode === "timeline" && S.tl.picked) return tlDeselect();
     if (S.q) { S.q = ""; $("#q").value = ""; say("Query cleared."); return navigate(); }
     return;
   }
