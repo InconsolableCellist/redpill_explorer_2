@@ -17,10 +17,11 @@ from re2 import embed
 
 log = logging.getLogger(__name__)
 
-SCOPE_TYPES = ("text", "entity", "tag", "folder", "kind", "status", "date", "page", "media", "cluster", "caption")
+SCOPE_TYPES = ("text", "entity", "tag", "folder", "kind", "status", "date", "page", "media", "cluster", "caption", "sel")
 LIST_SCOPES = ("entity", "tag", "cluster")   # these take comma lists, meaning any of them
 VALID_KINDS = {"image", "video", "pdf"}
 VALID_STATUSES = {"READY", "THUMBNAIL_ONLY", "SOURCE_OFFLINE"}
+MAX_SELECTION = 20000   # items in one saved selection (the map has one point per item)
 MARK_START, MARK_END = "\x02", "\x03"
 
 
@@ -105,6 +106,9 @@ def _scope_ids(conn: sqlite3.Connection, kind: str, value: str) -> set[int]:
         # Clusters hold post primaries; include each post's photos and videos so scopes intersect cleanly.
         ids = q("SELECT media_id FROM cluster_member WHERE cluster_id=?", int(value))
         return set(expand_members(conn, list(ids)))
+    if kind == "sel":
+        # A saved selection (the map's lasso) holds item ids; like clusters, those are post primaries.
+        return set(expand_members(conn, selection_ids(conn, value)))
     if kind == "caption":
         # caption:current, images captioned with the current image prompt; caption:older, with an earlier one.
         from re2.extract_images import PROMPT_VERSION
@@ -155,6 +159,9 @@ def scope_label(conn: sqlite3.Connection, scope: str) -> str:
         row = conn.execute("SELECT title FROM wiki_page WHERE slug=?", (value,)).fetchone()
     elif kind == "media":
         return f"#{value}"
+    elif kind == "sel":
+        n = len(selection_ids(conn, value))
+        return f"{n:,} selected item{'' if n == 1 else 's'}"
     elif kind == "caption":
         from re2.extract_images import PROMPT_VERSION
 
@@ -162,6 +169,56 @@ def scope_label(conn: sqlite3.Connection, scope: str) -> str:
     elif kind == "cluster" and _has_table(conn, "cluster"):
         row = conn.execute("SELECT label FROM cluster WHERE id=?", (int(value),)).fetchone()
     return row[0] if row else value
+
+
+# ── Saved selections ───────────────────────────────────────────────────────
+
+_SELECTION_ID = re.compile(r"^[0-9a-f]{10}$")
+
+
+def save_selection(conn: sqlite3.Connection, media_ids: list[int]) -> str:
+    """Store a set of item ids for a `sel:` scope. The id hashes the set, so saving it again reuses the row."""
+    import hashlib
+
+    ids = sorted({int(m) for m in media_ids})
+    if not ids:
+        raise ScopeError("empty selection")
+    if len(ids) > MAX_SELECTION:
+        raise ScopeError(f"a selection holds at most {MAX_SELECTION:,} items")
+    text = ",".join(map(str, ids))
+    sel_id = hashlib.sha1(text.encode()).hexdigest()[:10]
+    conn.execute("INSERT OR IGNORE INTO selection(id, media_ids) VALUES (?, ?)", (sel_id, text))
+    return sel_id
+
+
+def selection_ids(conn: sqlite3.Connection, sel_id: str) -> list[int]:
+    if not _SELECTION_ID.match(sel_id):
+        raise ScopeError(f"bad selection id {sel_id!r}")
+    row = conn.execute("SELECT media_ids FROM selection WHERE id=?", (sel_id,)).fetchone() \
+        if _has_table(conn, "selection") else None
+    if row is None:
+        raise ScopeError(f"no selection {sel_id!r}")
+    return [int(x) for x in row[0].split(",") if x]
+
+
+# ── Lookup ─────────────────────────────────────────────────────────────────
+
+def lookup(conn: sqlite3.Connection, q: str, limit: int = 12) -> list[dict]:
+    """Tags and entities whose names contain q: an exact name first, then the most used."""
+    needle = " ".join(q.split()).lower()
+    if not needle:
+        return []
+    like = "%" + needle.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+    out = []
+    for what, sql in (("entity", "SELECT id, name, type FROM entity WHERE lower(name) LIKE ? ESCAPE '\\'"),
+                      ("tag", "SELECT id, name, 'tag' FROM tag WHERE name LIKE ? ESCAPE '\\'")):
+        _, counts = _overall_counts(conn, what)
+        for item_id, name, typ in conn.execute(sql, (like,)):
+            n = counts.get(item_id, 0)
+            if n:
+                out.append({"scope": f"{what}:{item_id}", "name": name, "type": typ, "n": n})
+    out.sort(key=lambda d: (d["name"].lower() != needle, -d["n"], d["name"]))
+    return out[:limit]
 
 
 # ── Lexical ────────────────────────────────────────────────────────────────

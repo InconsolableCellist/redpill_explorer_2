@@ -127,3 +127,41 @@ def test_cooccurrence_graph(conn):
     assert {names[edge["a"]], names[edge["b"]]} == {"Ukraine", "Justin Trudeau"} and edge["n"] == 4 and edge["w"] > 0
     scoped = search.cooccurrence(conn, {6, 7}, kind="entity", min_pair=2)
     assert scoped["n_items"] == 2
+
+
+def test_selection_scope_expands_posts(conn):
+    conn.executescript("""
+        INSERT INTO media(id, uid, kind, status) VALUES (6, 'f', 'image', 'READY');
+        INSERT INTO post(id, url, primary_media_id) VALUES (1, 'https://x.com/a/1', 1);
+        INSERT INTO post_member(post_id, media_id, role, seq) VALUES (1, 1, 'screenshot', 0), (1, 6, 'photo', 1);
+    """)
+    sel = search.save_selection(conn, [4, 1, 1])
+    assert search.save_selection(conn, [1, 4]) == sel          # the same set reuses its row
+    assert search.scope_media_ids(conn, [f"sel:{sel}"]) == {1, 4, 6}
+    assert search.scope_media_ids(conn, [f"sel:{sel}", "entity:2"]) == {4}
+    assert search.scope_label(conn, f"sel:{sel}") == "2 selected items"
+    with pytest.raises(search.ScopeError):
+        search.scope_media_ids(conn, ["sel:0000000000"])
+    with pytest.raises(search.ScopeError):
+        search.scope_media_ids(conn, ["sel:../../etc"])
+    with pytest.raises(search.ScopeError):
+        search.save_selection(conn, [])
+    with pytest.raises(search.ScopeError):
+        search.save_selection(conn, range(search.MAX_SELECTION + 1))
+
+
+def test_lookup_tags_and_entities(conn):
+    conn.executescript("""
+        INSERT INTO tag(id, name) VALUES (1, 'georgia ballots'), (2, 'ukraine war'), (3, 'unused ukraine');
+        INSERT INTO media_tag(media_id, tag_id, origin) VALUES (3, 1, 'vlm'), (1, 2, 'vlm');
+    """)
+    found = search.lookup(conn, "ukr")
+    # The most used first; names nothing is tagged with are left out.
+    assert [(r["scope"], r["n"]) for r in found] == [("entity:1", 2), ("tag:2", 1)]
+    assert [r["name"] for r in search.lookup(conn, "GEORGIA")] == ["Georgia", "georgia ballots"]
+    # An exact name beats a more common partial match.
+    conn.execute("INSERT INTO tag(id, name) VALUES (4, 'georgi')")
+    conn.execute("INSERT INTO media_tag(media_id, tag_id, origin) VALUES (4, 4, 'vlm')")
+    search._overall_cache.clear()
+    assert [r["name"] for r in search.lookup(conn, "georgi")] == ["georgi", "Georgia", "georgia ballots"]
+    assert search.lookup(conn, "  ") == [] and search.lookup(conn, "%") == []

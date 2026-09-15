@@ -272,6 +272,42 @@ def create_app(cfg: config.Config | None = None) -> FastAPI:
             items = {to_primary.get(x, x) for x in allowed}
             return {"all": False, "indices": sorted(m["index_of"][i] for i in items if i in m["index_of"])}
 
+    @app.get("/api/map/titles")
+    def map_titles(ids: str = ""):
+        """Short titles for a few items, for labelling dots when the map is zoomed in close."""
+        try:
+            wanted = [int(x) for x in ids.split(",") if x.strip()][:100]
+        except ValueError as exc:
+            raise HTTPException(400, "ids must be comma-separated integers") from exc
+        with closing(open_ro(cfg)) as conn:
+            card_map = search.cards(conn, wanted)
+        return {"titles": {str(m): c["title"] for m, c in card_map.items()}}
+
+    @app.post("/api/selection")
+    def selection_save(request: Request, body: dict = Body(...)):
+        """Saves a set of item ids and returns the id for a `sel:<id>` scope."""
+        if request.headers.get("x-re2-write") != "1":   # the write guard recaption uses
+            raise HTTPException(403, "missing X-RE2-Write header")
+        raw = body.get("media_ids")
+        if not isinstance(raw, list):
+            raise HTTPException(400, "media_ids must be a list")
+        conn = db.connect(cfg.db_path)
+        try:
+            with conn:
+                sel_id = search.save_selection(conn, raw)
+            n = len(search.selection_ids(conn, sel_id))
+        except (search.ScopeError, ValueError, TypeError) as exc:
+            raise HTTPException(400, str(exc)) from exc
+        finally:
+            conn.close()
+        return {"id": sel_id, "scope": f"sel:{sel_id}", "n": n}
+
+    @app.get("/api/lookup")
+    def lookup(q: str = "", limit: int = 12):
+        """Tags and entities by name, for find-as-you-type."""
+        with closing(open_ro(cfg)) as conn:
+            return {"results": search.lookup(conn, q, limit=max(1, min(limit, 50)))}
+
     # ── Ask ───────────────────────────────────────────────────────────────
 
     chat_client = httpx.Client()

@@ -215,3 +215,28 @@ def test_caption_review_scope_and_progress(env, tmp_path):
     assert msgs[0]["scopes"][0]["label"].startswith("current prompt")
     assert lines(client.get("/api/stream", params=[("s", "caption:older")]))[0]["n_in_scope"] == 0
     assert client.get("/api/stream", params=[("s", "caption:bogus")]).status_code == 400
+
+
+def test_selection_endpoint_scope_lookup_and_titles(env):
+    client, ids = env
+    shot = ids["ukraine/shot.png"]
+    assert client.post("/api/selection", json={"media_ids": [shot]}).status_code == 403
+    client.headers["X-RE2-Write"] = "1"
+    resp = client.post("/api/selection", json={"media_ids": [shot]})
+    assert resp.status_code == 200
+    sel = resp.json()
+    assert sel["n"] == 1 and sel["scope"] == f"sel:{sel['id']}"
+    msgs = lines(client.get("/api/stream", params=[("s", sel["scope"])]))
+    assert [h["media_id"] for h in msgs[1]["hits"]] == [shot]
+    assert msgs[0]["scopes"][0]["label"] == "1 selected item"
+    assert client.get("/api/items", params=[("s", sel["scope"])]).json()["hits"][0]["media_id"] == shot
+    assert client.post("/api/selection", json={"media_ids": []}).status_code == 400
+    assert client.post("/api/selection", json={"media_ids": "1,2"}).status_code == 400
+    assert client.post("/api/selection", json={"media_ids": ["x"]}).status_code == 400
+    assert client.post("/api/selection", json={"media_ids": list(range(20001))}).status_code == 400
+    assert client.get("/api/stream", params=[("s", "sel:ffffffffff")]).status_code == 400
+
+    assert client.get("/api/lookup", params={"q": "zzz"}).json() == {"results": []}
+    titles = client.get("/api/map/titles", params={"ids": f"{shot},999999"}).json()["titles"]
+    assert list(titles) == [str(shot)] and titles[str(shot)]
+    assert client.get("/api/map/titles", params={"ids": "a,b"}).status_code == 400
