@@ -477,6 +477,8 @@ mark { background: var(--hot-w); color: var(--ink); padding: 0 1px; }
 .answer p.stand { border-top: 1px solid var(--rule-soft); padding-top: 7px; font-weight: 600; }
 .turn__argue { margin-top: 10px; }
 @media (max-width: 700px) { .turn--steelman, .turn--skeptic, .turn--moderator { margin-inline: 0; } }
+.turn__cov { font-family: var(--font-mono); font-size: 10.5px; color: var(--ink-3); margin: 8px 0 0; }
+.turn__cov b { color: var(--ink-2); font-weight: 500; }
 .turn__stopped { font-family: var(--font-mono); font-size: 10.5px; color: var(--hot); letter-spacing: .08em; text-transform: uppercase; }
 .turn__ctx { font-family: var(--font-mono); font-size: 10.5px; color: var(--ink-3); margin: -4px 0 8px; }
 .composer__ctx { flex: 1 1 100%; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
@@ -699,6 +701,7 @@ mark { background: var(--hot-w); color: var(--ink); padding: 0 1px; }
           <div class="composer__side">
             <button class="btn" type="submit" id="askSend">Ask</button>
             <button class="btn" type="button" id="askMode" title="m: informed uses general knowledge too; archive answers only from the archive">informed</button>
+            <button class="btn" type="button" id="askReach" title="E: sample reads what fits the context at this depth; read all reads every candidate item in batches (minutes)">sample</button>
             <button class="btn" type="button" id="askKind" title="M: Ask answers a question; Argue has a steelman and a skeptic debate a claim">ask</button>
             <button class="btn" type="button" id="argueRole" hidden title="P: watch both sides, or play the steelman or the skeptic yourself">watch</button>
             <button class="btn" type="button" id="askNew" title="Start a new conversation">new</button>
@@ -773,6 +776,7 @@ mark { background: var(--hot-w); color: var(--ink); padding: 0 1px; }
           <kbd>g t</kbd><span>Timeline. With the chart focused, <kbd>h l</kbd> move by month, <kbd>H L</kbd> by year, <kbd>v</kbd> marks a range (or drag across the bars), <kbd>&gt;</kbd> narrows to it. Scroll or <kbd>+ -</kbd> to zoom; shift-scroll, shift-drag or middle-drag to pan; <kbd>Z</kbd> or double-click shows every month.</span>
           <kbd>g r</kbd><span>Graph (<kbd>g n</kbd> too), for exploring how tags connect: tags that appear together, tags related in meaning, or entities that appear together — <kbd>T</kbd> cycles. Thicker, darker lines are stronger links. With the chart focused, <kbd>h l</kbd> step through nodes (orange = cursor), <kbd>w</kbd> follows the cursor's strongest link (<kbd>2w</kbd> the second, as numbered under the graph), <kbd>b</kbd> steps back, <kbd>space</kbd> picks the cursor node, <kbd>&gt;</kbd> narrows to the picked nodes (any of them) or else the cursor node, <kbd>Esc</kbd> clears the picks, then the preview, <kbd>+ -</kbd> zoom, <kbd>0</kbd> resets. Moving the cursor previews its items below (the dashed chip) without narrowing. Click a node to preview it, shift-click (or ctrl-click) to pick it, double-click to narrow; scroll to zoom, drag to pan, double-click empty space to reset.</span>
           <kbd>g m</kbd><span>Map of the whole archive by meaning; your scope lights up. With the chart focused, <kbd>h l</kbd> step through topics (<kbd>T</kbd> for themes), <kbd>z</kbd> zooms to one, <kbd>+ -</kbd> zoom, <kbd>0</kbd> resets, <kbd>space</kbd> picks the cursor topic (orange), <kbd>&gt;</kbd> narrows to the picked topics and netted dots (or the cursor topic), <kbd>Esc</kbd> clears them, <kbd>f</kbd> finds a tag or entity (arrows preview it, <kbd>Enter</kbd> narrows). Scroll to zoom, drag to pan, click a dot to open it, shift-click (or ctrl-click) a dot or label to pick its topic, shift-drag to net the dots inside. Close in, dots show their titles.</span>
+          <kbd>E</kbd><span>In Ask: <b>sample</b> reads what fits the model's context at the chosen depth; <b>read all</b> reads every candidate item (keyword matches from each search, the closest in meaning, and a small scope in full) in batches, then answers from the notes. Each answer shows how many candidates it read and cited.</span>
           <kbd>M</kbd><span>In Ask: switch to Argue, where a steelman makes the strongest case for a claim and a skeptic tests it, each researching and citing the archive; each turn ends with where that side stands. <kbd>P</kbd> watches both sides or lets you play the steelman or the skeptic. While watching, Enter runs the next round and anything typed goes to both as a moderator's note. A finished Ask answer's <b>argue this</b> starts a debate from it.</span>
           <kbd>D</kbd><span>Discuss the item under the cursor: a new Ask conversation with its full record attached, and related items (near in time or meaning) if <b>+ related</b> is on. Depth sets how much is read; period and topics narrow it.</span>
           <kbd>d d</kbd><span>On a conversation in Ask's left column: delete it</span>
@@ -875,7 +879,8 @@ const S = {
          attach: [], related: store("askRelated") ?? true, depth: store("askDepth") ?? 35, topics: null, picked: new Set(),
          kind: "ask",                          // this conversation: ask | argue
          role: store("argueRole") ?? null,     // argue: null watches both sides; steelman | skeptic is the user's side
-         seed: null, topic: null },            // argue: the Ask turn a new debate starts from; the claim
+         seed: null, topic: null,              // argue: the Ask turn a new debate starts from; the claim
+         exhaustive: store("askAll") ?? false }, // read every candidate item in batches instead of a sample
   settings: null,
 };
 
@@ -1829,7 +1834,7 @@ async function loadSession(id) {
   S.ask.kind = data.kind || "ask"; S.ask.topic = data.title; S.ask.seed = null;
   S.ask.turns = data.turns.map((t) => ({
     question: t.question, scopes: [], context: t.context, stopped: (t.steps || []).some((x) => x.action === "stopped"),
-    speaker: S.ask.kind === "argue" ? t.mode : null, by: t.context?.by || "ai",
+    speaker: S.ask.kind === "argue" ? t.mode : null, by: t.context?.by || "ai", coverage: t.context?.coverage,
     steps: (t.steps || []).filter((x) => !["answer", "stopped", "fill"].includes(x.action)).map((x) => ({ action: x.action, args: x.args, summary: "" })),
     text: t.answer || "", sentences: t.sentences, cites: Object.fromEntries((t.citations || []).map((c) => [c.n, c])), done: true, session: id,
   }));
@@ -1907,7 +1912,9 @@ function fetchPlan() {
     if (!resp.ok) return;
     const d = await resp.json();
     const k = (n) => n >= 1000 ? `${(n / 1000).toFixed(n >= 10000 ? 0 : 1)}k` : String(n);
-    $("#askPlan").textContent = `notes up to ~${k(d.notes_tokens)} of ${k(d.context_tokens)} tokens (≈${fmtN(Math.floor(d.notes_tokens / d.item_tokens))} items)` +
+    $("#askPlan").textContent = (S.ask.exhaustive
+      ? `reads every candidate item (up to ${fmtN(d.exhaustive_max)}) in batches of ≈${d.batch_items}, then answers from the notes · slow`
+      : `notes up to ~${k(d.notes_tokens)} of ${k(d.context_tokens)} tokens (≈${fmtN(Math.floor(d.notes_tokens / d.item_tokens))} items)`) +
       ` · ${d.searches} searches · ${d.opens} opens` + (S.ask.attach.length && S.ask.related ? ` · ${d.related} related` : "") +
       (d.in_scope != null ? ` · ${fmtN(d.in_scope)} in scope` : "");
     $("#askPlan").title = `${d.model}. Deeper reads more before answering and hands the answer more of what it found; the answer takes longer to start.`;
@@ -2057,7 +2064,7 @@ function renderAskLog() {
     `<article class="turn${turn.speaker ? ` turn--${turn.speaker}` : ""}${turn.by === "user" ? " turn--you" : ""}" data-turn="${i}">` + head(turn) +
     (turn.by === "user" ? "" : `<div class="steps">${turn.steps.map((st, j) => stepLine(st, !turn.done && !turn.text && j === turn.steps.length - 1)).join("")}` +
       `${!turn.done && !turn.text ? `<div class="is-live">${turn.steps.length ? "thinking" : "starting"}</div>` : ""}</div>`) +
-    `<div class="answer">${answerHtml(turn)}</div>` +
+    `<div class="answer">${answerHtml(turn)}</div>` + coverageLine(turn) +
     (turn.stopped ? `<div class="turn__stopped">stopped</div>` : "") +
     (turn.error ? `<div class="ask__err">${escapeHtml(turn.error)}</div>` : "") +
     sourcesHtml(turn) +
@@ -2069,9 +2076,20 @@ function renderAskLog() {
     `${S.scopes.length ? "<br>It will look only within your current scopes." : ""}${S.ask.attach.length ? "<br>The attached item goes along in full." : ""}</div>`;
   renderComposer();
 }
+function coverageLine(turn) {
+  const c = turn.coverage;
+  if (!c || turn.by === "user") return "";
+  const pct = c.candidates ? Math.round(100 * c.read / c.candidates) : 0;
+  const cited = Object.keys(turn.cites || {}).length;
+  return `<div class="turn__cov" title="Candidates: every item the research's search phrasings matched by keyword (${fmtN(c.keyword)}), plus the closest in meaning and anything in a small scope. Read: items whose records reached the model.">` +
+    `read <b>${fmtN(c.read)} of ${fmtN(c.candidates)}</b> candidate items (${pct}%)${c.batches ? ` in ${c.batches} batches` : ""}` +
+    `${c.capped ? ` · capped at the first ${fmtN(c.read)}` : ""} · ${fmtN(c.keyword)} keyword matches${turn.done ? ` · cited ${cited}` : ""}</div>`;
+}
 function renderComposer() {
   const argue = S.ask.kind === "argue", started = argue && S.ask.turns.length > 0, role = S.ask.role;
   $("#askKind").textContent = argue ? "argue" : "ask";
+  $("#askReach").textContent = S.ask.exhaustive ? "read all" : "sample";
+  $("#askReach").setAttribute("aria-pressed", String(S.ask.exhaustive));
   $("#argueRole").hidden = !argue;
   $("#argueRole").textContent = role ? `you: ${role}` : "watch";
   const busy = askBusy();
@@ -2103,7 +2121,7 @@ async function sendQuestion() {
   renderAskLog();
   $("#askLog .turn:last-child")?.scrollIntoView({ block: "start" });
   await streamTurns("/api/ask", { question, scopes: S.scopes, mode: S.ask.mode, session_id: S.ask.session,
-                                  items, related: S.ask.related, depth: S.ask.depth / 100 }, turn);
+                                  items, related: S.ask.related, depth: S.ask.depth / 100, exhaustive: S.ask.exhaustive }, turn);
 }
 async function sendArgue() {
   const input = $("#askInput");
@@ -2123,7 +2141,7 @@ async function sendArgue() {
   await streamTurns("/api/argue", { session_id: started ? S.ask.session : null, topic, user_role: role, user_text: userText,
                                     seed: started ? null : S.ask.seed, scopes: S.scopes, mode: S.ask.mode,
                                     items: started ? [] : S.ask.attach.map((a) => a.media_id), related: S.ask.related,
-                                    depth: S.ask.depth / 100 }, turn);
+                                    depth: S.ask.depth / 100, exhaustive: S.ask.exhaustive }, turn);
   S.ask.seed = null;
 }
 async function streamTurns(url, body, turn) {
@@ -2191,6 +2209,7 @@ async function followTurn(resp, turn) {
       else if (name === "token") turn.text += d.text;
       else if (name === "cite") turn.cites[d.n] = d;
       else if (name === "stopped") turn.stopped = true;
+      else if (name === "coverage") turn.coverage = d;
       else if (name === "final") { turn.text = d.text; turn.sentences = d.sentences; }
       else if (name === "done") { turn.done = true; if (shown(turn) && !turn.speaker) say(d.stopped ? "Stopped." : `Answered in ${Math.round(d.ms / 1000)} s after ${d.steps} steps.`); }
       else if (name === "error") { turn.error = d.msg; turn.done = true; }
@@ -2217,6 +2236,12 @@ function toggleAskKind() {
   S.ask.kind = kind;
   renderAskCtx(); renderAskLog();
   say(kind === "argue" ? "Argue: a steelman and a skeptic debate a claim. P picks watch or a side." : "Ask: questions about the archive.");
+}
+function toggleReach() {
+  S.ask.exhaustive = !S.ask.exhaustive;
+  store("askAll", S.ask.exhaustive);
+  renderComposer(); fetchPlan();
+  say(S.ask.exhaustive ? "Read all: every candidate item is read in batches before answering. Expect minutes." : "Sample: reads what fits at this depth.");
 }
 function cycleArgueRole() {
   S.ask.role = { null: "steelman", steelman: "skeptic", skeptic: null }[String(S.ask.role)];
@@ -3593,6 +3618,7 @@ function onKey(e) {
     case "a": return done(() => { setMode("ask"); setTimeout(() => $("#askInput").focus(), 0); });
     case "m": if (S.mode === "ask") return done(toggleAskMode); break;
     case "M": if (S.mode === "ask") return done(toggleAskKind); break;
+    case "E": if (S.mode === "ask") return done(toggleReach); break;
     case "P": if (S.mode === "ask" && S.ask.kind === "argue") return done(cycleArgueRole); break;
     case "?": return done(() => toggleHelp());
     case "n": return done(() => nextMark(1));
@@ -3685,6 +3711,7 @@ $("#composer").addEventListener("submit", (e) => { e.preventDefault(); if (askBu
 $("#askMode").addEventListener("click", toggleAskMode);
 $("#askNew").addEventListener("click", () => { newConversation(); $("#askInput").focus(); });
 $("#askKind").addEventListener("click", toggleAskKind);
+$("#askReach").addEventListener("click", toggleReach);
 $("#argueRole").addEventListener("click", cycleArgueRole);
 $("#askLog").addEventListener("click", (e) => {
   const argueBtn = e.target.closest("[data-argue]");

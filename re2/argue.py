@@ -103,7 +103,7 @@ def plan_speakers(history: list[dict], user_role: str | None, user_text: str, ro
 def events(conn: sqlite3.Connection, cfg, session_id: str, *, topic: str | None, user_role: str | None,
            user_text: str, rounds: int, seed: dict | None, scopes: list[str], mode: str, depth: float | None,
            items: list[int], related: bool, client: httpx.Client | None, embed_client: httpx.Client | None,
-           control: ask.Control) -> Iterator[tuple[str, dict]]:
+           control: ask.Control, exhaustive: bool = False) -> Iterator[tuple[str, dict]]:
     row = conn.execute("SELECT title, seed_json FROM chat_session WHERE id=?", (session_id,)).fetchone()
     if row is None:
         with conn:
@@ -135,7 +135,7 @@ def events(conn: sqlite3.Connection, cfg, session_id: str, *, topic: str | None,
         text = None
         for name, data in ask.run(conn, cfg, prompt, scopes=scopes, mode=mode, session_id=session_id, client=client,
                                   embed_client=embed_client, items=items if spoken == 0 else [], related=related,
-                                  depth=depth, control=control, debate=debate):
+                                  depth=depth, control=control, debate=debate, exhaustive=exhaustive):
             if name == "final":
                 text = data["text"]
             yield name, data
@@ -150,7 +150,7 @@ def start(cfg, *, session_id: str | None, topic: str | None, user_role: str | No
           rounds: int = 1, seed: dict | None = None, scopes: list[str] | None = None, mode: str = "informed",
           depth: float | None = None, items: list[int] | None = None, related: bool = False,
           client: httpx.Client | None = None, embed_client: httpx.Client | None = None,
-          conn: sqlite3.Connection | None = None) -> ask.Run:
+          conn: sqlite3.Connection | None = None, exhaustive: bool = False) -> ask.Run:
     if user_role not in USER_ROLES:
         raise ValueError(f"user_role must be one of {USER_ROLES}")
     if not session_id and not (topic or "").strip():
@@ -167,4 +167,4 @@ def start(cfg, *, session_id: str | None, topic: str | None, user_role: str | No
                                     c, cfg, session_id, topic=topic, user_role=user_role, user_text=user_text.strip(),
                                     rounds=max(1, min(int(rounds), 3)), seed=seed, scopes=scopes or [], mode=mode,
                                     depth=depth, items=list(items or []), related=related, client=client,
-                                    embed_client=embed_client, control=control))
+                                    embed_client=embed_client, control=control, exhaustive=exhaustive))

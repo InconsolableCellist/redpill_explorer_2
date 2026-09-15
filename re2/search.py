@@ -252,8 +252,10 @@ def _temp_ids(conn: sqlite3.Connection, name: str, ids) -> str:
     return name
 
 
-def lexical(conn: sqlite3.Connection, q: str, k: int = 200, allowed: set[int] | None = None) -> list[tuple[int, float]]:
-    """(doc_id, score) with higher scores better."""
+def lexical(conn: sqlite3.Connection, q: str, k: int = 200, allowed: set[int] | None = None,
+            any_terms: bool = True) -> list[tuple[int, float]]:
+    """(doc_id, score) with higher scores better. With any_terms, a query whose words rarely appear together
+    falls back to matching any of them."""
     restrict = ""
     if allowed is not None:
         restrict = f"AND d.media_id IN (SELECT id FROM {_temp_ids(conn, 'scope_media', allowed)})"
@@ -271,7 +273,7 @@ def lexical(conn: sqlite3.Connection, q: str, k: int = 200, allowed: set[int] | 
         except sqlite3.OperationalError as exc:  # malformed query from odd input
             log.debug("fts query %r failed: %s", match, exc)
             return []
-        if len(results) >= 5 or joiner != " " or len(fts_query(q).split()) < 2:
+        if not any_terms or len(results) >= 5 or joiner != " " or len(fts_query(q).split()) < 2:
             break
     return results
 

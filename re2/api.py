@@ -346,7 +346,7 @@ def create_app(cfg: config.Config | None = None) -> FastAPI:
             scopes, items, depth = ask_context(conn, body)
         run = ask.start_run(cfg, question, scopes, str(body.get("mode") or "informed"), body.get("session_id") or None,
                             items=items, related=bool(body.get("related")), depth=depth, client=chat_client,
-                            embed_client=embed_client)
+                            embed_client=embed_client, exhaustive=bool(body.get("exhaustive")))
         return sse(run.follow())
 
     @app.post("/api/argue")
@@ -365,7 +365,7 @@ def create_app(cfg: config.Config | None = None) -> FastAPI:
                                   rounds=int(body.get("rounds") or 1), seed=seed, scopes=scopes,
                                   mode=str(body.get("mode") or "informed"), depth=depth, items=items,
                                   related=bool(body.get("related")), client=chat_client, embed_client=embed_client,
-                                  conn=conn)
+                                  conn=conn, exhaustive=bool(body.get("exhaustive")))
             except (ValueError, TypeError) as exc:
                 raise HTTPException(400, str(exc)) from exc
         return sse(run.follow())
@@ -426,6 +426,7 @@ def create_app(cfg: config.Config | None = None) -> FastAPI:
         return {"model": cfg.chat_model, "context_tokens": cfg.chat_context_tokens, "depth": pl.depth,
                 "notes_tokens": pl.notes_tokens, "searches": pl.searches, "opens": pl.opens, "related": pl.related,
                 "item_tokens": int(ask.RECORD_CHARS / ask.CHARS_PER_TOKEN),
+                "batch_items": int(ask._batch_chars(cfg) / ask.EXHAUSTIVE_RECORD_CHARS), "exhaustive_max": ask.EXHAUSTIVE_MAX,
                 "in_scope": None if allowed is None else len(allowed)}
 
     @app.delete("/api/ask/session/{session_id}")

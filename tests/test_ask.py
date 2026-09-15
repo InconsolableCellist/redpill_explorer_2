@@ -1,5 +1,6 @@
 import dataclasses
 import json
+import re
 
 import httpx
 import pytest
@@ -66,9 +67,11 @@ def test_agent_loop_cites_only_what_tools_returned(archive):
     assert "Research notes" in answer_call["messages"][1]["content"] and "(0:35)" in answer_call["messages"][1]["content"]
     row = conn.execute("SELECT question, session_id, trace_json FROM chat_log").fetchone()
     trace = json.loads(row[2])
-    assert row[0].startswith("What did Trudeau") and [t["action"] for t in trace] == ["search", "open_item", "answer", "fill"]
+    assert row[0].startswith("What did Trudeau") and [t["action"] for t in trace] == ["search", "open_item", "answer", "fill", "coverage"]
     # The notes had room, so the item the search found but the agent did not open was read in too.
-    assert trace[-1]["args"] == {"items": 1} and "A meme about Trudeau" in answer_call["messages"][1]["content"]
+    assert trace[-2]["args"] == {"items": 1} and "A meme about Trudeau" in answer_call["messages"][1]["content"]
+    # Coverage: both items the keyword search matched were read.
+    assert dict(events)["coverage"] == {"candidates": 2, "keyword": 2, "read": 2}
 
 
 def test_step_cap_and_unavailable_model(archive):
@@ -118,7 +121,44 @@ def test_attached_item_related_items_and_depth(archive):
     first = seen[0]["messages"][-1]["content"]
     assert first.startswith("The user is asking about these archive items") and "(0:35)" in first and "[m:3]" in first
     assert events[0][1]["action"] == "attached" and dict(events)["final"]["text"] == "It shows [1]."
-    assert json.loads(conn.execute("SELECT context_json FROM chat_log").fetchone()[0]) == {"items": [1], "related": True, "depth": 0.0}
+    ctx = json.loads(conn.execute("SELECT context_json FROM chat_log").fetchone()[0])
+    assert {k: ctx[k] for k in ("items", "related", "depth")} == {"items": [1], "related": True, "depth": 0.0}
+    assert ctx["coverage"]["read"] >= 2
+
+
+def test_exhaustive_reads_every_candidate_in_batches(archive, monkeypatch):
+    conn, cfg = archive
+    rows = ", ".join(f"({i}, 'u{i}', 'image', 'READY')" for i in range(10, 40))
+    filler = "x" * 900
+    docs = ", ".join(f"({i}, 'legacy_caption', 0, 'A post about Trudeau and missiles number {i} {filler}')" for i in range(10, 40))
+    conn.executescript(f"INSERT INTO media(id, uid, kind, status) VALUES {rows}; INSERT INTO doc(media_id, kind, seq, text) VALUES {docs};")
+    conn.commit()
+    monkeypatch.setattr(ask, "_batch_chars", lambda cfg: 9000)       # about nine records a batch
+    seen = []
+
+    def handler(request):
+        body = json.loads(request.content)
+        seen.append(body)
+        last = body["messages"][-1]["content"]
+        if body.get("response_format"):
+            chunks = [json.dumps({"thought": "", "action": "search", "args": {"query": "trudeau missiles"}})
+                      if sum(1 for b in seen if b.get("response_format")) == 1 else json.dumps({"thought": "", "action": "answer", "args": {}})]
+        elif last.startswith("Question:") and "archive items (batch" in last:
+            ids = re.findall(r"^\[m:(\d+)\]", last, flags=re.M)
+            chunks = ["- Trudeau and missiles " + " ".join(f"[m:{i}]" for i in ids)]
+        else:
+            chunks = ["Everything read [m:10] [m:39]."]
+        sse = "".join(f"data: {json.dumps({'choices': [{'delta': {'content': c}}]})}\n\n" for c in chunks)
+        return httpx.Response(200, text=sse + "data: [DONE]\n\n")
+
+    events = list(ask.run(conn, cfg, "What does the archive say about Trudeau and missiles?",
+                          client=httpx.Client(transport=httpx.MockTransport(handler)), exhaustive=True))
+    cov = dict(events)["coverage"]
+    assert cov["keyword"] == 32 and cov["read"] == 32 and cov["batches"] >= 3 and not cov["capped"]
+    batch_calls = [b for b in seen if "archive items (batch" in b["messages"][-1]["content"]]
+    read_ids = {m for b in batch_calls for m in re.findall(r"^\[m:(\d+)\]", b["messages"][-1]["content"], flags=re.M)}
+    assert len(batch_calls) == cov["batches"] and len(read_ids) == 32
+    assert dict(events)["final"]["text"] == "Everything read [1] [2]."
 
 
 def test_stop_ends_a_turn_between_chunks(archive):

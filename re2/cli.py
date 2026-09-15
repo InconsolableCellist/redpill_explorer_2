@@ -206,6 +206,43 @@ def cmd_review(cfg: config.Config, args: argparse.Namespace) -> int:
     return 0
 
 
+COVERAGE_QUESTIONS = [
+    "What does the archive say about COVID-19 vaccines?",
+    "What does the archive contain about Israel and Gaza?",
+    "What evidence does the archive hold about fraud in the 2020 US election?",
+    "What does the archive say about Justin Trudeau?",
+]
+
+
+def cmd_ask_coverage(cfg: config.Config, args: argparse.Namespace) -> int:
+    """Ask broad questions and report how much of what matched each answer actually read and cited."""
+    import time
+
+    from re2 import ask
+
+    conn = db.open_db(cfg)
+    questions = args.questions or COVERAGE_QUESTIONS
+    print(f"{'question':52} {'cands':>6} {'kw':>5} {'read':>5} {'%':>4} {'cited':>5} {'batch':>5} {'secs':>5}")
+    for q in questions:
+        started, cov, cited, error = time.monotonic(), {}, 0, ""
+        for name, data in ask.run(conn, cfg, q, depth=args.depth, exhaustive=args.exhaustive):
+            if name == "coverage":
+                cov = data
+            elif name == "cite":
+                cited += 1
+            elif name == "error":
+                error = data["msg"]
+        if error:
+            print(f"{q[:52]:52} error: {error}")
+            continue
+        pct = round(100 * cov.get("read", 0) / cov["candidates"]) if cov.get("candidates") else 0
+        print(f"{q[:52]:52} {cov.get('candidates', 0):6} {cov.get('keyword', 0):5} {cov.get('read', 0):5} {pct:4} "
+              f"{cited:5} {cov.get('batches', '-'):>5} {time.monotonic() - started:5.0f}")
+    print("cands: items the research's phrasings matched by keyword plus the closest in meaning; kw: keyword matches;"
+          " read: items whose records reached the answer's model. Answers are logged as Ask conversations.")
+    return 0
+
+
 def cmd_recluster(cfg: config.Config, args: argparse.Namespace) -> int:
     from re2 import cluster
 
@@ -322,6 +359,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("dates", help="recompute item dates from sources, filenames, text and mtimes") \
         .set_defaults(func=cmd_dates)
+
+    p = sub.add_parser("ask-coverage", help="ask broad questions; report candidates, items read and cited")
+    p.add_argument("questions", nargs="*", help="questions (default: a few broad ones)")
+    p.add_argument("--exhaustive", action="store_true", help="read every candidate in batches")
+    p.add_argument("--depth", type=float, default=None, help="research depth 0..1 (default 0.35)")
+    p.set_defaults(func=cmd_ask_coverage)
 
     p = sub.add_parser("serve", help="run the dashboard and API server")
     p.add_argument("--host", help="bind address (default from config.toml)")
