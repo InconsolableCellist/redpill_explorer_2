@@ -53,3 +53,37 @@ def set_media_tags(conn: sqlite3.Connection, media_id: int, weights: dict[str, f
         [(media_id, tag_id(conn, name), w, origin) for name, w in merged.items()],
     )
     return len(merged)
+
+
+def renormalize(conn: sqlite3.Connection) -> tuple[int, int]:
+    """Re-apply normalize() and the synonym map to stored tags, merging duplicates.
+
+    Returns (tags renamed or merged, media_tag rows moved).
+    """
+    synonyms.cache_clear()
+    changed = moved = 0
+    with conn:
+        for tag_id_, name in conn.execute("SELECT id, name FROM tag").fetchall():
+            canonical = normalize(name)
+            if canonical == name:
+                continue
+            changed += 1
+            if not canonical:
+                conn.execute("DELETE FROM media_tag WHERE tag_id=?", (tag_id_,))
+                conn.execute("DELETE FROM tag WHERE id=?", (tag_id_,))
+                continue
+            target = conn.execute("SELECT id FROM tag WHERE name=?", (canonical,)).fetchone()
+            if target is None:
+                conn.execute("UPDATE tag SET name=? WHERE id=?", (canonical, tag_id_))
+                continue
+            # Keep the higher weight when a media already has the canonical tag from the same origin.
+            for media_id, weight, origin in conn.execute(
+                    "SELECT media_id, weight, origin FROM media_tag WHERE tag_id=?", (tag_id_,)).fetchall():
+                conn.execute(
+                    """INSERT INTO media_tag(media_id, tag_id, weight, origin) VALUES (?, ?, ?, ?)
+                       ON CONFLICT(media_id, tag_id, origin) DO UPDATE SET weight=max(weight, excluded.weight)""",
+                    (media_id, target[0], weight, origin))
+                moved += 1
+            conn.execute("DELETE FROM media_tag WHERE tag_id=?", (tag_id_,))
+            conn.execute("DELETE FROM tag WHERE id=?", (tag_id_,))
+    return changed, moved

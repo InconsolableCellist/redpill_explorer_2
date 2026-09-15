@@ -217,6 +217,14 @@ def cmd_merge_entities(cfg: config.Config, args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_normalize_tags(cfg: config.Config, args: argparse.Namespace) -> int:
+    from re2 import tags
+
+    changed, moved = tags.renormalize(db.open_db(cfg))
+    print(f"normalize-tags: renamed_or_merged={changed} rows_moved={moved}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="re2")
     parser.add_argument("--config", help="path to config.toml")
@@ -275,6 +283,9 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("merge-entities", help="merge entity names that are obviously the same")
     p.add_argument("--dry-run", action="store_true", help="print the merges without applying them")
     p.set_defaults(func=cmd_merge_entities)
+
+    sub.add_parser("normalize-tags", help="re-apply tag normalization and tag_synonyms.toml to stored tags") \
+        .set_defaults(func=cmd_normalize_tags)
 
     sub.add_parser("dates", help="recompute item dates from sources, filenames, text and mtimes") \
         .set_defaults(func=cmd_dates)

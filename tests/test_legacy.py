@@ -90,5 +90,22 @@ def test_reconcile_sources(tmp_path):
 def test_normalize():
     assert tags.normalize("USA Today") == tags.normalize("usa_today") == "usa today"
     assert tags.normalize("  #Covid-19 ") == "covid 19"
+    assert tags.normalize("Anti-Semitism") == "antisemitism" and tags.normalize("Jewish") == "jews"
     assert tags.normalize("Coronavirus") == "covid 19"
     assert tags.normalize("x") == ""
+
+
+def test_renormalize_merges_synonyms():
+    conn = db.connect(":memory:")
+    db.init_schema(conn)
+    conn.executescript("""
+        INSERT INTO media(id, uid, kind, status) VALUES (1, 'a', 'image', 'READY'), (2, 'b', 'image', 'READY');
+        INSERT INTO tag(id, name) VALUES (1, 'jews'), (2, 'jewish'), (3, 'African American'), (4, 'x');
+        INSERT INTO media_tag(media_id, tag_id, weight, origin) VALUES
+          (1, 1, 0.5, 'legacy'), (1, 2, 0.9, 'legacy'), (2, 2, 1.0, 'vlm'), (2, 3, 1.0, 'vlm'), (2, 4, 1.0, 'vlm');
+    """)
+    changed, _ = tags.renormalize(conn)
+    assert changed == 3
+    rows = {tuple(r) for r in conn.execute(
+        "SELECT mt.media_id, t.name, mt.weight, mt.origin FROM media_tag mt JOIN tag t ON t.id=mt.tag_id")}
+    assert rows == {(1, "jews", 0.9, "legacy"), (2, "jews", 1.0, "vlm"), (2, "black people", 1.0, "vlm")}
