@@ -1033,6 +1033,9 @@ def _write_kind(conn, cfg, clients, kind: str, pages: list[dict], stats: BuildSt
             stats.skipped_waiting += 1
             log.info("%s waits for %d child pages to be written", p["slug"], plan.waiting_for)
             continue
+        if not plan.records and not plan.children:
+            log.info("%s has nothing to read yet (no member has text)", p["slug"])
+            continue
         plans.append(plan)
     conn.commit()
     notes = {r[0]: r[1] for r in conn.execute("SELECT hash, notes FROM wiki_note")}
