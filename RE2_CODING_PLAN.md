@@ -119,7 +119,31 @@ to commit. Do not skip verification.
 | 1.4 `re2 status` | done | ba3dbba |
 | 2.1 thumbnails (`re2/thumbs.py`) | done, run: every image has one | ba3dbba |
 | 2.2 vision client (`re2/vlm.py`) | done, verified live | 4c622bd, 71f2291 |
-| 2.3 image extraction (`re2/extract_images.py`, `scripts/extract_images.sh`) | done, verified live on 5 images; **full run is the human's** | 4c622bd, 71f2291 |
+| 2.3 image extraction (`re2/extract_images.py`, `scripts/extract_images.sh`) | done, verified live on 5 images; **full run is the human's** (in progress) | 4c622bd, 71f2291, be66a7b, d05de1e |
+| 3.1 embedding server (`scripts/start_embed_server_on_cube.sh`) | done, running on cube:5010 | 4a7d284 |
+| 3.2 embedding index (`re2/embed.py`, `scripts/embed.sh`) | done, run (re-run after extraction sessions) | 640eaff |
+| 3.3 search core (`re2/search.py`) | done | dd721e1 |
+| 3.4–3.6 FastAPI server, streaming search, similar items (`re2/api.py`); `server.js` deleted | done | 8667590 |
+| 4.1 video probe and keyframes (`re2/video.py`, `scripts/video_probe.sh`) | done, full run: 4,641 videos, 16,113 keyframes | 4b64190 |
+| 4.2 ASR (`re2/asr.py`, `scripts/asr.sh`) | done, verified on 3 videos; **full run is the human's** | 4b64190 |
+| 5 PDFs (`re2/pdf.py`, `scripts/pdf_ocr.sh`) | text layer run (1,213 pages); 809 scanned pages queued for `pdf_ocr.sh` (not yet run live) | 1debd50 |
+| 6.2 item dating (`re2/dates.py`) | done, run: every item dated | f496155 |
+| 8.1–8.2 dashboard shell, streaming search, reader; timeline and graph of 8.4 | done, checked in headless Chromium | 07b340c, bdbb1b7 |
+
+Deviations from the task text, decided during implementation:
+
+- Gemma 4 thinks by default; every vision request sends `enable_thinking: false` and `reasoning_budget: 0`.
+- Images taller than 2.5x their width are sent as up to 6 overlapping 768-px slices. Images that run out of
+  output tokens are retried in a one-at-a-time phase with 5,000 tokens, and text-dense portrait images are sliced
+  on that retry. Unparseable outputs are kept in `data/logs/vlm_raw/`.
+- Long jobs use `re2/runner.py` (Ctrl-C saves in-flight work) and log to `data/logs/<command>.log`.
+- Item dates live on `media_meta.item_date` / `date_source` (added by `db.ADDED_COLUMNS`), not only on
+  `item_digest`. Filenames are decoded more widely than Task 6.2 lists: 4chan millisecond and microsecond names,
+  `screenshot_<topic>_<unix seconds>`, X tweet ids in video names, and pbs.twimg media keys (Twitter snowflakes).
+- Scanned PDF pages use a slimmer `PAGE_SCHEMA` and concurrency 2; the queue is table `pdf_ocr_queue`.
+- Veiling in the dashboard uses only the vision model's sensitivity; the 2024 tagger's `legacy_spicy` is shown
+  but not trusted (it rates benign documents 0.9).
+- The graph can show tags as well as entities (`T`) until vision extraction has produced enough entities.
 
 Measured facts that replace the old estimates:
 
