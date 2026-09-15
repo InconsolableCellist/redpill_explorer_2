@@ -161,6 +161,22 @@ def cmd_asr(cfg: config.Config, args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_pdfs(cfg: config.Config, args: argparse.Namespace) -> int:
+    from re2 import pdf
+
+    stats = pdf.run_text(db.open_db(cfg), cfg, limit=args.limit)
+    print(f"pdfs: {stats.summary()}")
+    return 0
+
+
+def cmd_pdf_ocr(cfg: config.Config, args: argparse.Namespace) -> int:
+    from re2 import pdf
+
+    stats = pdf.run_ocr(db.open_db(cfg), cfg, limit=args.limit)
+    print(f"pdf-ocr: {stats.summary()}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="re2")
     parser.add_argument("--config", help="path to config.toml")
@@ -200,6 +216,14 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("asr", help="transcribe videos with faster-whisper on the local GPU")
     p.add_argument("--limit", type=int, help="transcribe at most N videos")
     p.set_defaults(func=cmd_asr)
+
+    p = sub.add_parser("pdfs", help="index PDF text layers and queue scanned pages (local)")
+    p.add_argument("--limit", type=int, help="read at most N PDFs")
+    p.set_defaults(func=cmd_pdfs)
+
+    p = sub.add_parser("pdf-ocr", help="transcribe queued scanned PDF pages with the vision model on cube")
+    p.add_argument("--limit", type=int, help="transcribe at most N pages")
+    p.set_defaults(func=cmd_pdf_ocr)
 
     sub.add_parser("dates", help="recompute item dates from sources, filenames, text and mtimes") \
         .set_defaults(func=cmd_dates)

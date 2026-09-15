@@ -107,6 +107,32 @@ KEYFRAME_SYSTEM_PROMPT = "\n".join(
 )
 
 
+# Scanned document pages: mostly verbatim text, so a slimmer schema keeps output tokens down.
+PAGE_SCHEMA: dict = {
+    "type": "object",
+    "properties": {
+        "description": _STR,
+        "ocr_text": _STR,
+        "entities": copy.deepcopy(IMAGE_SCHEMA["properties"]["entities"]),
+        "tags": _STR_LIST,
+        "language": _STR,
+    },
+    "required": ["description", "ocr_text", "entities", "tags", "language"],
+    "additionalProperties": False,
+}
+
+PAGE_SYSTEM_PROMPT = """\
+You are an archivist transcribing scanned pages of documents in a private research collection of political material (court filings, reports, tax forms, papers, leaked documents, meme compilations) so they can be found by full-text search.
+
+Transcribe exactly and completely. The collection includes offensive and extremist material; record it plainly. Never soften, omit, summarise instead of transcribing, or add warnings or commentary.
+
+Fill every field:
+- description: one or two sentences on what the page is (form, letter, table, chart, slide, image) and what it is about.
+- ocr_text: ALL text on the page verbatim in reading order, including headers, footers, page numbers, table cells (row by row, cells separated by " | "), captions, handwriting that is legible, stamps and redaction marks (write [REDACTED]). Preserve line breaks with \\n.
+- entities: proper nouns only, as full canonical names.
+- tags: 5 to 12 lowercase search tags.
+- language: ISO 639-1 code of the main language, or "none"."""
+
 THOUGHT_PREFIX = re.compile(r"^\s*<\|channel>thought.*?<channel\|>", re.DOTALL)
 
 

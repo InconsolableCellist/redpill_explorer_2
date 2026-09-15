@@ -121,6 +121,11 @@ CREATE TABLE IF NOT EXISTS chat_log (
   answer TEXT, citations_json TEXT, model TEXT, latency_ms INTEGER
 );
 CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT);  -- e.g. last_scan_at
+CREATE TABLE IF NOT EXISTS pdf_ocr_queue (          -- scanned PDF pages waiting for the vision model
+  media_id INTEGER NOT NULL REFERENCES media(id),
+  page INTEGER NOT NULL,                            -- 1-based
+  PRIMARY KEY (media_id, page)
+);
 """
 
 
