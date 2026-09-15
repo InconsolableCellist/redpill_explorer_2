@@ -657,7 +657,7 @@ mark { background: var(--hot-w); color: var(--ink); padding: 0 1px; }
         <div class="keys">
           <kbd>g s</kbd><span>Search</span>
           <kbd>g t</kbd><span>Timeline. There <kbd>h l</kbd> move by month, <kbd>H L</kbd> by year, <kbd>v</kbd> marks a range, <kbd>&gt;</kbd> narrows to it</span>
-          <kbd>g r</kbd><span>Graph of who and what appear together (<kbd>g n</kbd> too). <kbd>h l</kbd> step through nodes, <kbd>&gt;</kbd> narrows to one, <kbd>T</kbd> switches entities / tags. Click a node; double-click narrows.</span>
+          <kbd>g r</kbd><span>Graph (<kbd>g n</kbd> too): entities that appear together, tags that appear together, or tags related in meaning — <kbd>T</kbd> cycles. <kbd>h l</kbd> step through nodes, <kbd>&gt;</kbd> narrows to one. Click a node; double-click narrows.</span>
           <kbd>g m</kbd><span>Map of the whole archive by meaning; your scope lights up. <kbd>h l</kbd> step through topics (<kbd>T</kbd> for themes), <kbd>z</kbd> zooms to one, <kbd>+ -</kbd> zoom, <kbd>0</kbd> resets, <kbd>&gt;</kbd> narrows. Scroll to zoom, drag to pan, click a dot to open it.</span>
           <kbd>g a</kbd><span>Ask a question; the agent searches the archive and answers with numbered sources. <kbd>a</kbd> asks within your current scopes. In ask mode <kbd>/</kbd> focuses the question, <kbd>m</kbd> switches informed / archive-only, <kbd>j k</kbd> walk the citations, <kbd>Enter</kbd> opens one.</span>
           <kbd>g w</kbd><span>Wiki — once it is compiled</span>
@@ -808,6 +808,7 @@ function scheduleSearch(delay = 90) {
 }
 
 async function runSearch() {
+  S.related = null;
   ctl?.abort();
   ctl = new AbortController();
   const my = ++gen;
@@ -875,6 +876,9 @@ function onMessage(m) {
     case "correlations":
       S.corr = m.data; renderLenses();
       break;
+    case "related":
+      S.related = { tag: m.tag, data: m.data }; renderLenses();
+      break;
     case "warn":
       say(m.msg);
       break;
@@ -939,7 +943,9 @@ const TYPE_GLYPH = { person: "P", organization: "O", place: "L", event: "E", pla
 function lensRow(scope, name, n, max, opts = {}) {
   const w = max ? Math.max(.02, n / max) : 0;
   // Correlated rows lead with lift (how much likelier than across the whole archive); the count rides in the title.
-  const right = opts.lift != null
+  const right = opts.related
+    ? `<span class="lens__lift" title="relatedness ${opts.related.semantic ?? "—"} · together on ${opts.related.n_ab ?? 0} items">${opts.related.score.toFixed(2)}</span>`
+    : opts.lift != null
     ? `<span class="lens__lift" title="${fmtN(n)} results · ${opts.lift}× the archive rate">×${opts.lift >= 10 ? Math.round(opts.lift) : opts.lift.toFixed(1)}</span>`
     : `<span class="lens__n">${fmtN(n)}</span>`;
   return `<button class="lens" data-scope="${escapeHtml(scope)}" data-label="${escapeHtml(name)}" style="--w:${w.toFixed(3)}">` +
@@ -953,6 +959,11 @@ function renderLenses() {
   if (!L) { el.innerHTML = ""; return; }
   const groups = [];
   const active = new Set(S.scopes);
+  if (S.related?.data?.length) {
+    const rel = S.related.data.filter((r) => !active.has(`tag:${r.id}`));
+    groups.push([`Related to ${S.related.tag}`, rel.slice(0, 12).map((r) =>
+      lensRow(`tag:${r.id}`, r.name, Math.round(r.score * 100), 100, { glyph: "#", related: r }))]);
+  }
   if (S.corr?.length) {
     const max = Math.max(...S.corr.map((c) => c.n));
     groups.push(["Correlated", S.corr.filter((c) => !active.has(c.scope)).slice(0, 12).map((c) =>
@@ -1872,9 +1883,11 @@ function drawGraph() {
   const g = canvas.getContext("2d");
   g.scale(dpr, dpr);
   g.clearRect(0, 0, w, h);
-  $("#grInfo").textContent = `${fmtN(data.nodes.length)} ${data.kind === "entity" ? "entities" : "tags"} · ${fmtN(data.edges.length)} links · ${fmtN(data.n_items)} items · T switches`;
+  const kindName = { entity: "entities", tag: "tags together", related: "related tags" }[data.kind];
+  $("#grInfo").textContent = `${fmtN(data.nodes.length)} ${kindName} · ${fmtN(data.edges.length)} links · ${fmtN(data.n_items)} items · T switches`;
   if (!data.nodes.length) {
-    $("#grCur").textContent = data.kind === "entity" ? "No entities here yet — they arrive as the vision model reads images. T for tags." : "No tags here.";
+    $("#grCur").textContent = data.kind === "entity" ? "No entities here yet — they arrive as the vision model reads images. T for tags." :
+      data.kind === "related" ? "No relatedness scores yet: run scripts/tag_relations.sh. T for entities." : "No tags here.";
     S.gr.screen = [];
     return;
   }
@@ -2165,8 +2178,14 @@ function onKey(e) {
     case "z": if (mapAxis) return done(mpZoomToCursor); break;
     case "+": case "=": if (mapAxis) return done(() => mpZoom(1.5 ** n)); break;
     case "-": if (mapAxis) return done(() => mpZoom(1 / 1.5 ** n)); break;
-    case "T": if (S.mode === "map") return done(() => { S.mp.level = S.mp.level === "topic" ? "theme" : "topic"; mpOrder(); S.mp.cursor = 0; drawMap(); mpListCluster(); say(`Stepping through ${S.mp.level}s.`); });
-      if (S.mode === "graph") return done(() => { S.gr.kind = S.gr.kind === "entity" ? "tag" : "entity"; store("graphKind", S.gr.kind); S.gr.cursor = 0; loadGraph(); say(`Graph of ${S.gr.kind === "entity" ? "entities" : "tags"}.`); }); break;
+    case "T": if (S.mode === "graph") return done(() => {
+        S.gr.kind = { entity: "tag", tag: "related", related: "entity" }[S.gr.kind] || "entity";
+        store("graphKind", S.gr.kind); S.gr.cursor = 0; loadGraph();
+        say({ entity: "Graph of entities that appear together.", tag: "Graph of tags that appear together.",
+              related: "Graph of tags related in meaning (scored by the model)." }[S.gr.kind]);
+      });
+      if (S.mode === "map") return done(() => { S.mp.level = S.mp.level === "topic" ? "theme" : "topic"; mpOrder(); S.mp.cursor = 0; drawMap(); mpListCluster(); say(`Stepping through ${S.mp.level}s.`); });
+      break;
     case "H": if (timelineAxis) return done(() => tlMove(-12 * n)); break;
     case "L": if (timelineAxis) return done(() => tlMove(12 * n)); break;
     case "v": if (timelineAxis) return done(() => { S.tl.mark = S.tl.mark == null ? S.tl.cursor : null; drawTimeline(); say(S.tl.mark == null ? "Range cleared." : "Range started: move, then > to narrow."); }); break;

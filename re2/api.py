@@ -93,6 +93,13 @@ def create_app(cfg: config.Config | None = None) -> FastAPI:
             try:
                 yield _line({"t": "scope", "scopes": labels,
                              "n_in_scope": None if allowed is None else len(allowed)})
+                tag_scopes = [int(x.split(":", 1)[1]) for x in s if x.startswith("tag:")]
+                if tag_scopes:
+                    from re2 import relations
+                    rel = relations.related(conn, tag_scopes[-1], limit=15)
+                    if rel:
+                        yield _line({"t": "related", "tag": labels[s.index(f"tag:{tag_scopes[-1]}")]["label"],
+                                     "data": rel})
                 query = q.strip()
                 if not query:
                     order = search.items_in_scope(conn, allowed, limit=search.SCOPE_LENS_MEDIA, sort=sort)
@@ -179,8 +186,8 @@ def create_app(cfg: config.Config | None = None) -> FastAPI:
     @app.get("/api/graph")
     def graph(q: str = "", s: list[str] = Query(default=[]), kind: str = "entity", limit: int = 150):
         """Co-occurrence network of entities (or tags) over the items in scope, weighted by normalized PMI."""
-        if kind not in ("entity", "tag"):
-            raise HTTPException(400, "kind must be entity or tag")
+        if kind not in ("entity", "tag", "related"):
+            raise HTTPException(400, "kind must be entity, tag or related")
         limit = max(10, min(limit, 300))
         with closing(open_ro(cfg)) as conn:
             allowed, _ = parse_scopes(conn, s)
@@ -188,6 +195,9 @@ def create_app(cfg: config.Config | None = None) -> FastAPI:
                 matched = set(search.group_by_media(
                     conn, search.lexical(conn, q.strip(), k=20000, allowed=allowed), q, limit=0)[1])
                 allowed = matched if allowed is None else allowed & matched
+            if kind == "related":
+                from re2 import relations
+                return relations.related_graph(conn, allowed, limit=limit)
             return search.cooccurrence(conn, allowed, kind=kind, limit=limit)
 
     map_cache: dict = {}

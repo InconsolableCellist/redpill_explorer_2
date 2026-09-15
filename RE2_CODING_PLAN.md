@@ -136,6 +136,9 @@ to commit. Do not skip verification.
 | 6.5 topics, themes, 2D map (`re2 recluster`) from mean doc vectors; 8.4 map mode | done, run: 181 topics, 17 themes; labels are provisional keywords | 41ad957 |
 | 7 Ask agent (`re2/ask.py`, `/api/ask`) and 8.5 Ask mode | done, tested live against mlboy | e9f5d40, 241324b, a0d97ea |
 | Which-key popup, view keys on buttons | done | 6c318fc |
+| Group, stance and conflict tags in the image prompt; `tag_synonyms.toml`; `re2 normalize-tags` | done, tested on mlboy | fddf90e, d5f2e41 |
+| `vision_concurrency = "auto"` sized from the router's slots and context; `--concurrency`, `--check` | done | d5f2e41 |
+| Tag relatedness (`re2/relations.py`, `scripts/tag_relations.sh`): observed NPMI + LLM semantic scores; "Related to" lens; graph related mode | built; observed pass run; the LLM pass is the human's (mlboy tonight), and `--rescore` after the full re-extraction | (this commit) |
 
 Deviations from the task text, decided during implementation:
 

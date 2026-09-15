@@ -231,6 +231,15 @@ def cmd_normalize_tags(cfg: config.Config, args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_tag_relations(cfg: config.Config, args: argparse.Namespace) -> int:
+    from re2 import relations
+
+    stats = relations.run(db.open_db(cfg), cfg, limit=args.limit, observed_only=args.observed_only,
+                          concurrency=args.concurrency, rescore=args.rescore)
+    print(f"tag-relations: {stats.summary()}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="re2")
     parser.add_argument("--config", help="path to config.toml")
@@ -295,6 +304,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("normalize-tags", help="re-apply tag normalization and tag_synonyms.toml to stored tags") \
         .set_defaults(func=cmd_normalize_tags)
+
+    p = sub.add_parser("tag-relations", help="observed and semantic relatedness between the most used tags")
+    p.add_argument("--limit", type=int, help="score at most N anchor tags with the model")
+    p.add_argument("--observed-only", action="store_true", help="only recompute co-occurrence (no model)")
+    p.add_argument("--concurrency", type=int, default=2, help="requests at once (default 2)")
+    p.add_argument("--rescore", action="store_true", help="forget earlier model scores and ask about every tag again")
+    p.set_defaults(func=cmd_tag_relations)
 
     sub.add_parser("dates", help="recompute item dates from sources, filenames, text and mtimes") \
         .set_defaults(func=cmd_dates)
