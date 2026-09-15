@@ -322,7 +322,8 @@ def _sync_entities(conn: sqlite3.Connection, stats: UpdateStats) -> None:
     names = {r[0]: (r[1], r[2]) for r in conn.execute("SELECT id, name, type FROM entity")}
     pages = {p["entity_id"]: p for p in _pages(conn, "kind='entity'")}
     for eid, items in by_entity.items():
-        if len(items) < ENTITY_MIN_ITEMS or eid not in names:
+        # Platforms (X, YouTube) are where items were posted, not what they are about.
+        if len(items) < ENTITY_MIN_ITEMS or eid not in names or names[eid][1] == "platform":
             continue
         page = pages.pop(eid, None)
         if page is None:
