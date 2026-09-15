@@ -515,7 +515,7 @@ mark { background: var(--hot-w); color: var(--ink); padding: 0 1px; }
 
 /* ── Timeline ────────────────────────────────────────────── */
 .tl { background: var(--stock-card); border: 1px solid var(--rule-soft); box-shadow: var(--shadow); padding: 10px 12px 6px; margin-bottom: 12px; }
-.tl canvas { width: 100%; height: 190px; display: block; cursor: crosshair; }
+.tl canvas { width: 100%; height: 190px; display: block; cursor: crosshair; touch-action: pan-y; }
 .tl__legend { display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: baseline; margin-top: 4px; }
 .sw { display: inline-block; width: 9px; height: 9px; margin-right: 5px; vertical-align: -1px; }
 
@@ -669,7 +669,7 @@ mark { background: var(--hot-w); color: var(--ink); padding: 0 1px; }
         </form>
       </div>
       <div id="settings" class="settings" hidden></div>
-      <div class="results__head"><span class="label" id="resultsLabel">Recent</span><span class="review" id="review" hidden></span><span><button class="sort-btn" id="sortBtn" title="Change sort (S)">sort <b id="sortName">relevance</b></button> <span class="label tnum" id="resultsCount"></span></span></div>
+      <div class="results__head"><span class="label" id="resultsLabel"></span><span class="review" id="review" hidden></span><span><button class="sort-btn" id="sortBtn" title="Change sort (S)">sort <b id="sortName">relevance</b></button> <span class="label tnum" id="resultsCount"></span></span></div>
       <div class="list" id="list"></div>
       <button class="btn more-btn" id="moreBtn" hidden>Load more</button>
     </section>
@@ -723,7 +723,7 @@ mark { background: var(--hot-w); color: var(--ink); padding: 0 1px; }
         <h3>Views</h3>
         <div class="keys">
           <kbd>g s</kbd><span>Search</span>
-          <kbd>g t</kbd><span>Timeline. With the chart focused, <kbd>h l</kbd> move by month, <kbd>H L</kbd> by year, <kbd>v</kbd> marks a range, <kbd>&gt;</kbd> narrows to it</span>
+          <kbd>g t</kbd><span>Timeline. With the chart focused, <kbd>h l</kbd> move by month, <kbd>H L</kbd> by year, <kbd>v</kbd> marks a range (or drag across the bars), <kbd>&gt;</kbd> narrows to it. Scroll or <kbd>+ -</kbd> to zoom; shift-scroll, shift-drag or middle-drag to pan; <kbd>Z</kbd> or double-click shows every month.</span>
           <kbd>g r</kbd><span>Graph (<kbd>g n</kbd> too): entities that appear together, tags that appear together, or tags related in meaning — <kbd>T</kbd> cycles. With the chart focused, <kbd>h l</kbd> step through nodes, <kbd>&gt;</kbd> narrows to one. Click a node; double-click narrows.</span>
           <kbd>g m</kbd><span>Map of the whole archive by meaning; your scope lights up. With the chart focused, <kbd>h l</kbd> step through topics (<kbd>T</kbd> for themes), <kbd>z</kbd> zooms to one, <kbd>+ -</kbd> zoom, <kbd>0</kbd> resets, <kbd>&gt;</kbd> narrows. Scroll to zoom, drag to pan, click a dot to open it.</span>
           <kbd>D</kbd><span>Discuss the item under the cursor: a new Ask conversation with its full record attached, and related items (near in time or meaning) if <b>+ related</b> is on. Depth sets how much is read; period and topics narrow it.</span>
@@ -811,7 +811,7 @@ const S = {
   corr: [],
   count: "",
   pending: "",
-  tl: { data: null, cursor: -1, mark: null },
+  tl: { data: null, cursor: -1, mark: null, view: null },  // view: {start, count} in months, null = all
   gr: { data: null, kind: store("graphKind") || "entity", cursor: 0, order: [], pos: null, hover: -1 },
   mp: { data: null, level: "topic", order: [], cursor: 0, scope: null, view: { s: 1, x: 0, y: 0 }, hover: -1 },
   ask: { session: null, turns: [], mode: store("askMode") || "informed", sessions: [],
@@ -939,8 +939,7 @@ function onMessage(m) {
     case "lexical":
     case "fused":
       S.hits = m.hits; S.more = m.more;
-      $("#resultsLabel").textContent = m.t === "items" ? (S.scopes.length ? `In scope, ${S.sort === "relevance" ? "newest" : SORT_NAMES[S.sort]} first` : "Recent") :
-        m.t === "lexical" ? "Matches" : "Matches · words + meaning";
+      $("#resultsLabel").textContent = m.t === "items" ? "" : m.t === "lexical" ? "Matches" : "Matches · words + meaning";
       renderResults();
       $("#results").classList.remove("is-stale");
       break;
@@ -1410,10 +1409,18 @@ async function loadTimeline() {
   if (!resp.ok) return;
   S.tl.data = await resp.json();
   const months = fillMonths(S.tl.data.months);
+  // A new scope or query can move the first month; keep cursor, mark and view on the same calendar months.
+  const shift = S.tl.months?.length && months.length && S.tl.cursor >= 0 ? monthNo(S.tl.months[0].month) - monthNo(months[0].month) : 0;
+  if (shift) {
+    S.tl.cursor += shift;
+    if (S.tl.mark != null) S.tl.mark = S.tl.mark + shift >= 0 && S.tl.mark + shift < months.length ? S.tl.mark + shift : null;
+    if (S.tl.view) S.tl.view.start += shift;
+  }
   S.tl.months = months;
   if (S.tl.cursor < 0 || S.tl.cursor >= months.length) S.tl.cursor = months.length - 1;
   renderTimeline();
 }
+function monthNo(key) { const [y, m] = key.split("-").map(Number); return y * 12 + m - 1; }
 function fillMonths(rows) {
   if (!rows.length) return [];
   const by = Object.fromEntries(rows.map((r) => [r.month, r]));
@@ -1430,24 +1437,91 @@ function fillMonths(rows) {
 function cssVar(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
 function renderTimeline() {
   const host = $("#timeline");
-  const months = S.tl.months || [];
   if (!host.firstChild) {
     host.innerHTML = `<div class="tl"><canvas id="tlCanvas" aria-label="Items per month"></canvas>` +
       `<div class="tl__legend"><span class="label" id="tlCur"></span><span class="meta">` +
       `<span><i class="sw" style="background:var(--blue)"></i>images</span><span><i class="sw" style="background:var(--ink)"></i>videos</span>` +
       `<span><i class="sw" style="background:var(--ink-3)"></i>pdfs</span></span><span class="meta" id="tlUndated"></span></div></div>`;
     const canvas = $("#tlCanvas");
-    canvas.addEventListener("click", (e) => {
-      const r = canvas.getBoundingClientRect();
-      const i = Math.floor((e.clientX - r.left) / r.width * months.length);
-      S.onChart = true; setFocus("results");
-      tlMove(i - S.tl.cursor);
+    // Plain drag marks a range, as v then moving would; shift-drag or the middle button pans.
+    let drag = null;
+    const endDrag = () => { drag = null; canvas.style.cursor = ""; };
+    canvas.addEventListener("mousedown", (e) => e.preventDefault());  // no text selection, no middle-button autoscroll
+    canvas.addEventListener("pointerdown", (e) => {
+      if (!S.tl.months?.length || e.button > 1) return;
+      const pan = e.button === 1 || e.shiftKey;
+      drag = { pan, x: e.clientX, i: tlIndexAt(e.clientX), start: tlView().start, moved: false };
+      canvas.setPointerCapture(e.pointerId);
+      if (pan) canvas.style.cursor = "grabbing";
     });
+    canvas.addEventListener("pointermove", (e) => {
+      if (!drag || (!drag.moved && Math.abs(e.clientX - drag.x) <= 3)) return;
+      if (drag.pan) {
+        drag.moved = true;
+        S.tl.view = { start: drag.start - (e.clientX - drag.x) / canvas.clientWidth * tlView().count, count: tlView().count };
+        return drawTimeline();
+      }
+      if (!drag.moved) { drag.moved = true; S.tl.mark = drag.i; S.onChart = true; setFocus("results"); }
+      tlMove(tlIndexAt(e.clientX) - S.tl.cursor);
+    });
+    canvas.addEventListener("pointerup", () => {
+      const d = drag;
+      endDrag();
+      if (!d || d.pan) return;
+      S.onChart = true; setFocus("results");
+      if (d.moved) return say("Range marked: > narrows to it, Esc clears.");
+      S.tl.mark = null;
+      tlMove(d.i - S.tl.cursor);
+    });
+    canvas.addEventListener("pointercancel", endDrag);
+    canvas.addEventListener("dblclick", () => { S.tl.view = null; drawTimeline(); });
+    // Vertical wheel zooms around the pointer; horizontal wheel or shift+wheel pans.
+    canvas.addEventListener("wheel", (e) => {
+      if (!S.tl.months?.length) return;
+      e.preventDefault();
+      const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? canvas.clientWidth : 1;
+      const v = tlView(), r = canvas.getBoundingClientRect();
+      const dx = e.shiftKey ? e.deltaX || e.deltaY : e.deltaX;
+      if (e.shiftKey || Math.abs(dx) > Math.abs(e.deltaY)) {
+        S.tl.view = { start: v.start + dx * unit / r.width * v.count, count: v.count };
+        return drawTimeline();
+      }
+      tlZoom(Math.exp(-e.deltaY * unit / 500), v.start + (e.clientX - r.left) / r.width * v.count);
+    }, { passive: false });
     new ResizeObserver(() => drawTimeline()).observe(canvas);
     paintCursor("results", false);
   }
   drawTimeline();
 }
+// The visible window in months, clamped to at least a year (or everything, if less) and to the data's ends.
+function tlView() {
+  const n = S.tl.months?.length || 0;
+  const count = S.tl.view ? Math.max(Math.min(12, n), Math.min(n, S.tl.view.count)) : n;
+  if (count >= n) { S.tl.view = null; return { start: 0, count: n }; }
+  return (S.tl.view = { start: Math.max(0, Math.min(n - count, S.tl.view.start)), count });
+}
+function tlIndexAt(clientX) {
+  const r = $("#tlCanvas").getBoundingClientRect(), v = tlView();
+  const x = Math.max(0, Math.min(r.width - 1, clientX - r.left));
+  return Math.max(0, Math.min(S.tl.months.length - 1, Math.floor(v.start + x / r.width * v.count)));
+}
+// Zoom by factor keeping month position `at` still on screen; from the keyboard (no `at`), around the cursor.
+function tlZoom(factor, at) {
+  const n = S.tl.months?.length || 0;
+  if (!n) return;
+  const v = tlView(), keys = at == null;
+  if (keys) at = S.tl.cursor + 0.5;
+  const count = Math.max(Math.min(12, n), Math.min(n, v.count / factor));
+  S.tl.view = { start: at - (at - v.start) * count / v.count, count };
+  if (keys) tlReveal();
+  drawTimeline();
+}
+function tlReveal() {
+  const v = tlView(), c = S.tl.cursor;
+  if (c < v.start) S.tl.view = { start: c, count: v.count };
+  else if (c + 1 > v.start + v.count) S.tl.view = { start: c + 1 - v.count, count: v.count };
+}
+const MONTH_ABBR = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 function drawTimeline() {
   const canvas = $("#tlCanvas");
   if (!canvas || !S.tl.months) return;
@@ -1459,29 +1533,49 @@ function drawTimeline() {
   g.scale(dpr, dpr);
   g.clearRect(0, 0, w, h);
   if (!months.length) return;
+  const { start, count } = tlView();
   const max = Math.max(1, ...months.map((m) => m.image + m.video + m.pdf));
-  const top = 8, bottom = h - 18, bw = w / months.length;
+  const top = 8, bottom = h - 18, bw = w / count;
+  const xOf = (i) => (i - start) * bw;
+  const first = Math.max(0, Math.floor(start)), last = Math.min(months.length - 1, Math.ceil(start + count));
   const colors = { image: cssVar("--blue"), video: cssVar("--ink"), pdf: cssVar("--ink-3") };
   const [ms, me] = S.tl.mark != null ? [Math.min(S.tl.mark, S.tl.cursor), Math.max(S.tl.mark, S.tl.cursor)] : [-1, -1];
-  months.forEach((m, i) => {
+  if (ms >= 0) { g.fillStyle = cssVar("--hot-w"); g.fillRect(xOf(ms), top, (me - ms + 1) * bw, bottom - top); }
+  for (let i = first; i <= last; i++) {
+    const m = months[i], x = xOf(i);
     let y = bottom;
-    const inMark = i >= ms && i <= me;
-    if (inMark) { g.fillStyle = cssVar("--hot-w"); g.fillRect(i * bw, top, bw, bottom - top); }
     for (const k of ["image", "video", "pdf"]) {
-      const bh = (bottom - top) * m[k] / max;
+      const bh = m[k] ? Math.max(1, (bottom - top) * m[k] / max) : 0;  // zoomed into a sparse year, one item still shows
       g.fillStyle = i === S.tl.cursor ? cssVar("--hot") : colors[k];
       g.globalAlpha = i === S.tl.cursor ? 1 : (k === "image" ? .85 : .9);
-      g.fillRect(i * bw + (bw > 3 ? .5 : 0), y - bh, Math.max(1, bw - (bw > 3 ? 1 : 0)), bh);
+      g.fillRect(x + (bw > 3 ? .5 : 0), y - bh, Math.max(1, bw - (bw > 3 ? 1 : 0)), bh);
       y -= bh;
     }
     g.globalAlpha = 1;
-    if (m.month.endsWith("-01")) {
-      g.fillStyle = cssVar("--ink-3");
-      g.font = `10px ${cssVar("--font-mono")}`;
-      g.fillRect(i * bw, bottom, 1, 4);
-      if (bw * 12 > 34 || Number(m.month.slice(0, 4)) % 2 === 0) g.fillText(m.month.slice(0, 4), i * bw + 2, h - 4);
+  }
+  // Axis: every ystep-th year gets a label so labels never touch. Zoomed in far enough, months get labels
+  // too, and the year stays pinned at the left edge once its January has scrolled off.
+  g.font = `10px ${cssVar("--font-mono")}`;
+  const gap = g.measureText("2020").width + 10;
+  const ystep = [1, 2, 5, 10, 20, 50].find((s) => s * 12 * bw >= gap) || 100;
+  const mstep = [1, 3, 6].find((s) => s * bw >= gap);
+  let firstJan = first;
+  while (firstJan <= last && (xOf(firstJan) < 0 || !months[firstJan].month.endsWith("-01"))) firstJan++;
+  const pin = mstep && (firstJan > last || xOf(firstJan) >= gap);
+  if (pin) { g.fillStyle = cssVar("--ink-2"); g.fillText(months[first].month.slice(0, 4), 2, h - 4); }
+  for (let i = first; i <= last; i++) {
+    const x = xOf(i), mo = Number(months[i].month.slice(5));
+    g.fillStyle = cssVar("--ink-3");
+    if (mo === 1) {
+      g.fillRect(x, bottom, 1, 4);
+      if (x < 0 || Number(months[i].month.slice(0, 4)) % ystep) continue;
+      if (mstep) g.fillStyle = cssVar("--ink-2");
+      g.fillText(months[i].month.slice(0, 4), x + 2, h - 4);
+    } else if (mstep && (mo - 1) % mstep === 0) {
+      g.fillRect(x, bottom, 1, 2);
+      if (x >= 0 && !(pin && x < gap)) g.fillText(MONTH_ABBR[mo - 1], x + 2, h - 4);
     }
-  });
+  }
   g.fillStyle = cssVar("--rule");
   g.fillRect(0, bottom, w, 1);
   const cur = months[S.tl.cursor];
@@ -1490,13 +1584,15 @@ function drawTimeline() {
     $("#tlCur").textContent = `${cur.month} · ${fmtN(n)} items${cur.weak ? ` (${fmtN(cur.weak)} dated by file time)` : ""}` +
       (S.tl.mark != null ? ` · range ${months[ms].month} – ${months[me].month}` : "");
   }
-  $("#tlUndated").textContent = S.tl.data?.undated ? `${fmtN(S.tl.data.undated)} undated` : "";
+  const shown = S.tl.view ? `${months[Math.ceil(start)].month} – ${months[Math.ceil(start + count) - 1].month} shown, Z for all` : "";
+  $("#tlUndated").textContent = [shown, S.tl.data?.undated ? `${fmtN(S.tl.data.undated)} undated` : ""].filter(Boolean).join(" · ");
 }
 let tlListTimer = 0;
 function tlMove(delta) {
   const months = S.tl.months || [];
   if (!months.length) return;
   S.tl.cursor = Math.max(0, Math.min(months.length - 1, S.tl.cursor + delta));
+  tlReveal();
   drawTimeline();
   clearTimeout(tlListTimer);
   tlListTimer = setTimeout(tlListMonth, 160);
@@ -2652,8 +2748,8 @@ function onKey(e) {
     case "h": return done(() => timelineAxis ? tlMove(-n) : graphAxis ? grMove(-n) : mapAxis ? mpMove(-n) : sideways(-n));
     case "l": return done(() => timelineAxis ? tlMove(n) : graphAxis ? grMove(n) : mapAxis ? mpMove(n) : sideways(n));
     case "z": if (mapAxis) return done(mpZoomToCursor); break;
-    case "+": case "=": if (mapAxis) return done(() => mpZoom(1.5 ** n)); break;
-    case "-": if (mapAxis) return done(() => mpZoom(1 / 1.5 ** n)); break;
+    case "+": case "=": if (mapAxis) return done(() => mpZoom(1.5 ** n)); if (timelineAxis) return done(() => tlZoom(1.5 ** n)); break;
+    case "-": if (mapAxis) return done(() => mpZoom(1 / 1.5 ** n)); if (timelineAxis) return done(() => tlZoom(1 / 1.5 ** n)); break;
     case "T": if (S.mode === "graph") return done(() => {
         S.gr.kind = { entity: "tag", tag: "related", related: "entity" }[S.gr.kind] || "entity";
         store("graphKind", S.gr.kind); S.gr.cursor = 0; loadGraph();
@@ -2664,6 +2760,7 @@ function onKey(e) {
       break;
     case "H": if (timelineAxis) return done(() => tlMove(-12 * n)); break;
     case "L": if (timelineAxis) return done(() => tlMove(12 * n)); break;
+    case "Z": if (timelineAxis) return done(() => { S.tl.view = null; drawTimeline(); }); break;
     case "v": if (timelineAxis) return done(() => { S.tl.mark = S.tl.mark == null ? S.tl.cursor : null; drawTimeline(); say(S.tl.mark == null ? "Range cleared." : "Range started: move, then > to narrow."); }); break;
     case "ArrowLeft": return done(() => inReaderVideo ? seek(-5 * n) : timelineAxis ? tlMove(-n) : sideways(-n));
     case "ArrowRight": return done(() => inReaderVideo ? seek(5 * n) : timelineAxis ? tlMove(n) : sideways(n));
