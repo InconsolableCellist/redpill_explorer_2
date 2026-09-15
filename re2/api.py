@@ -10,7 +10,7 @@ from contextlib import closing
 from pathlib import Path
 
 import httpx
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import Body, FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from jinja2 import Environment, FileSystemLoader, select_autoescape
@@ -174,25 +174,7 @@ def create_app(cfg: config.Config | None = None) -> FastAPI:
                 matched = {m for m in search.group_by_media(
                     conn, search.lexical(conn, q.strip(), k=20000, allowed=allowed), q, limit=0)[1]}
                 allowed = matched if allowed is None else allowed & matched
-            restrict = ""
-            if allowed is not None:
-                restrict = f"AND m.id IN (SELECT id FROM {search._temp_ids(conn, 'timeline_media', allowed)})"
-            months: dict[str, dict] = {}
-            undated = 0
-            for month, kind, weak, n in conn.execute(
-                    f"""SELECT substr(mm.item_date, 1, 7), m.kind, mm.date_source = 'mtime', COUNT(*)
-                        FROM media m LEFT JOIN media_meta mm ON mm.media_id=m.id
-                        WHERE m.kind IN ('image', 'video', 'pdf')
-                          AND m.status NOT IN ('EXCLUDED', 'UNSUPPORTED') {restrict}
-                        GROUP BY 1, 2, 3"""):
-                if not month:
-                    undated += n
-                    continue
-                row = months.setdefault(month, {"month": month, "image": 0, "video": 0, "pdf": 0, "weak": 0})
-                row[kind] += n
-                if weak:
-                    row["weak"] += n
-            return {"months": [months[k] for k in sorted(months)], "undated": undated, "events": []}
+            return search.timeline_counts(conn, allowed)
 
     @app.get("/api/graph")
     def graph(q: str = "", s: list[str] = Query(default=[]), kind: str = "entity", limit: int = 150):
@@ -278,6 +260,71 @@ def create_app(cfg: config.Config | None = None) -> FastAPI:
             to_primary, _ = search.post_maps(conn)
             items = {to_primary.get(x, x) for x in allowed}
             return {"all": False, "indices": sorted(m["index_of"][i] for i in items if i in m["index_of"])}
+
+    # ── Ask ───────────────────────────────────────────────────────────────
+
+    chat_client = httpx.Client()
+
+    @app.post("/api/ask")
+    def ask_endpoint(body: dict = Body(...)):
+        from re2 import ask
+
+        question = str(body.get("question") or "").strip()
+        if not question:
+            raise HTTPException(400, "question is required")
+        scopes = [str(x) for x in body.get("scopes") or []]
+        conn = db.connect(cfg.db_path)   # writable: the agent logs its turns
+        try:
+            search.scope_media_ids(conn, scopes)
+        except (search.ScopeError, ValueError) as exc:
+            conn.close()
+            raise HTTPException(400, str(exc)) from exc
+
+        def events():
+            try:
+                for name, data in ask.run(conn, cfg, question, scopes=scopes, mode=str(body.get("mode") or "informed"),
+                                          session_id=body.get("session_id") or None, client=chat_client,
+                                          embed_client=embed_client):
+                    yield f"event: {name}\ndata: {search.dumps(data)}\n\n".encode("utf-8")
+            except Exception as exc:  # noqa: BLE001 - the stream must end with an event, not a dropped connection
+                log.exception("ask failed")
+                yield f"event: error\ndata: {search.dumps({'msg': str(exc)})}\n\n".encode("utf-8")
+            finally:
+                conn.close()
+
+        return StreamingResponse(events(), media_type="text/event-stream",
+                                 headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"})
+
+    @app.get("/api/ask/sessions")
+    def ask_sessions(limit: int = 30):
+        with closing(open_ro(cfg)) as conn:
+            if not search._has_table(conn, "chat_session"):
+                return {"sessions": []}
+            rows = conn.execute(
+                """SELECT s.id, s.title, s.created_at, COUNT(l.id) AS turns FROM chat_session s
+                   LEFT JOIN chat_log l ON l.session_id=s.id GROUP BY s.id ORDER BY MAX(l.id) DESC LIMIT ?""",
+                (max(1, min(limit, 200)),)).fetchall()
+            return {"sessions": [dict(r) for r in rows]}
+
+    @app.get("/api/ask/session/{session_id}")
+    def ask_session(session_id: str):
+        with closing(open_ro(cfg)) as conn:
+            rows = conn.execute(
+                """SELECT question, answer, citations_json, trace_json, mode, ts, latency_ms FROM chat_log
+                   WHERE session_id=? ORDER BY id""", (session_id,)).fetchall()
+            turns = []
+            for r in rows:
+                cites = json.loads(r["citations_json"] or "[]")
+                ids = [int(c["ref"][2:]) for c in cites if c["ref"].startswith("m:")]
+                card_map = search.cards(conn, ids)
+                for c in cites:
+                    if c["ref"].startswith("m:") and int(c["ref"][2:]) in card_map:
+                        c["card"] = card_map[int(c["ref"][2:])]
+                from re2 import ask
+                turns.append({"question": r["question"], "answer": r["answer"], "citations": cites,
+                              "steps": json.loads(r["trace_json"] or "[]"), "mode": r["mode"], "ts": r["ts"],
+                              "sentences": ask.sentences_with_flags(r["answer"] or "")})
+            return {"session_id": session_id, "turns": turns}
 
     # ── Items ─────────────────────────────────────────────────────────────
 

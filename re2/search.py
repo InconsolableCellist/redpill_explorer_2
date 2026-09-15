@@ -659,3 +659,26 @@ def cooccurrence(conn: sqlite3.Connection, allowed: set[int] | None, kind: str =
     nodes = [{"id": i, "scope": f"{prefix}:{i}", "name": labels.get(i, (str(i), ""))[0],
               "type": labels.get(i, ("", kind))[1], "n": n} for i, n in node_counts.items()]
     return {"kind": kind, "n_items": n_items, "nodes": nodes, "edges": edges}
+
+
+def timeline_counts(conn: sqlite3.Connection, allowed: set[int] | None) -> dict:
+    """Items per month by kind; `weak` counts dates that come only from file times."""
+    restrict = ""
+    if allowed is not None:
+        restrict = f"AND m.id IN (SELECT id FROM {_temp_ids(conn, 'timeline_media', allowed)})"
+    months: dict[str, dict] = {}
+    undated = 0
+    for month, kind, weak, n in conn.execute(
+            f"""SELECT substr(mm.item_date, 1, 7), m.kind, mm.date_source = 'mtime', COUNT(*)
+                FROM media m LEFT JOIN media_meta mm ON mm.media_id=m.id
+                WHERE m.kind IN ('image', 'video', 'pdf')
+                  AND m.status NOT IN ('EXCLUDED', 'UNSUPPORTED') {restrict}
+                GROUP BY 1, 2, 3"""):
+        if not month:
+            undated += n
+            continue
+        row = months.setdefault(month, {"month": month, "image": 0, "video": 0, "pdf": 0, "weak": 0})
+        row[kind] += n
+        if weak:
+            row["weak"] += n
+    return {"months": [months[k] for k in sorted(months)], "undated": undated, "events": []}

@@ -30,3 +30,10 @@ compute_type = "int8_float32"
 [server]
 host = "127.0.0.1"
 port = 4001
+
+[chat]
+# The Ask agent. To use another llama.cpp server for a while (e.g. mlboy while cube
+# is down), put a [chat] section in config.local.toml, which is git-ignored.
+base_url = "https://cube.tail99c274.ts.net:5000/v1"
+model = "qwen38-27b-heretic-uncensored-q8-cube"
+context_tokens = 32000

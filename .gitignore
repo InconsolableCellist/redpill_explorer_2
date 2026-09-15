@@ -12,3 +12,4 @@ __pycache__/
 hash_path_cache.json
 images_captioned.json
 backup/
+config.local.toml

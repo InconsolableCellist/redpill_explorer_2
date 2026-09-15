@@ -121,6 +121,11 @@ CREATE TABLE IF NOT EXISTS chat_log (
   answer TEXT, citations_json TEXT, model TEXT, latency_ms INTEGER
 );
 CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT);  -- e.g. last_scan_at
+CREATE TABLE IF NOT EXISTS chat_session (
+  id TEXT PRIMARY KEY,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  title TEXT
+);
 CREATE TABLE IF NOT EXISTS post (                    -- one archived post: a screenshot plus its photos and videos
   id INTEGER PRIMARY KEY,
   url TEXT NOT NULL UNIQUE,
@@ -177,6 +182,9 @@ def connect(path: Path | str) -> sqlite3.Connection:
 ADDED_COLUMNS = [
     ("media_meta", "item_date", "TEXT"),      # dates.py: YYYY-MM-DD or YYYY-MM
     ("media_meta", "date_source", "TEXT"),    # source | filename | content | mtime | none
+    ("chat_log", "session_id", "TEXT"),       # ask.py
+    ("chat_log", "mode", "TEXT"),             # informed | archive
+    ("chat_log", "trace_json", "TEXT"),       # the agent's steps: action, args, result size, timing
 ]
 
 

@@ -52,8 +52,11 @@ def embed_texts(client: httpx.Client, cfg, texts: list[str], prefix: str,
                 raise EmbedError(f"timeout: {exc}") from exc
             except httpx.HTTPError as exc:
                 raise EmbedError(f"{type(exc).__name__}: {exc}") from exc
-        data = sorted(resp.json()["data"], key=lambda d: d["index"])
-        vecs = np.asarray([d["embedding"] for d in data], dtype=np.float32)
+        try:
+            data = sorted(resp.json()["data"], key=lambda d: d["index"])
+            vecs = np.asarray([d["embedding"] for d in data], dtype=np.float32)
+        except (KeyError, TypeError, ValueError) as exc:
+            raise EmbedError(f"unexpected embedding response: {exc}") from exc
         if vecs.shape != (len(chunk), cfg.embed_dims):
             raise EmbedError(f"unexpected embedding shape {vecs.shape}")
         out[start:start + len(chunk)] = vecs
