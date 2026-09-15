@@ -135,6 +135,21 @@ CREATE TABLE IF NOT EXISTS post_member (
   PRIMARY KEY (post_id, media_id)
 );
 CREATE INDEX IF NOT EXISTS ix_post_member_media ON post_member(media_id);
+CREATE TABLE IF NOT EXISTS cluster (                 -- topics and themes (cluster.py); the latest run is kv.cluster_run
+  id INTEGER PRIMARY KEY,
+  level TEXT NOT NULL,                              -- theme | topic
+  parent_id INTEGER REFERENCES cluster(id),         -- a topic's theme
+  run_id TEXT NOT NULL,
+  label TEXT,
+  label_source TEXT                                 -- keywords | llm
+);
+CREATE INDEX IF NOT EXISTS ix_cluster_run ON cluster(run_id, level);
+CREATE TABLE IF NOT EXISTS cluster_member (
+  cluster_id INTEGER NOT NULL REFERENCES cluster(id),
+  media_id INTEGER NOT NULL REFERENCES media(id),
+  PRIMARY KEY (cluster_id, media_id)
+);
+CREATE INDEX IF NOT EXISTS ix_cluster_member_media ON cluster_member(media_id);
 CREATE TABLE IF NOT EXISTS pdf_ocr_queue (          -- scanned PDF pages waiting for the vision model
   media_id INTEGER NOT NULL REFERENCES media(id),
   page INTEGER NOT NULL,                            -- 1-based

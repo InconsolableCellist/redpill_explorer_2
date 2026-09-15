@@ -17,7 +17,7 @@ from re2 import embed
 
 log = logging.getLogger(__name__)
 
-SCOPE_TYPES = ("text", "entity", "tag", "folder", "kind", "status", "date", "page", "media")
+SCOPE_TYPES = ("text", "entity", "tag", "folder", "kind", "status", "date", "page", "media", "cluster")
 VALID_KINDS = {"image", "video", "pdf"}
 VALID_STATUSES = {"READY", "THUMBNAIL_ONLY", "SOURCE_OFFLINE"}
 MARK_START, MARK_END = "\x02", "\x03"
@@ -94,6 +94,10 @@ def _scope_ids(conn: sqlite3.Connection, kind: str, value: str) -> set[int]:
             "(SELECT substr(MIN(s.date), 1, 10) FROM source s WHERE s.media_id=m.id)"
         return q(f"SELECT id FROM (SELECT m.id, {date} AS d FROM media m) "
                  "WHERE d IS NOT NULL AND (? IS NULL OR d >= ?) AND (? IS NULL OR d <= ?)", lo, lo, hi, hi)
+    if kind == "cluster":
+        # Clusters hold post primaries; include each post's photos and videos so scopes intersect cleanly.
+        ids = q("SELECT media_id FROM cluster_member WHERE cluster_id=?", int(value))
+        return set(expand_members(conn, list(ids)))
     if kind == "page":
         if not _has_table(conn, "wiki_member"):
             return set()
@@ -133,6 +137,8 @@ def scope_label(conn: sqlite3.Connection, scope: str) -> str:
         row = conn.execute("SELECT title FROM wiki_page WHERE slug=?", (value,)).fetchone()
     elif kind == "media":
         return f"#{value}"
+    elif kind == "cluster" and _has_table(conn, "cluster"):
+        row = conn.execute("SELECT label FROM cluster WHERE id=?", (int(value),)).fetchone()
     return row[0] if row else value
 
 
@@ -346,11 +352,21 @@ _BOILERPLATE = re.compile(
 MIN_TITLE = 30
 
 
+# The 2024 captioner's disclaimers ("The race and gender of anyone in the picture cannot be
+# determined") make useless titles; such sentences are skipped.
+_DISCLAIMER = re.compile(r"\b(race|gender|ethnicity)\b.*\b(cannot|can't|not|no|unclear|difficult|unable)\b|"
+                         r"\b(cannot|can't|not|no|unclear|difficult|unable)\b.*\b(race|gender|ethnicity)\b",
+                         re.IGNORECASE)
+
+
 def title_from_text(text: str | None, max_len: int = 90) -> str | None:
     if not text:
         return None
     text = _BOILERPLATE.sub("", " ".join(text.split()))
-    sentences = re.split(r"(?<=[.!?])\s", text)
+    sentences = [x for x in re.split(r"(?<=[.!?])\s", text) if not _DISCLAIMER.search(x)]
+    if not sentences:
+        return None
+    sentences[0] = _BOILERPLATE.sub("", sentences[0])
     sentence = sentences[0]
     for extra in sentences[1:]:
         if len(sentence) >= MIN_TITLE:
@@ -446,7 +462,8 @@ SCOPE_LENS_MEDIA = 20000  # browsing a scope with no query: lenses describe ever
 def lenses(conn: sqlite3.Connection, media_ids: list[int], max_media: int = LENS_MEDIA) -> dict:
     ids = media_ids[:max_media]
     if not ids:
-        return {"n": 0, "entities": [], "tags": [], "folders": [], "kinds": {}, "statuses": {}, "months": []}
+        return {"n": 0, "topics": [], "themes": [], "entities": [], "tags": [], "folders": [], "kinds": {},
+                "statuses": {}, "months": []}
     table = _temp_ids(conn, "lens_media", ids)
     entities = [dict(r) for r in conn.execute(
         f"""SELECT e.id, e.name, e.type, COUNT(*) AS n FROM media_entity me JOIN entity e ON e.id=me.entity_id
@@ -467,8 +484,20 @@ def lenses(conn: sqlite3.Connection, media_ids: list[int], max_media: int = LENS
     months = [{"month": r[0], "n": r[1]} for r in conn.execute(
         f"""SELECT substr(d, 1, 7) AS month, COUNT(*) FROM (SELECT {date} AS d FROM media m
             WHERE m.id IN (SELECT id FROM {table})) WHERE length(d) >= 7 GROUP BY month ORDER BY month""")]
+    clusters = {"topics": [], "themes": []}
+    run = conn.execute("SELECT value FROM kv WHERE key='cluster_run'").fetchone() if _has_table(conn, "cluster") else None
+    if run:
+        for r in conn.execute(
+                f"""SELECT c.id, c.label, c.level, COUNT(*) AS n FROM cluster_member cm JOIN cluster c ON c.id=cm.cluster_id
+                    WHERE c.run_id=? AND cm.media_id IN (SELECT id FROM {table})
+                    GROUP BY c.id ORDER BY n DESC""", (run[0],)):
+            bucket = clusters["topics" if r[2] == "topic" else "themes"]
+            if len(bucket) < 12:
+                bucket.append({"id": r[0], "label": r[1], "n": r[3]})
     return {
         "n": len(ids),
+        "topics": clusters["topics"],
+        "themes": clusters["themes"],
         "entities": entities,
         "tags": tag_rows,
         "folders": [{"folder": f, "n": n} for f, n in folders.most_common(20)],

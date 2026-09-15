@@ -410,6 +410,12 @@ mark { background: var(--hot-w); color: var(--ink); padding: 0 1px; }
 .src a { color: var(--blue); overflow-wrap: anywhere; font-size: 13px; }
 .src a:hover { color: var(--hot); }
 
+/* ── Map ─────────────────────────────────────────────────── */
+.mp { background: var(--stock-card); border: 1px solid var(--rule-soft); box-shadow: var(--shadow); padding: 8px 10px 6px; margin-bottom: 12px; }
+.mp canvas { width: 100%; height: min(64vh, 660px); display: block; cursor: crosshair; touch-action: none; }
+.mp__bar { display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: baseline; justify-content: space-between; margin-top: 4px; }
+.mp__hover { font-family: var(--font-mono); font-size: 10.5px; color: var(--ink-2); min-height: 1.4em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
 /* ── Graph ───────────────────────────────────────────────── */
 .gr { background: var(--stock-card); border: 1px solid var(--rule-soft); box-shadow: var(--shadow); padding: 8px 10px 6px; margin-bottom: 12px; }
 .gr canvas { width: 100%; height: min(62vh, 620px); display: block; cursor: pointer; touch-action: none; }
@@ -522,7 +528,7 @@ mark { background: var(--hot-w); color: var(--ink); padding: 0 1px; }
         <button class="btn mode-btn" data-mode="timeline" title="Timeline (gt)">Timeline</button>
         <button class="btn mode-btn" data-mode="wiki" disabled title="Wiki (gw) — arrives with Phase 6">Wiki</button>
         <button class="btn mode-btn" data-mode="graph" title="Graph (gn)">Graph</button>
-        <button class="btn mode-btn" data-mode="map" disabled title="Map (gm) — arrives with Phase 8.4">Map</button>
+        <button class="btn mode-btn" data-mode="map" title="Map (gm)">Map</button>
         <button class="btn mode-btn" data-mode="ask" disabled title="Ask (ga) — arrives with Phase 7">Ask</button>
         <button class="btn" id="themeBtn" title="Theme">◐</button>
         <button class="btn" id="helpBtn" aria-expanded="false" aria-controls="panel" title="Keys (?)">?</button>
@@ -535,6 +541,7 @@ mark { background: var(--hot-w); color: var(--ink); padding: 0 1px; }
     <section class="col results" id="results" aria-label="Results">
       <div id="timeline" hidden></div>
       <div id="graph" hidden></div>
+      <div id="map" hidden></div>
       <div class="results__head"><span class="label" id="resultsLabel">Recent</span><span><button class="sort-btn" id="sortBtn" title="Change sort (S)">sort <b id="sortName">relevance</b></button> <span class="label tnum" id="resultsCount"></span></span></div>
       <div class="list" id="list"></div>
       <button class="btn more-btn" id="moreBtn" hidden>Load more</button>
@@ -590,7 +597,8 @@ mark { background: var(--hot-w); color: var(--ink); padding: 0 1px; }
           <kbd>g s</kbd><span>Search</span>
           <kbd>g t</kbd><span>Timeline. There <kbd>h l</kbd> move by month, <kbd>H L</kbd> by year, <kbd>v</kbd> marks a range, <kbd>&gt;</kbd> narrows to it</span>
           <kbd>g n</kbd><span>Graph of who and what appear together. <kbd>h l</kbd> step through nodes, <kbd>&gt;</kbd> narrows to one, <kbd>T</kbd> switches entities / tags. Click a node; double-click narrows.</span>
-          <kbd>g w</kbd><span>Wiki · <kbd>g m</kbd> map · <kbd>g a</kbd> ask — as they are built</span>
+          <kbd>g m</kbd><span>Map of the whole archive by meaning; your scope lights up. <kbd>h l</kbd> step through topics (<kbd>T</kbd> for themes), <kbd>z</kbd> zooms to one, <kbd>+ -</kbd> zoom, <kbd>0</kbd> resets, <kbd>&gt;</kbd> narrows. Scroll to zoom, drag to pan, click a dot to open it.</span>
+          <kbd>g w</kbd><span>Wiki · <kbd>g a</kbd> ask — as they are built</span>
           <kbd>?</kbd><span>This panel</span>
         </div>
       </div>
@@ -603,6 +611,7 @@ mark { background: var(--hot-w); color: var(--ink); padding: 0 1px; }
         <button class="btn" data-mode="search">Search</button>
         <button class="btn" data-mode="timeline">Time</button>
         <button class="btn" data-mode="graph">Graph</button>
+        <button class="btn" data-mode="map">Map</button>
       </nav>
     </div>
   </footer>
@@ -668,6 +677,7 @@ const S = {
   pending: "",
   tl: { data: null, cursor: -1, mark: null },
   gr: { data: null, kind: store("graphKind") || "entity", cursor: 0, order: [], pos: null, hover: -1 },
+  mp: { data: null, level: "topic", order: [], cursor: 0, scope: null, view: { s: 1, x: 0, y: 0 }, hover: -1 },
 };
 
 /* ── URL hash ─────────────────────────────────────────────── */
@@ -690,7 +700,7 @@ function readHash() {
   let mode = parts[0] || "search";
   let open = p.get("open");
   if (mode === "item") { mode = "search"; open = parts[1]; }
-  if (!["search", "timeline", "graph"].includes(mode)) mode = "search";
+  if (!["search", "timeline", "graph", "map"].includes(mode)) mode = "search";
   const sort = SORTS.includes(p.get("sort")) ? p.get("sort") : "relevance";
   return { mode, q: p.get("q") || "", scopes: p.getAll("s"), sort, open: open ? Number(open) : null };
 }
@@ -768,6 +778,7 @@ async function runSearch() {
   finishStale(my);
   if (S.mode === "timeline" && my === gen) loadTimeline();
   if (S.mode === "graph" && my === gen) loadGraph();
+  if (S.mode === "map" && my === gen) loadMap();
 }
 function finishStale(my) {
   if (my !== gen) return;
@@ -821,7 +832,7 @@ async function loadMore() {
 }
 
 /* ── Scopes ───────────────────────────────────────────────── */
-const SCOPE_NAMES = { text: "words", entity: "", tag: "tag", folder: "folder", kind: "kind", status: "status", date: "date", page: "page", media: "item" };
+const SCOPE_NAMES = { text: "words", entity: "", tag: "tag", folder: "folder", kind: "kind", status: "status", date: "date", page: "page", media: "item", cluster: "topic" };
 
 function renderScopes(n) {
   $("#scopes").innerHTML = S.scopes.map((s, i) => {
@@ -878,6 +889,16 @@ function renderLenses() {
     const max = Math.max(...S.corr.map((c) => c.n));
     groups.push(["Correlated", S.corr.filter((c) => !active.has(c.scope)).slice(0, 12).map((c) =>
       lensRow(c.scope, c.name, c.n, max, { lift: c.lift, glyph: c.type === "tag" ? "#" : TYPE_GLYPH[c.type] }))]);
+  }
+  const topics = (L.topics || []).filter((t) => !active.has(`cluster:${t.id}`));
+  if (topics.length) {
+    const max = topics[0].n;
+    groups.push(["Topics", topics.slice(0, 8).map((t) => lensRow(`cluster:${t.id}`, t.label, t.n, max))]);
+  }
+  const themes = (L.themes || []).filter((t) => !active.has(`cluster:${t.id}`));
+  if (themes.length > 1) {
+    const max = themes[0].n;
+    groups.push(["Themes", themes.slice(0, 6).map((t) => lensRow(`cluster:${t.id}`, t.label, t.n, max))]);
   }
   const ent = L.entities.filter((e) => !active.has(`entity:${e.id}`));
   if (ent.length) {
@@ -1285,6 +1306,247 @@ function tlNarrow() {
   pushScope(scope, scope.slice(5));
 }
 
+/* ── Map ──────────────────────────────────────────────────── */
+let mpReq = 0;
+async function loadMap() {
+  const my = ++mpReq;
+  if (!S.mp.data) {
+    const resp = await fetch("/api/map");
+    if (!resp.ok) { renderMap(); $("#mpCur").textContent = "No map yet — run: uv run re2 recluster"; return; }
+    S.mp.data = await resp.json();
+    S.mp.byId = new Map(S.mp.data.clusters.map((c) => [c.id, c]));
+    mpBuildGrid();
+  }
+  const scope = await fetch(`/api/map/scope?${queryParams()}`);
+  if (my !== mpReq || !scope.ok) return;
+  const sc = await scope.json();
+  S.mp.scope = sc.all ? null : new Set(sc.indices);
+  mpOrder();
+  S.mp.cursor = Math.min(S.mp.cursor, Math.max(0, S.mp.order.length - 1));
+  renderMap();
+  mpListCluster();
+}
+/* Clusters to step through: those touching the scope, largest first. */
+function mpOrder() {
+  const d = S.mp.data;
+  if (!d) return;
+  const counts = new Map();
+  d.topic.forEach((t, i) => {
+    if (!t || (S.mp.scope && !S.mp.scope.has(i))) return;
+    const id = S.mp.level === "topic" ? t : S.mp.byId.get(t)?.parent;
+    if (id) counts.set(id, (counts.get(id) || 0) + 1);
+  });
+  S.mp.order = [...counts.entries()].sort((a, b) => b[1] - a[1]).map(([id, n]) => ({ id, n }));
+}
+function mpBuildGrid() {
+  // A coarse grid over normalized coordinates for fast nearest-point lookups on hover.
+  const d = S.mp.data, G = 64, grid = new Map();
+  d.x.forEach((x, i) => {
+    const key = Math.min(G - 1, Math.floor(x * G)) * G + Math.min(G - 1, Math.floor(d.y[i] * G));
+    if (!grid.has(key)) grid.set(key, []);
+    grid.get(key).push(i);
+  });
+  S.mp.grid = grid; S.mp.G = G;
+}
+/* UMAP's axes carry no units, so the map stretches to fill the canvas on both axes. */
+function mpProject(w, h) {
+  const pad = 20, { s, x, y } = S.mp.view;
+  const sw = w - 2 * pad, sh = h - 2 * pad;
+  return {
+    to: (px, py) => [pad + ((px - 0.5 - x) * s + 0.5) * sw, pad + ((py - 0.5 - y) * s + 0.5) * sh],
+    from: (qx, qy) => [((qx - pad) / sw - 0.5) / s + 0.5 + x, ((qy - pad) / sh - 0.5) / s + 0.5 + y],
+    sw, sh,
+  };
+}
+function renderMap() {
+  const host = $("#map");
+  if (!host.firstChild) {
+    host.innerHTML = `<div class="mp"><canvas id="mpCanvas" aria-label="Map of the archive by meaning"></canvas>` +
+      `<div class="mp__hover" id="mpHover"></div><div class="mp__bar"><span class="label" id="mpCur"></span><span class="meta" id="mpInfo"></span></div></div>`;
+    const canvas = $("#mpCanvas");
+    let drag = null;
+    canvas.addEventListener("wheel", (e) => {
+      e.preventDefault();
+      const r = canvas.getBoundingClientRect();
+      mpZoom(e.deltaY < 0 ? 1.25 : 0.8, e.clientX - r.left, e.clientY - r.top);
+    }, { passive: false });
+    canvas.addEventListener("pointerdown", (e) => { drag = { x: e.clientX, y: e.clientY, moved: false, view: { ...S.mp.view } }; canvas.setPointerCapture(e.pointerId); });
+    canvas.addEventListener("pointermove", (e) => {
+      const r = canvas.getBoundingClientRect();
+      if (drag) {
+        const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+        if (Math.abs(dx) + Math.abs(dy) > 3) drag.moved = true;
+        if (drag.moved) {
+          const P = mpProject(canvas.clientWidth, canvas.clientHeight);
+          S.mp.view.x = drag.view.x - dx / P.sw / S.mp.view.s;
+          S.mp.view.y = drag.view.y - dy / P.sh / S.mp.view.s;
+          drawMap();
+        }
+        return;
+      }
+      mpHover(e.clientX - r.left, e.clientY - r.top);
+    });
+    canvas.addEventListener("pointerup", (e) => {
+      const wasDrag = drag?.moved; drag = null;
+      if (wasDrag) return;
+      const i = S.mp.hover;
+      if (i >= 0) { setFocus("results"); openItem(S.mp.data.ids[i]); }
+    });
+    canvas.addEventListener("pointerleave", () => { S.mp.hover = -1; $("#mpHover").textContent = ""; drawMap(); });
+    new ResizeObserver(() => drawMap()).observe(canvas);
+  }
+  drawMap();
+}
+function drawMap() {
+  const canvas = $("#mpCanvas");
+  const d = S.mp.data;
+  if (!canvas || !d) return;
+  const dpr = window.devicePixelRatio || 1;
+  const w = canvas.clientWidth, h = canvas.clientHeight;
+  canvas.width = w * dpr; canvas.height = h * dpr;
+  const g = canvas.getContext("2d");
+  g.scale(dpr, dpr);
+  g.clearRect(0, 0, w, h);
+  const P = mpProject(w, h);
+  const cur = S.mp.order[S.mp.cursor];
+  const inCur = (t) => cur && (S.mp.level === "topic" ? t === cur.id : S.mp.byId.get(t)?.parent === cur.id);
+  const ink3 = cssVar("--ink-3"), blue = cssVar("--blue"), hot = cssVar("--hot");
+  const r = Math.max(1.2, Math.min(3.2, 1.3 * Math.sqrt(S.mp.view.s)));
+  // Three passes so highlighted points sit on top of the rest.
+  for (const pass of [0, 1, 2]) {
+    g.fillStyle = pass === 0 ? ink3 : pass === 1 ? blue : hot;
+    g.globalAlpha = pass === 0 ? (S.mp.scope ? 0.22 : 0.45) : pass === 1 ? 0.8 : 0.95;
+    for (let i = 0; i < d.x.length; i++) {
+      const inScope = !S.mp.scope || S.mp.scope.has(i);
+      const hotPt = inCur(d.topic[i]) && inScope;
+      const which = hotPt ? 2 : (S.mp.scope && inScope) ? 1 : 0;
+      if (which !== pass) continue;
+      const [sx, sy] = P.to(d.x[i], d.y[i]);
+      if (sx < -4 || sy < -4 || sx > w + 4 || sy > h + 4) continue;
+      g.fillRect(sx - r / 2, sy - r / 2, r, r);
+    }
+  }
+  g.globalAlpha = 1;
+  // Labels: themes when zoomed out, topics as you zoom in; skip any that would overlap.
+  const showTopics = S.mp.view.s >= 1.8 || S.mp.level === "topic" && S.mp.view.s >= 1.3;
+  const labels = d.clusters.filter((c) => (showTopics ? c.level === "topic" : c.level === "theme"))
+    .sort((a, b) => b.n - a.n);
+  const boxes = [];
+  const curCluster = cur && S.mp.byId.get(cur.id);
+  if (curCluster) labels.unshift(curCluster);
+  const seen = new Set();
+  for (const c of labels) {
+    if (seen.has(c.id)) continue;
+    seen.add(c.id);
+    const [sx, sy] = P.to(c.x, c.y);
+    if (sx < 0 || sy < 0 || sx > w || sy > h) continue;
+    const isCur = curCluster && c.id === curCluster.id;
+    const text = c.label.split(" · ").slice(0, 3).join(" · ");
+    g.font = c.level === "theme" ? `600 13px ${cssVar("--font-display")}` : `10.5px ${cssVar("--font-mono")}`;
+    const tw = g.measureText(text).width, bh = c.level === "theme" ? 17 : 14;
+    const box = [sx - tw / 2 - 3, sy - bh / 2, tw + 6, bh];
+    if (!isCur && boxes.some((b) => box[0] < b[0] + b[2] && b[0] < box[0] + box[2] && box[1] < b[1] + b[3] && b[1] < box[1] + box[3])) continue;
+    boxes.push(box);
+    g.fillStyle = cssVar("--stock-card"); g.globalAlpha = 0.82;
+    g.fillRect(...box);
+    g.globalAlpha = 1;
+    g.fillStyle = isCur ? hot : cssVar(c.level === "theme" ? "--ink" : "--ink-2");
+    g.textAlign = "center"; g.textBaseline = "middle";
+    g.fillText(text, sx, sy + 0.5);
+  }
+  g.textAlign = "start";
+  if (S.mp.hover >= 0) {
+    const [sx, sy] = P.to(d.x[S.mp.hover], d.y[S.mp.hover]);
+    g.strokeStyle = hot; g.lineWidth = 2; g.beginPath(); g.arc(sx, sy, 5, 0, Math.PI * 2); g.stroke();
+  }
+  const nScope = S.mp.scope ? S.mp.scope.size : d.x.length;
+  $("#mpInfo").textContent = `${fmtN(d.x.length)} items mapped · ${fmtN(nScope)} in scope · zoom ${S.mp.view.s.toFixed(1)}× · T ${S.mp.level === "topic" ? "themes" : "topics"}`;
+  if (curCluster) $("#mpCur").textContent = `${S.mp.level} ${S.mp.cursor + 1}/${S.mp.order.length}: ${curCluster.label} · ${fmtN(cur.n)} in scope`;
+}
+let mpHoverTimer = 0;
+function mpHover(mx, my) {
+  const canvas = $("#mpCanvas"), d = S.mp.data;
+  if (!d) return;
+  const P = mpProject(canvas.clientWidth, canvas.clientHeight);
+  const [nx, ny] = P.from(mx, my);
+  const G = S.mp.G, gx = Math.floor(nx * G), gy = Math.floor(ny * G);
+  let best = -1, bestD = 64;
+  for (let ix = gx - 1; ix <= gx + 1; ix++) for (let iy = gy - 1; iy <= gy + 1; iy++) {
+    for (const i of S.mp.grid.get(ix * G + iy) || []) {
+      const [sx, sy] = P.to(d.x[i], d.y[i]);
+      const dd = (sx - mx) ** 2 + (sy - my) ** 2;
+      if (dd < bestD) { bestD = dd; best = i; }
+    }
+  }
+  if (best === S.mp.hover) return;
+  S.mp.hover = best;
+  drawMap();
+  clearTimeout(mpHoverTimer);
+  if (best < 0) { $("#mpHover").textContent = ""; return; }
+  const topic = S.mp.byId.get(d.topic[best]);
+  $("#mpHover").textContent = topic ? topic.label : "unclustered";
+  mpHoverTimer = setTimeout(async () => {
+    const resp = await fetch(`/api/item/${d.ids[best]}`);
+    if (!resp.ok || S.mp.hover !== best) return;
+    const item = await resp.json();
+    $("#mpHover").textContent = `${item.title} — ${topic ? topic.label : "unclustered"}`;
+  }, 180);
+}
+function mpZoom(factor, mx, my) {
+  const canvas = $("#mpCanvas");
+  if (!canvas) return;
+  const w = canvas.clientWidth, h = canvas.clientHeight;
+  mx ??= w / 2; my ??= h / 2;
+  const before = mpProject(w, h).from(mx, my);
+  S.mp.view.s = Math.max(1, Math.min(40, S.mp.view.s * factor));
+  const after = mpProject(w, h).from(mx, my);
+  S.mp.view.x += before[0] - after[0];
+  S.mp.view.y += before[1] - after[1];
+  drawMap();
+}
+function mpZoomToCursor() {
+  const cur = S.mp.order[S.mp.cursor], d = S.mp.data;
+  if (!cur || !d) return;
+  const pts = [];
+  d.topic.forEach((t, i) => {
+    const id = S.mp.level === "topic" ? t : S.mp.byId.get(t)?.parent;
+    if (id === cur.id) pts.push(i);
+  });
+  if (!pts.length) return;
+  const xs = pts.map((i) => d.x[i]).sort((a, b) => a - b), ys = pts.map((i) => d.y[i]).sort((a, b) => a - b);
+  // Ignore stragglers: frame the middle 90% of the cluster.
+  const q = (arr, p) => arr[Math.min(arr.length - 1, Math.floor(p * arr.length))];
+  const x0 = q(xs, 0.05), x1 = q(xs, 0.95), y0 = q(ys, 0.05), y1 = q(ys, 0.95);
+  S.mp.view = { s: Math.max(1, Math.min(40, 0.8 / Math.max(x1 - x0, y1 - y0, 0.02))), x: (x0 + x1) / 2 - 0.5, y: (y0 + y1) / 2 - 0.5 };
+  drawMap();
+}
+let mpListTimer = 0;
+function mpMove(delta) {
+  if (!S.mp.order.length) return;
+  S.mp.cursor = Math.max(0, Math.min(S.mp.order.length - 1, S.mp.cursor + delta));
+  drawMap();
+  clearTimeout(mpListTimer);
+  mpListTimer = setTimeout(mpListCluster, 160);
+}
+async function mpListCluster() {
+  const cur = S.mp.order[S.mp.cursor];
+  if (!cur) return;
+  const p = queryParams({ limit: 40 });
+  p.append("s", `cluster:${cur.id}`);
+  const resp = await fetch(`/api/items?${p}`);
+  if (!resp.ok) return;
+  const data = await resp.json();
+  S.hits = data.hits; S.more = false;
+  $("#resultsLabel").textContent = S.mp.byId.get(cur.id)?.label || "Cluster";
+  S.cursor.results = 0;
+  renderResults();
+}
+function mpNarrow() {
+  const cur = S.mp.order[S.mp.cursor];
+  const c = cur && S.mp.byId.get(cur.id);
+  if (c) pushScope(`cluster:${c.id}`, c.label);
+}
+
 /* ── Graph ────────────────────────────────────────────────── */
 let grReq = 0;
 async function loadGraph() {
@@ -1466,7 +1728,7 @@ function grNarrow() {
 
 /* ── Modes ────────────────────────────────────────────────── */
 function setMode(mode) {
-  if (!["search", "timeline", "graph"].includes(mode)) return say(`${mode[0].toUpperCase() + mode.slice(1)} arrives in a later phase.`);
+  if (!["search", "timeline", "graph", "map"].includes(mode)) return say(`${mode[0].toUpperCase() + mode.slice(1)} arrives in a later phase.`);
   S.mode = mode;
   navigate();
 }
@@ -1475,6 +1737,7 @@ function renderModes() {
   const tl = $("#timeline");
   tl.hidden = S.mode !== "timeline";
   $("#graph").hidden = S.mode !== "graph";
+  $("#map").hidden = S.mode !== "map";
 }
 
 /* ── Actions ──────────────────────────────────────────────── */
@@ -1482,6 +1745,7 @@ function narrowHere() {
   // In the timeline, > narrows to the month (or marked range) on the axis; * still takes an item's entity.
   if (S.mode === "timeline" && S.focus === "results" && S.tl.months?.length) return tlNarrow();
   if (S.mode === "graph" && S.focus === "results" && S.gr.order.length) return grNarrow();
+  if (S.mode === "map" && S.focus === "results" && S.mp.order.length) return mpNarrow();
   if (S.focus === "lenses") {
     const row = rowsOf("lenses")[S.cursor.lenses];
     if (row) return pushScope(row.dataset.scope, row.dataset.label);
@@ -1635,6 +1899,7 @@ function onKey(e) {
 
   const timelineAxis = S.mode === "timeline" && S.focus === "results";
   const graphAxis = S.mode === "graph" && S.focus === "results";
+  const mapAxis = S.mode === "map" && S.focus === "results";
   const inReaderVideo = S.focus === "reader" && $("#reader video");
 
   switch (k) {
@@ -1645,9 +1910,13 @@ function onKey(e) {
     case ".": return done(() => stepMember(n));
     case "j": case "ArrowDown": return done(() => move(n));
     case "k": case "ArrowUp": return done(() => move(-n));
-    case "h": return done(() => timelineAxis ? tlMove(-n) : graphAxis ? grMove(-n) : setFocus(COLS[Math.max(0, COLS.indexOf(S.focus) - 1)]));
-    case "l": return done(() => timelineAxis ? tlMove(n) : graphAxis ? grMove(n) : setFocus(S.open != null ? COLS[Math.min(2, COLS.indexOf(S.focus) + 1)] : "results"));
-    case "T": if (S.mode === "graph") return done(() => { S.gr.kind = S.gr.kind === "entity" ? "tag" : "entity"; store("graphKind", S.gr.kind); S.gr.cursor = 0; loadGraph(); say(`Graph of ${S.gr.kind === "entity" ? "entities" : "tags"}.`); }); break;
+    case "h": return done(() => timelineAxis ? tlMove(-n) : graphAxis ? grMove(-n) : mapAxis ? mpMove(-n) : setFocus(COLS[Math.max(0, COLS.indexOf(S.focus) - 1)]));
+    case "l": return done(() => timelineAxis ? tlMove(n) : graphAxis ? grMove(n) : mapAxis ? mpMove(n) : setFocus(S.open != null ? COLS[Math.min(2, COLS.indexOf(S.focus) + 1)] : "results"));
+    case "z": if (mapAxis) return done(mpZoomToCursor); break;
+    case "+": case "=": if (mapAxis) return done(() => mpZoom(1.5 ** n)); break;
+    case "-": if (mapAxis) return done(() => mpZoom(1 / 1.5 ** n)); break;
+    case "T": if (S.mode === "map") return done(() => { S.mp.level = S.mp.level === "topic" ? "theme" : "topic"; mpOrder(); S.mp.cursor = 0; drawMap(); mpListCluster(); say(`Stepping through ${S.mp.level}s.`); });
+      if (S.mode === "graph") return done(() => { S.gr.kind = S.gr.kind === "entity" ? "tag" : "entity"; store("graphKind", S.gr.kind); S.gr.cursor = 0; loadGraph(); say(`Graph of ${S.gr.kind === "entity" ? "entities" : "tags"}.`); }); break;
     case "H": if (timelineAxis) return done(() => tlMove(-12 * n)); break;
     case "L": if (timelineAxis) return done(() => tlMove(12 * n)); break;
     case "v": if (timelineAxis) return done(() => { S.tl.mark = S.tl.mark == null ? S.tl.cursor : null; drawTimeline(); say(S.tl.mark == null ? "Range cleared." : "Range started: move, then > to narrow."); }); break;
@@ -1681,7 +1950,7 @@ function onKey(e) {
     case "t": return done(() => { if (S.openHit?.start_s != null) seek(S.openHit.start_s, true); else say("No timestamp for this hit."); });
     case "x": return done(toggleVeil);
     case "X": return done(cycleVeil);
-    case "0": if (timelineAxis) return done(() => tlMove(-1e6)); break;
+    case "0": if (timelineAxis) return done(() => tlMove(-1e6)); if (mapAxis) return done(() => { S.mp.view = { s: 1, x: 0, y: 0 }; drawMap(); }); break;
     case "$": if (timelineAxis) return done(() => tlMove(1e6)); break;
   }
   clearPending();
@@ -1757,6 +2026,7 @@ $("#themeBtn").addEventListener("click", () => {
   store("theme", next);
   drawTimeline();
   drawGraph();
+  drawMap();
 });
 window.addEventListener("popstate", fromHash);
 new ResizeObserver(() => {

@@ -199,6 +199,14 @@ def cmd_review(cfg: config.Config, args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_recluster(cfg: config.Config, args: argparse.Namespace) -> int:
+    from re2 import cluster
+
+    stats = cluster.recluster(db.open_db(cfg), cfg)
+    print(f"recluster: {stats.summary()}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="re2")
     parser.add_argument("--config", help="path to config.toml")
@@ -250,6 +258,9 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("review", help="print the most recent vision-model titles and summaries")
     p.add_argument("-n", type=int, default=10, help="how many (default 10)")
     p.set_defaults(func=cmd_review)
+
+    sub.add_parser("recluster", help="topics, themes and the 2D map from item vectors (local CPU)") \
+        .set_defaults(func=cmd_recluster)
 
     sub.add_parser("dates", help="recompute item dates from sources, filenames, text and mtimes") \
         .set_defaults(func=cmd_dates)

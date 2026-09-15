@@ -208,6 +208,77 @@ def create_app(cfg: config.Config | None = None) -> FastAPI:
                 allowed = matched if allowed is None else allowed & matched
             return search.cooccurrence(conn, allowed, kind=kind, limit=limit)
 
+    map_cache: dict = {}
+
+    def load_map(conn: sqlite3.Connection) -> dict | None:
+        """Points of the latest 2D map, normalized to 0..1, with topic and theme per point. Cached per run."""
+        run = conn.execute("SELECT value FROM kv WHERE key='cluster_run'").fetchone()
+        coords_path = Path(cfg.data_dir) / "index" / "map2d.npy"
+        if not run or not coords_path.is_file():
+            return None
+        if map_cache.get("run") == run[0]:
+            return map_cache
+        import numpy as np
+
+        coords = np.load(coords_path)
+        ids = np.load(Path(cfg.data_dir) / "index" / "map2d_ids.npy")
+        lo, hi = coords.min(axis=0), coords.max(axis=0)
+        norm = (coords - lo) / np.maximum(hi - lo, 1e-9)
+        topic_of = dict(conn.execute(
+            """SELECT cm.media_id, c.id FROM cluster_member cm JOIN cluster c ON c.id=cm.cluster_id
+               WHERE c.run_id=? AND c.level='topic'""", (run[0],)).fetchall())
+        clusters = {r[0]: {"id": r[0], "level": r[1], "parent": r[2], "label": r[3]} for r in conn.execute(
+            "SELECT id, level, parent_id, label FROM cluster WHERE run_id=?", (run[0],))}
+        index_of = {int(m): i for i, m in enumerate(ids.tolist())}
+        topic_idx = [topic_of.get(int(m), 0) for m in ids.tolist()]
+        # Label positions: the median of member points, and the member count.
+        sums: dict[int, list] = {}
+        for i, t in enumerate(topic_idx):
+            if not t:
+                continue
+            for c in (t, clusters[t]["parent"]):
+                sums.setdefault(c, []).append(i)
+        for c, members in sums.items():
+            pts = norm[members]
+            clusters[c].update(x=round(float(np.median(pts[:, 0])), 4), y=round(float(np.median(pts[:, 1])), 4),
+                               n=len(members))
+        map_cache.clear()
+        map_cache.update(run=run[0], index_of=index_of, payload={
+            "run": run[0],
+            "ids": ids.tolist(),
+            "x": np.round(norm[:, 0], 4).tolist(),
+            "y": np.round(norm[:, 1], 4).tolist(),
+            "topic": topic_idx,
+            "clusters": [c for c in clusters.values() if "n" in c],
+        })
+        return map_cache
+
+    @app.get("/api/map")
+    def map_points():
+        with closing(open_ro(cfg)) as conn:
+            m = load_map(conn)
+        if m is None:
+            raise HTTPException(404, "no map yet: run `re2 recluster`")
+        return m["payload"]
+
+    @app.get("/api/map/scope")
+    def map_scope(q: str = "", s: list[str] = Query(default=[])):
+        """Indices into /api/map's points for the current query and scopes (all points when neither)."""
+        with closing(open_ro(cfg)) as conn:
+            m = load_map(conn)
+            if m is None:
+                raise HTTPException(404, "no map yet: run `re2 recluster`")
+            allowed, _ = parse_scopes(conn, s)
+            if q.strip():
+                matched = set(search.group_by_media(
+                    conn, search.lexical(conn, q.strip(), k=20000, allowed=allowed), q, limit=0)[1])
+                allowed = matched if allowed is None else allowed & matched
+            if allowed is None:
+                return {"all": True, "indices": []}
+            to_primary, _ = search.post_maps(conn)
+            items = {to_primary.get(x, x) for x in allowed}
+            return {"all": False, "indices": sorted(m["index_of"][i] for i in items if i in m["index_of"])}
+
     # ── Items ─────────────────────────────────────────────────────────────
 
     @app.get("/api/item/{media_id}")
