@@ -22,7 +22,7 @@ def test_extract_images_pipeline(tmp_path, monkeypatch):
     db.init_schema(conn)
     cfg = SimpleNamespace(corpus_root=root, base_url="http://vlm.test/v1", vision_model="gemma-test",
                           vision_max_tokens=100, vision_max_side=1024, vision_concurrency=2,
-                          vision_max_tiles=6, vision_max_tokens_tall=300)
+                          vision_max_tiles=6, vision_max_tokens_tall=300, data_dir=tmp_path / "data")
     scan.scan(conn, cfg)
 
     requests = []
@@ -45,8 +45,8 @@ def test_extract_images_pipeline(tmp_path, monkeypatch):
 
     real_prepare = extract_images.vlm.prepare_images
     monkeypatch.setattr(extract_images.vlm, "prepare_images",
-                        lambda path, side, tiles: {"fails.png": [b"FAIL"], "dense.png": [b"DENSE"]}.get(path.name)
-                        or real_prepare(path, side, tiles))
+                        lambda path, side, tiles, dense=False: {"fails.png": [b"FAIL"], "dense.png": [b"DENSE"]}.get(path.name)
+                        or real_prepare(path, side, tiles, dense))
     stats = extract_images.run(conn, cfg, client_factory=lambda: httpx.Client(
         transport=httpx.MockTransport(handler)))
 
@@ -58,6 +58,7 @@ def test_extract_images_pipeline(tmp_path, monkeypatch):
     tall_request = next(r for r in requests[-2:] if sum(p["type"] == "image_url" for p in r["messages"][1]["content"]) > 1)
     assert tall_request["max_tokens"] == 300
     assert db.pending_failures(conn, "vlm_image") == set()
+    assert list((tmp_path / "data" / "logs" / "vlm_raw").glob("*.txt"))  # the truncated output was kept
     rows = conn.execute(
         "SELECT m.width, d.text, mm.low_res FROM doc d JOIN media m ON m.id=d.media_id "
         "JOIN media_meta mm ON mm.media_id=m.id WHERE d.kind='caption' ORDER BY m.width").fetchall()

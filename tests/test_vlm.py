@@ -103,3 +103,21 @@ def test_extract_sends_every_tile_in_order():
     parts = seen[0]["messages"][1]["content"]
     assert [p["type"] for p in parts] == ["text", "image_url", "image_url", "image_url"]
     assert parts[3]["image_url"]["url"].endswith("dGhyZWU=")  # b"three"
+
+
+def test_dense_portrait_images_slice_only_when_asked():
+    buf = io.BytesIO()
+    Image.new("RGB", (1559, 2318)).save(buf, "PNG")
+    assert len(vlm.prepare_images(buf.getvalue())) == 1
+    assert len(vlm.prepare_images(buf.getvalue(), dense=True)) >= 2
+    square = io.BytesIO()
+    Image.new("RGB", (1024, 995)).save(square, "PNG")
+    assert len(vlm.prepare_images(square.getvalue(), dense=True)) == 1
+
+
+def test_length_error_keeps_raw_output():
+    client = client_for([httpx.Response(200, json={"choices": [
+        {"message": {"content": '{"description": "cut'}, "finish_reason": "length"}]})], [])
+    with pytest.raises(vlm.VLMLengthError) as info:
+        vlm.extract(client, CFG, b"jpg", vlm.IMAGE_SCHEMA, "sys", "u")
+    assert info.value.raw == '{"description": "cut'

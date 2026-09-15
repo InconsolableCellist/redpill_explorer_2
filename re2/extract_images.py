@@ -82,6 +82,19 @@ def store_image_result(conn: sqlite3.Connection, cfg, media_id: int, d: dict, lo
         db.clear_failure(conn, STAGE, media_id)
 
 
+def save_raw(cfg, media_id: int, exc: BaseException) -> None:
+    """Keep the model's unparseable output for inspection: data/logs/vlm_raw/<media_id>.txt."""
+    raw = getattr(exc, "raw", None)
+    if not raw:
+        return
+    out = Path(cfg.data_dir) / "logs" / "vlm_raw" / f"{media_id}.txt"
+    try:
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(f"# {exc}\n{raw}", encoding="utf-8")
+    except OSError as err:
+        log.debug("could not save raw output for %s: %s", media_id, err)
+
+
 @dataclass
 class Job:
     media_id: int
@@ -162,7 +175,7 @@ def run(conn: sqlite3.Connection, cfg, limit: int | None = None, include_thumbna
             client = local.client = client_factory()
             with lock:
                 clients.append(client)
-        images = vlm.prepare_images(job.path, cfg.vision_max_side, cfg.vision_max_tiles)
+        images = vlm.prepare_images(job.path, cfg.vision_max_side, cfg.vision_max_tiles, dense=job.long_output)
         text = USER_TEXT + (LOW_RES_TEXT if job.low_res else "") + vlm.tiles_note(len(images))
         result = vlm.extract(client, cfg, images, vlm.IMAGE_SCHEMA, vlm.IMAGE_SYSTEM_PROMPT, text,
                              max_tokens=max_tokens)
@@ -188,6 +201,7 @@ def run(conn: sqlite3.Connection, cfg, limit: int | None = None, include_thumbna
     def on_error(job: Job, exc: BaseException) -> None:
         with conn:
             db.upsert_failure(conn, STAGE, job.media_id, None, f"{type(exc).__name__}: {exc}"[:2000])
+        save_raw(cfg, job.media_id, exc)
         if isinstance(exc, vlm.VLMLengthError) and not job.long_output:
             job.long_output = True
             long_jobs.append(job)

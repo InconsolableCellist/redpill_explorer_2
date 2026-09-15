@@ -111,7 +111,9 @@ THOUGHT_PREFIX = re.compile(r"^\s*<\|channel>thought.*?<channel\|>", re.DOTALL)
 
 
 class VLMError(Exception):
-    pass
+    def __init__(self, message: str, raw: str | None = None):
+        super().__init__(message)
+        self.raw = raw  # the model's text, when there was any
 
 
 class VLMLengthError(VLMError):
@@ -170,10 +172,19 @@ def tile_boxes(width: int, height: int, max_tiles: int) -> list[tuple[int, int, 
     return [(0, round(i * stride), width, min(height, round(i * stride) + tile_h)) for i in range(n)]
 
 
-def prepare_images(source: Path | str | bytes, max_side: int = 1024, max_tiles: int = 6) -> list[bytes]:
-    """One JPEG for normal images; top-to-bottom overlapping slices for very tall ones."""
+# Text-dense portrait images that overflowed once are sliced on retry, even
+# when they are not "tall", so their small text stays legible.
+DENSE_RATIO = 1.2
+DENSE_MIN_HEIGHT = 1400
+
+
+def prepare_images(source: Path | str | bytes, max_side: int = 1024, max_tiles: int = 6,
+                   dense: bool = False) -> list[bytes]:
+    """One JPEG for normal images; top-to-bottom overlapping slices for very tall (or dense portrait) ones."""
     im = _open_rgb(source)
-    if not is_tall(im.width, im.height) or max_tiles < 2:
+    slice_it = is_tall(im.width, im.height) or (
+        dense and im.height > im.width * DENSE_RATIO and im.height >= DENSE_MIN_HEIGHT)
+    if not slice_it or max_tiles < 2:
         return [prepare_image(_jpeg(im), max_side)]
     if im.width > TILE_WIDTH:
         im = im.resize((TILE_WIDTH, max(1, round(im.height * TILE_WIDTH / im.width))), Image.LANCZOS)
@@ -234,6 +245,7 @@ def extract(client: httpx.Client, cfg, images: bytes | list[bytes], schema: dict
             raise VLMError(f"{type(exc).__name__}: {exc} {detail}".strip()) from exc
 
     body = resp.json()
+    content = None
     try:
         choice = body["choices"][0]
         content = THOUGHT_PREFIX.sub("", choice["message"]["content"] or "")
@@ -242,7 +254,7 @@ def extract(client: httpx.Client, cfg, images: bytes | list[bytes], schema: dict
         finish = body.get("choices", [{}])[0].get("finish_reason") if isinstance(body, dict) else None
         error = VLMLengthError if finish == "length" else VLMError
         raise error(f"unparseable response (finish_reason={finish}, "
-                    f"max_tokens={payload['max_tokens']}): {exc}") from exc
+                    f"max_tokens={payload['max_tokens']}): {exc}", raw=content) from exc
     if not isinstance(data, dict):
         raise VLMError(f"response is not an object: {type(data).__name__}")
     missing = [k for k in schema["required"] if k not in data]
