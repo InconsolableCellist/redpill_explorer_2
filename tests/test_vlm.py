@@ -155,7 +155,7 @@ def test_limits_from_router_args():
     limits = vlm.server_limits(router(shared_8k), LIMIT_CFG)
     assert (limits.slots, limits.slot_ctx, limits.shared) == (6, 8192, True)
     concurrency, tall, _ = vlm.plan_concurrency(LIMIT_CFG, limits)
-    assert (concurrency, tall) == (3, 5000)   # the cube entry used today: three at once
+    assert (concurrency, tall) == (2, 4242)   # the 8k cube batch entry: two v2 prompts at once, short retries
 
     wide = [{"id": "g", "status": {"value": "unloaded", "args": ["--ctx-size", "32768", "--kv-unified",
                                                                   "--parallel", "8"]}}]

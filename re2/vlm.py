@@ -380,7 +380,7 @@ class ServerLimits:
 
 
 # Rough prompt sizes: system prompt plus one image, and plus the most slices a tall image gets.
-PROMPT_TOKENS = 1100
+PROMPT_TOKENS = 2300     # the v2 image prompt with one image, as the server counts it (2026-09-15)
 TILE_TOKENS = 330
 DEFAULT_ROUTER_SLOTS = 4   # llama.cpp's --parallel auto: 4 slots over a unified cache
 
