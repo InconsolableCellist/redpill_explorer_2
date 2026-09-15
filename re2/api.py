@@ -124,7 +124,7 @@ def create_app(cfg: config.Config | None = None) -> FastAPI:
                 yield _line({"t": "lexical", "hits": search.hit_dicts(conn, hits),
                              "more": len(order) > HITS_PER_PAGE})
                 yield _line({"t": "lenses", "data": lenses_for(conn, order)})
-                yield _line({"t": "pages", "hits": []})
+                yield _line({"t": "pages", "hits": wiki_hits(conn, query)})
 
                 try:
                     t = time.perf_counter()
@@ -151,6 +151,24 @@ def create_app(cfg: config.Config | None = None) -> FastAPI:
 
         return StreamingResponse(generate(), media_type="application/x-ndjson",
                                  headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"})
+
+    def wiki_hits(conn: sqlite3.Connection, query: str, limit: int = 6) -> list[dict]:
+        """Written wiki pages matching the query's words, best first."""
+        if not search._has_table(conn, "wiki_fts"):
+            return []
+        match = search.fts_query(query)
+        if not match:
+            return []
+        try:
+            rows = conn.execute(
+                """SELECT p.slug, p.kind, p.title, p.summary, p.date_start, p.date_end,
+                          (SELECT COUNT(*) FROM wiki_member wm WHERE wm.page_id=p.id) AS members
+                   FROM wiki_fts JOIN wiki_page p ON p.id=wiki_fts.rowid
+                   WHERE wiki_fts MATCH ? AND p.body_md != '' ORDER BY bm25(wiki_fts, 8.0, 3.0, 1.0) LIMIT ?""",
+                (match, limit)).fetchall()
+        except sqlite3.OperationalError:
+            return []
+        return [dict(r) for r in rows]
 
     @app.get("/api/items")
     def items(q: str = "", s: list[str] = Query(default=[]), offset: int = 0, limit: int = HITS_PER_PAGE,
@@ -487,6 +505,85 @@ def create_app(cfg: config.Config | None = None) -> FastAPI:
                     "title": meta["title"] if meta else None,
                     "seed": json.loads(meta["seed_json"]) if meta and meta["seed_json"] else None}
 
+    # ── Wiki ──────────────────────────────────────────────────────────────
+
+    kind_order = {"overview": 0, "theme": 1, "topic": 2, "event": 3, "entity": 4}
+    page_columns = """p.id, p.slug, p.kind, p.title, p.summary, p.date_start, p.date_end, p.parent_slug, p.stale,
+                      p.built_at, p.model, p.members_read, p.members_total AS members_total_built, p.members_cited,
+                      p.body_md != '' AS written,
+                      (SELECT COUNT(*) FROM wiki_member wm WHERE wm.page_id=p.id) AS members"""
+
+    @app.get("/api/wiki/pages")
+    def wiki_pages(kind: str = ""):
+        """Every page without its body, for the page tree, and counts per kind."""
+        if kind and kind not in kind_order:
+            raise HTTPException(400, f"kind must be one of {', '.join(kind_order)}")
+        with closing(open_ro(cfg)) as conn:
+            if not search._has_table(conn, "wiki_page"):
+                return {"pages": [], "counts": {}}
+            rows = [dict(r) for r in conn.execute(
+                f"SELECT {page_columns} FROM wiki_page p WHERE ?='' OR p.kind=? "
+                "ORDER BY p.date_start IS NULL, p.date_start, p.title", (kind, kind))]
+        rows.sort(key=lambda r: kind_order.get(r["kind"], 9))
+        counts: dict[str, dict] = {}
+        for r in rows:
+            c = counts.setdefault(r["kind"], {"pages": 0, "written": 0, "stale": 0})
+            c["pages"] += 1
+            c["written"] += r["written"]
+            c["stale"] += bool(r["stale"])
+        return {"pages": rows, "counts": counts}
+
+    @app.get("/api/wiki/page/{slug:path}")
+    def wiki_page(slug: str, members_limit: int = 60):
+        """One page: rendered body, coverage, breadcrumbs, children, member cards, links and backlinks."""
+        from re2 import wiki
+
+        members_limit = max(0, min(members_limit, 500))
+        with closing(open_ro(cfg)) as conn:
+            if not search._has_table(conn, "wiki_page"):
+                raise HTTPException(404, "the wiki has not been compiled yet")
+            row = conn.execute(f"SELECT {page_columns}, p.body_md, p.build_json FROM wiki_page p WHERE p.slug=?",
+                               (slug,)).fetchone()
+            if row is None:
+                raise HTTPException(404, "no such page")
+            page = dict(row)
+            html, cites, _ = wiki.render_markdown(conn, page["body_md"])
+            cited_cards = search.cards(conn, [c["media_id"] for c in cites])
+            crumbs, parent, seen = [], page["parent_slug"], {slug}
+            while parent and parent not in seen and len(crumbs) < 6:
+                seen.add(parent)
+                up = conn.execute("SELECT slug, kind, title, parent_slug FROM wiki_page WHERE slug=?", (parent,)).fetchone()
+                if up is None:
+                    break
+                crumbs.insert(0, {"slug": up[0], "kind": up[1], "title": up[2]})
+                parent = up[3]
+            children = [dict(r) for r in conn.execute(
+                f"SELECT {page_columns} FROM wiki_page p WHERE p.parent_slug=? AND p.kind != 'entity' "
+                "ORDER BY p.date_start IS NULL, p.date_start, p.title", (slug,))]
+            links = [dict(r) for r in conn.execute(
+                """SELECT p.slug, p.kind, p.title FROM wiki_link l JOIN wiki_page p ON p.id=l.to_page
+                   WHERE l.from_page=? ORDER BY p.title""", (page["id"],))]
+            backlinks = [dict(r) for r in conn.execute(
+                """SELECT p.slug, p.kind, p.title FROM wiki_link l JOIN wiki_page p ON p.id=l.from_page
+                   WHERE l.to_page=? ORDER BY p.title""", (page["id"],))]
+            ids = [r[0] for r in conn.execute("SELECT media_id FROM wiki_member WHERE page_id=?", (page["id"],))]
+            ids = search.sort_media(conn, ids, "oldest")
+            card_map = search.cards(conn, ids[:members_limit])
+            changed = None
+            if page["built_at"] and ids:
+                try:
+                    changed = wiki.changes(conn, page, wiki.current_hashes(conn, ids))
+                except Exception:  # noqa: BLE001 - the coverage line can do without it
+                    log.exception("could not count changed items for %s", slug)
+        has_body = bool(page.pop("body_md"))
+        build = json.loads(page.pop("build_json") or "null")
+        cited = [{**c, "card": cited_cards.get(c["media_id"])} for c in cites]
+        return {**page, "html": html, "cited": cited, "has_body": has_body,
+                "breadcrumbs": crumbs, "children": children, "links": links, "backlinks": backlinks,
+                "members_changed": changed, "build": build,
+                "member_cards": [card_map[m] for m in ids[:members_limit] if m in card_map],
+                "members_more": max(0, len(ids) - members_limit)}
+
     # ── Settings ──────────────────────────────────────────────────────────
 
     @app.get("/api/settings")
@@ -579,6 +676,19 @@ def create_app(cfg: config.Config | None = None) -> FastAPI:
                     post = {"url": post_row[1], "date": post_row[2], "primary_media_id": post_row[3],
                             "members": [{**member_cards[r[0]], "role": r[1], "seq": r[2]}
                                         for r in member_rows if r[0] in member_cards]}
+            pages = []
+            if search._has_table(conn, "wiki_member"):
+                # Pages hold posts by their primary item, so a photo inside a post finds the post's pages.
+                to_primary, _ = search.post_maps(conn)
+                ids = sorted({media_id, to_primary.get(media_id, media_id)})
+                marks = ",".join("?" * len(ids))
+                pages = [dict(r) for r in conn.execute(
+                    f"""SELECT p.slug, p.kind, p.title, p.summary, p.date_start, p.date_end, p.body_md != '' AS written,
+                               EXISTS (SELECT 1 FROM wiki_citation c WHERE c.page_id=p.id AND c.media_id IN ({marks})) AS cited
+                        FROM wiki_member wm JOIN wiki_page p ON p.id=wm.page_id
+                        WHERE wm.media_id IN ({marks}) GROUP BY p.id
+                        ORDER BY CASE p.kind WHEN 'event' THEN 0 WHEN 'topic' THEN 1 WHEN 'theme' THEN 2
+                                 WHEN 'entity' THEN 3 ELSE 4 END, p.title""", (*ids, *ids))]
             return {
                 **card,
                 "paths": paths,
@@ -588,7 +698,7 @@ def create_app(cfg: config.Config | None = None) -> FastAPI:
                 "entities": entities,
                 "docs": docs,
                 "keyframes": keyframes,
-                "pages": [],
+                "pages": pages,
                 "post": post,
                 "similar": [sim_cards[m] for m in similar_ids if m in sim_cards],
             }
