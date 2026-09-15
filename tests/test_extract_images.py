@@ -213,3 +213,33 @@ def test_batch_does_not_overwrite_a_recaption_made_while_queued(tmp_path):
 
     stats = extract_images.run(conn, cfg, client_factory=lambda: httpx.Client(transport=httpx.MockTransport(handler)))
     assert stats.selected == 1 and caption_json(conn, media_id)["user_context"] == "note"
+
+
+def test_parallel_runs_claim_images_so_none_is_read_twice(tmp_path):
+    root = tmp_path / "corpus"
+    root.mkdir()
+    for shade in range(4):
+        Image.new("RGB", (500, 400), (shade * 60, 0, 0)).save(root / f"{shade}.png")
+    conn = db.connect(":memory:")
+    db.init_schema(conn)
+    cfg = SimpleNamespace(corpus_root=root, base_url="http://cube.test/v1", vision_model="gemma-test",
+                          vision_max_tokens=100, vision_max_side=1024, vision_concurrency=1,
+                          vision_max_tiles=6, vision_max_tokens_tall=300, data_dir=tmp_path / "data")
+    scan.scan(conn, cfg)
+    ids = [r[0] for r in conn.execute("SELECT id FROM media ORDER BY id")]
+    # Another run (say on a second GPU host) holds one image; a third claim has lapsed.
+    assert db.claim(conn, extract_images.STAGE, ids[0], "whiteglove:1:http://wg/v1", 600)
+    assert not db.claim(conn, extract_images.STAGE, ids[0], "cube:2:http://cube/v1", 600)
+    assert db.claim(conn, extract_images.STAGE, ids[1], "crashed:3:http://x/v1", -1)
+    sent = []
+
+    def handler(request):
+        sent.append(request)
+        return httpx.Response(200, json={"choices": [{"message": {"content": json.dumps(sample_result())}}]})
+
+    stats = extract_images.run(conn, cfg, client_factory=lambda: httpx.Client(transport=httpx.MockTransport(handler)))
+    assert stats.done == 3 and stats.taken_elsewhere == 1 and len(sent) == 3
+    captioned = {r[0] for r in conn.execute("SELECT media_id FROM doc WHERE kind='caption'")}
+    assert captioned == set(ids[1:])
+    # Finished items give their claims back; the other run's claim is untouched.
+    assert [r[0] for r in conn.execute("SELECT media_id FROM work_claim")] == [ids[0]]

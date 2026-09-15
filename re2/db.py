@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import sqlite3
+import time
 from pathlib import Path
 
 MAX_ATTEMPTS = 3
@@ -121,6 +122,12 @@ CREATE TABLE IF NOT EXISTS chat_log (
   answer TEXT, citations_json TEXT, model TEXT, latency_ms INTEGER
 );
 CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT);  -- e.g. last_scan_at
+CREATE TABLE IF NOT EXISTS work_claim (             -- one batch run per item when several run at once
+  stage TEXT NOT NULL, media_id INTEGER NOT NULL,
+  owner TEXT NOT NULL,                              -- host:pid:server of the run holding it
+  expires_at REAL NOT NULL,                         -- unix time; a crashed run's claims lapse
+  PRIMARY KEY (stage, media_id)
+);
 CREATE TABLE IF NOT EXISTS chat_session (
   id TEXT PRIMARY KEY,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
@@ -344,3 +351,20 @@ def pending_failures(conn: sqlite3.Connection, stage: str, column: str = "media_
         (stage, MAX_ATTEMPTS),
     )
     return {r[0] for r in rows}
+
+
+def claim(conn: sqlite3.Connection, stage: str, media_id: int, owner: str, lease_s: float) -> bool:
+    """Take (or renew) an item for this run; False when another run holds an unexpired claim."""
+    now = time.time()
+    with conn:
+        cur = conn.execute(
+            """INSERT INTO work_claim(stage, media_id, owner, expires_at) VALUES (?, ?, ?, ?)
+               ON CONFLICT(stage, media_id) DO UPDATE SET owner=excluded.owner, expires_at=excluded.expires_at
+               WHERE work_claim.owner=excluded.owner OR work_claim.expires_at < ?""",
+            (stage, media_id, owner, now + lease_s, now))
+    return cur.rowcount == 1
+
+
+def release(conn: sqlite3.Connection, stage: str, media_id: int, owner: str) -> None:
+    with conn:
+        conn.execute("DELETE FROM work_claim WHERE stage=? AND media_id=? AND owner=?", (stage, media_id, owner))

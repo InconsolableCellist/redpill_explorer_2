@@ -128,6 +128,7 @@ class ExtractStats:
     tiled: int = 0
     retried_long: int = 0
     redone: int = 0
+    taken_elsewhere: int = 0   # claimed or already captioned by another run
     completion_tokens: int = 0
     prompt_tokens: int = 0
     interrupted: bool = False
@@ -141,7 +142,7 @@ class ExtractStats:
         avg_out = self.completion_tokens / self.done if self.done else 0
         avg_in = self.prompt_tokens / self.done if self.done else 0
         return (f"selected={self.selected} done={self.done} failed={self.failed} tiled={self.tiled} "
-                f"retried_long={self.retried_long} redone={self.redone} "
+                f"retried_long={self.retried_long} redone={self.redone} taken_elsewhere={self.taken_elsewhere} "
                 f"rate={self.rate_per_min():.1f}/min avg_prompt_tokens={avg_in:.0f} "
                 f"avg_completion_tokens={avg_out:.0f}" + (" INTERRUPTED" if self.interrupted else ""))
 
@@ -237,6 +238,19 @@ def extract_job(client: httpx.Client, cfg, job: Job, max_tokens: int | None = No
     return result
 
 
+CLAIM_LEASE_S = 1800.0   # longer than the slowest single image; a crashed run's items free up after this
+
+
+def run_owner(cfg) -> str:
+    return f"{os.uname().nodename}:{os.getpid()}:{cfg.base_url}"
+
+
+def captioned_now(conn: sqlite3.Connection, media_id: int) -> bool:
+    return conn.execute(
+        """SELECT 1 FROM doc WHERE media_id=? AND kind='caption'
+           AND coalesce(json_extract(json, '$.prompt_version'), 0) >= ?""", (media_id, PROMPT_VERSION)).fetchone() is not None
+
+
 def owner_captioned(conn: sqlite3.Connection, media_id: int) -> bool:
     """True when the image has a current-version caption made with the owner's context."""
     return conn.execute(
@@ -285,6 +299,16 @@ def run(conn: sqlite3.Connection, cfg, limit: int | None = None, include_thumbna
     local = threading.local()
     clients: list[httpx.Client] = []
     lock = threading.Lock()
+    owner = run_owner(cfg)
+
+    def claimed(queue: list[Job]):
+        # Several runs (cube, another GPU host) can work through the same list: each takes an image only when
+        # no other run holds it and nobody has captioned it since this run's list was made.
+        for job in queue:
+            if captioned_now(conn, job.media_id) or not db.claim(conn, STAGE, job.media_id, owner, CLAIM_LEASE_S):
+                stats.taken_elsewhere += 1
+                continue
+            yield job
 
     def work(job: Job, max_tokens: int | None = None) -> dict:
         client = getattr(local, "client", None)
@@ -295,6 +319,7 @@ def run(conn: sqlite3.Connection, cfg, limit: int | None = None, include_thumbna
         return extract_job(client, cfg, job, max_tokens)
 
     def on_result(job: Job, result: dict) -> None:
+        db.release(conn, STAGE, job.media_id, owner)
         if owner_captioned(conn, job.media_id):
             # Recaptioned from the dashboard with the owner's note while this job waited in the queue.
             log.info("media %s was recaptioned with the owner's context meanwhile; keeping that", job.media_id)
@@ -316,6 +341,7 @@ def run(conn: sqlite3.Connection, cfg, limit: int | None = None, include_thumbna
     long_jobs = [j for j in jobs if j.long_output]
 
     def on_error(job: Job, exc: BaseException) -> None:
+        db.release(conn, STAGE, job.media_id, owner)
         with conn:
             db.upsert_failure(conn, STAGE, job.media_id, None, f"{type(exc).__name__}: {exc}"[:2000])
         save_raw(cfg, job.media_id, exc)
@@ -329,11 +355,11 @@ def run(conn: sqlite3.Connection, cfg, limit: int | None = None, include_thumbna
         log.warning("media %s failed: %s", job.media_id, exc)
 
     try:
-        finished = runner.run_jobs(normal, work, on_result, on_error, cfg.vision_concurrency,
+        finished = runner.run_jobs(claimed(normal), work, on_result, on_error, cfg.vision_concurrency,
                                    total=len(normal), desc="extract-images")
         if finished and long_jobs:
             log.info("extracting %d long-output images one at a time", len(long_jobs))
-            finished = runner.run_jobs(long_jobs, lambda j: work(j, cfg.vision_max_tokens_tall), on_result,
+            finished = runner.run_jobs(claimed(long_jobs), lambda j: work(j, cfg.vision_max_tokens_tall), on_result,
                                        on_error, 1, total=len(long_jobs), desc="extract-images (long)")
         stats.interrupted = not finished
     finally:

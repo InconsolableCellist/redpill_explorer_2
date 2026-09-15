@@ -110,7 +110,14 @@ def cmd_thumbs(cfg: config.Config, args: argparse.Namespace) -> int:
 
 
 def cmd_extract_images(cfg: config.Config, args: argparse.Namespace) -> int:
+    import dataclasses
+
     from re2 import extract_images
+
+    if args.server or args.model:
+        # Another GPU host alongside the configured one; runs claim images so they never read the same one.
+        cfg = dataclasses.replace(cfg, base_url=(args.server or cfg.base_url).rstrip("/"),
+                                  vision_model=args.model or cfg.vision_model)
 
     if args.check:
         sized = extract_images.sized_for_server(cfg, requested=args.concurrency or cfg.vision_concurrency)
@@ -359,6 +366,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--concurrency", type=int,
                    help="requests at once (default: sized from the server's slots and context)")
     p.add_argument("--check", action="store_true", help="print what the server allows and exit")
+    p.add_argument("--server", help="OpenAI-compatible base URL of another vision server (default [llm] base_url)")
+    p.add_argument("--model", help="vision model name on that server (default [llm] vision_model)")
     p.set_defaults(func=cmd_extract_images)
 
     p = sub.add_parser("embed", help="add new docs to the dense embedding index")
