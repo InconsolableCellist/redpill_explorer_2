@@ -129,6 +129,13 @@ to commit. Do not skip verification.
 | 5 PDFs (`re2/pdf.py`, `scripts/pdf_ocr.sh`) | text layer run (1,213 pages); 809 scanned pages queued for `pdf_ocr.sh` (not yet run live) | 1debd50 |
 | 6.2 item dating (`re2/dates.py`) | done, run: every item dated | f496155 |
 | 8.1–8.2 dashboard shell, streaming search, reader; timeline and graph of 8.4 | done, checked in headless Chromium | 07b340c, bdbb1b7 |
+| Posts: a tweet's screenshot, photos and videos as one item (`post`, `post_member`) | done, 1,302 posts | f1ff73b, f9edde5 |
+| Sorting (relevance, newest, oldest, recently read); `re2 review` | done | f1ff73b, 8044539 |
+| Vision prompt: subject-first title and summary, schema caps, DRY on retries | done, tested on mlboy; takes effect on the next extraction restart | 6ad66cc, 3308301 |
+| 6.4 deterministic entity merge (`re2 merge-entities`) | done, run; LLM verification still to do | fe078dd |
+| 6.5 topics, themes, 2D map (`re2 recluster`) from mean doc vectors; 8.4 map mode | done, run: 181 topics, 17 themes; labels are provisional keywords | 41ad957 |
+| 7 Ask agent (`re2/ask.py`, `/api/ask`) and 8.5 Ask mode | done, tested live against mlboy | e9f5d40, 241324b, a0d97ea |
+| Which-key popup, view keys on buttons | done | 6c318fc |
 
 Deviations from the task text, decided during implementation:
 
@@ -144,6 +151,13 @@ Deviations from the task text, decided during implementation:
 - Veiling in the dashboard uses only the vision model's sensitivity; the 2024 tagger's `legacy_spicy` is shown
   but not trusted (it rates benign documents 0.9).
 - The graph can show tags as well as entities (`T`) until vision extraction has produced enough entities.
+- Clustering uses item vectors = mean of the item's doc vectors (no digests yet); `re2 recluster` should be re-run
+  after extraction, ASR and `embed`, and again after digests exist.
+- llama.cpp rejects JSON-schema `maxLength` of 2,000 or more ("failed to parse grammar"): OCR stays uncapped.
+- `config.local.toml` (git-ignored) overrides `config.toml`; on this machine it points Ask at mlboy and binds the
+  server to 0.0.0.0 for LAN access. The server has no authentication.
+- Ask steers the agent by narrowing the action enum (no searches after 4, no opens after 5, answer on the last
+  step) and writes the answer in a fresh conversation from research notes; otherwise Qwen answered in JSON.
 
 Measured facts that replace the old estimates:
 
