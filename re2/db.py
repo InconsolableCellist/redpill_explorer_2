@@ -121,6 +121,20 @@ CREATE TABLE IF NOT EXISTS chat_log (
   answer TEXT, citations_json TEXT, model TEXT, latency_ms INTEGER
 );
 CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT);  -- e.g. last_scan_at
+CREATE TABLE IF NOT EXISTS post (                    -- one archived post: a screenshot plus its photos and videos
+  id INTEGER PRIMARY KEY,
+  url TEXT NOT NULL UNIQUE,
+  date TEXT, folder TEXT, restricted INTEGER,
+  primary_media_id INTEGER NOT NULL REFERENCES media(id)   -- the screenshot when there is one
+);
+CREATE TABLE IF NOT EXISTS post_member (
+  post_id INTEGER NOT NULL REFERENCES post(id),
+  media_id INTEGER NOT NULL REFERENCES media(id),
+  role TEXT NOT NULL,                               -- screenshot | photo | video
+  seq INTEGER NOT NULL,                             -- 0 = screenshot, then photos, then videos
+  PRIMARY KEY (post_id, media_id)
+);
+CREATE INDEX IF NOT EXISTS ix_post_member_media ON post_member(media_id);
 CREATE TABLE IF NOT EXISTS pdf_ocr_queue (          -- scanned PDF pages waiting for the vision model
   media_id INTEGER NOT NULL REFERENCES media(id),
   page INTEGER NOT NULL,                            -- 1-based

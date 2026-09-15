@@ -61,8 +61,19 @@ def create_app(cfg: config.Config | None = None) -> FastAPI:
 
     # ── Search ────────────────────────────────────────────────────────────
 
+    def lenses_for(conn: sqlite3.Connection, order: list[int]) -> dict:
+        """Lenses over the best-matching items, counting every photo and video inside matched posts."""
+        top = search.expand_members(conn, order[:search.LENS_MEDIA])
+        return search.lenses(conn, top, max_media=len(top))
+
+    def check_sort(sort: str) -> str:
+        if sort not in search.SORTS:
+            raise HTTPException(400, f"sort must be one of {', '.join(search.SORTS)}")
+        return sort
+
     @app.get("/api/stream")
-    def stream(q: str = "", s: list[str] = Query(default=[])):
+    def stream(q: str = "", s: list[str] = Query(default=[]), sort: str = "relevance"):
+        check_sort(sort)
         conn = open_ro(cfg)
         try:
             allowed, labels = parse_scopes(conn, s)
@@ -84,25 +95,27 @@ def create_app(cfg: config.Config | None = None) -> FastAPI:
                              "n_in_scope": None if allowed is None else len(allowed)})
                 query = q.strip()
                 if not query:
-                    order = search.items_in_scope(conn, allowed, limit=search.SCOPE_LENS_MEDIA)
+                    order = search.items_in_scope(conn, allowed, limit=search.SCOPE_LENS_MEDIA, sort=sort)
                     card_map = search.cards(conn, order[:HITS_PER_PAGE])
                     yield _line({"t": "items", "hits": [card_map[m] for m in order[:HITS_PER_PAGE] if m in card_map],
                                  "more": len(order) > HITS_PER_PAGE})
-                    yield _line({"t": "lenses", "data": search.lenses(conn, order, max_media=search.SCOPE_LENS_MEDIA)})
+                    everything = search.expand_members(conn, order)
+                    yield _line({"t": "lenses", "data": search.lenses(conn, everything,
+                                                                      max_media=search.SCOPE_LENS_MEDIA * 2)})
                     if allowed is not None:
                         yield _line({"t": "correlations", "data": search.correlations(
-                            conn, order, max_media=search.SCOPE_LENS_MEDIA)})
+                            conn, everything, max_media=search.SCOPE_LENS_MEDIA * 2)})
                     lap("total", started)
                     yield _line({"t": "done", "ms": timings})
                     return
 
                 t = time.perf_counter()
                 lex = search.lexical(conn, query, allowed=allowed)
-                hits, order = search.group_by_media(conn, lex, query, limit=HITS_PER_PAGE)
+                hits, order = search.group_by_media(conn, lex, query, limit=HITS_PER_PAGE, sort=sort)
                 t = lap("lexical", t)
                 yield _line({"t": "lexical", "hits": search.hit_dicts(conn, hits),
                              "more": len(order) > HITS_PER_PAGE})
-                yield _line({"t": "lenses", "data": search.lenses(conn, order)})
+                yield _line({"t": "lenses", "data": lenses_for(conn, order)})
                 yield _line({"t": "pages", "hits": []})
 
                 try:
@@ -115,12 +128,13 @@ def create_app(cfg: config.Config | None = None) -> FastAPI:
                     dn = None
                 if dn is not None:
                     fused = search.fuse([lex, dn])
-                    hits, order = search.group_by_media(conn, fused, query, limit=HITS_PER_PAGE)
+                    hits, order = search.group_by_media(conn, fused, query, limit=HITS_PER_PAGE, sort=sort)
                     yield _line({"t": "fused", "hits": search.hit_dicts(conn, hits),
                                  "more": len(order) > HITS_PER_PAGE})
-                    yield _line({"t": "lenses", "data": search.lenses(conn, order)})
+                    yield _line({"t": "lenses", "data": lenses_for(conn, order)})
                 t = time.perf_counter()
-                yield _line({"t": "correlations", "data": search.correlations(conn, order)})
+                top = search.expand_members(conn, order[:search.LENS_MEDIA])
+                yield _line({"t": "correlations", "data": search.correlations(conn, top, max_media=len(top))})
                 lap("correlations", t)
                 lap("total", started)
                 yield _line({"t": "done", "ms": timings})
@@ -131,13 +145,15 @@ def create_app(cfg: config.Config | None = None) -> FastAPI:
                                  headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"})
 
     @app.get("/api/items")
-    def items(q: str = "", s: list[str] = Query(default=[]), offset: int = 0, limit: int = HITS_PER_PAGE):
+    def items(q: str = "", s: list[str] = Query(default=[]), offset: int = 0, limit: int = HITS_PER_PAGE,
+              sort: str = "relevance"):
+        check_sort(sort)
         limit = max(1, min(limit, 200))
         with closing(open_ro(cfg)) as conn:
             allowed, _ = parse_scopes(conn, s)
             query = q.strip()
             if not query:
-                order = search.items_in_scope(conn, allowed, limit=limit + 1, offset=offset)
+                order = search.items_in_scope(conn, allowed, limit=limit + 1, offset=offset, sort=sort)
                 card_map = search.cards(conn, order[:limit])
                 return {"hits": [card_map[m] for m in order[:limit] if m in card_map], "more": len(order) > limit}
             ranked = [search.lexical(conn, query, k=1000, allowed=allowed)]
@@ -145,7 +161,8 @@ def create_app(cfg: config.Config | None = None) -> FastAPI:
                 ranked.append(search.dense(conn, embed_client, cfg, query, k=1000, allowed=allowed))
             except (embed.EmbedError, httpx.HTTPError, OSError):
                 pass
-            hits, order = search.group_by_media(conn, search.fuse(ranked), query, limit=limit, offset=offset)
+            hits, order = search.group_by_media(conn, search.fuse(ranked), query, limit=limit, offset=offset,
+                                                sort=sort)
             return {"hits": search.hit_dicts(conn, hits), "more": len(order) > offset + limit}
 
     @app.get("/api/timeline")
@@ -227,6 +244,18 @@ def create_app(cfg: config.Config | None = None) -> FastAPI:
                 log.exception("similar items failed for %s", media_id)
                 similar_ids = []
             sim_cards = search.cards(conn, similar_ids)
+            post = None
+            post_row = conn.execute(
+                """SELECT p.id, p.url, p.date, p.primary_media_id FROM post_member pm JOIN post p ON p.id=pm.post_id
+                   WHERE pm.media_id=? ORDER BY p.id LIMIT 1""", (media_id,)).fetchone()
+            if post_row:
+                member_rows = conn.execute(
+                    "SELECT media_id, role, seq FROM post_member WHERE post_id=? ORDER BY seq", (post_row[0],)).fetchall()
+                member_cards = search.cards(conn, [r[0] for r in member_rows])
+                if len(member_rows) > 1:
+                    post = {"url": post_row[1], "date": post_row[2], "primary_media_id": post_row[3],
+                            "members": [{**member_cards[r[0]], "role": r[1], "seq": r[2]}
+                                        for r in member_rows if r[0] in member_cards]}
             return {
                 **card,
                 "paths": paths,
@@ -237,6 +266,7 @@ def create_app(cfg: config.Config | None = None) -> FastAPI:
                 "docs": docs,
                 "keyframes": keyframes,
                 "pages": [],
+                "post": post,
                 "similar": [sim_cards[m] for m in similar_ids if m in sim_cards],
             }
 

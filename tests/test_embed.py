@@ -76,3 +76,21 @@ def test_build_docs_skips_superseded_legacy_captions(tmp_path):
     assert index.id_set() == {11, 13}
     q = embed.query_vector(mock_client(), cfg, "ballot fraud")
     assert index.search(q, k=1)[0][0] == 11
+
+
+def test_query_vector_backs_off_after_failure(tmp_path, monkeypatch):
+    import pytest
+
+    calls = []
+
+    def handler(request):
+        calls.append(1)
+        raise httpx.ConnectTimeout("down")
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    monkeypatch.setattr(embed, "_query_down_until", 0.0)
+    with pytest.raises(embed.EmbedError):
+        embed.query_vector(client, make_cfg(tmp_path), "never cached one")
+    with pytest.raises(embed.EmbedError, match="recently unreachable"):
+        embed.query_vector(client, make_cfg(tmp_path), "never cached two")
+    assert len(calls) == 1  # no retries, and the second query does not wait on the network

@@ -154,6 +154,7 @@ class SourceStats:
     linked: int = 0
     by_basename: int = 0
     not_found: int = 0
+    posts: int = 0
 
     def summary(self) -> str:
         return " ".join(f"{k}={v}" for k, v in self.__dict__.items())
@@ -202,6 +203,36 @@ def reconcile_sources(conn: sqlite3.Connection, cfg) -> SourceStats:
             "INSERT INTO source(media_id, url, date, folder, restricted, role) VALUES (?, ?, ?, ?, ?, ?)",
             rows,
         )
+        stats.posts = build_posts(conn, rows)
     if stats.not_found:
         log.info("%d archive_metadata files not found in the manifest", stats.not_found)
     return stats
+
+
+ROLE_ORDER = {"screenshot": 0, "photo": 1, "video": 2}
+
+
+def build_posts(conn: sqlite3.Connection, rows: list[tuple]) -> int:
+    """Group source rows by URL into posts: the screenshot first, then photos, then videos.
+
+    rows are (media_id, url, date, folder, restricted, role) in archive_metadata order.
+    Rebuilt from scratch on every run; nothing else stores post ids.
+    """
+    posts: dict[str, dict] = {}
+    for media_id, url, date, folder, restricted, role in rows:
+        if not url:
+            continue
+        post = posts.setdefault(url, {"date": date, "folder": folder, "restricted": restricted, "members": []})
+        if all(m[0] != media_id for m in post["members"]):
+            post["members"].append((media_id, role))
+    conn.execute("DELETE FROM post_member")
+    conn.execute("DELETE FROM post")
+    for url, post in posts.items():
+        members = sorted(enumerate(post["members"]), key=lambda im: (ROLE_ORDER.get(im[1][1], 3), im[0]))
+        primary = members[0][1][0]
+        post_id = conn.execute(
+            "INSERT INTO post(url, date, folder, restricted, primary_media_id) VALUES (?, ?, ?, ?, ?)",
+            (url, post["date"], post["folder"], post["restricted"], primary)).lastrowid
+        conn.executemany("INSERT INTO post_member(post_id, media_id, role, seq) VALUES (?, ?, ?, ?)",
+                         [(post_id, media_id, role, seq) for seq, (_, (media_id, role)) in enumerate(members)])
+    return len(posts)

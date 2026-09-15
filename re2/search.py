@@ -224,6 +224,7 @@ class Hit:
     start_s: float | None = None
     end_s: float | None = None
     page: int | None = None
+    member_id: int | None = None   # the photo or video inside a post that actually matched
 
 
 def _snippet(conn: sqlite3.Connection, doc_id: int, q: str, text: str) -> str:
@@ -241,29 +242,99 @@ def _snippet(conn: sqlite3.Connection, doc_id: int, q: str, text: str) -> str:
     return text[:240] + ("…" if len(text) > 240 else "")
 
 
+# ── Posts ──────────────────────────────────────────────────────────────────
+
+_post_cache: dict[str, tuple[float, dict[int, int], dict[int, list[int]]]] = {}
+POST_TTL_S = 60
+
+
+def post_maps(conn: sqlite3.Connection) -> tuple[dict[int, int], dict[int, list[int]]]:
+    """(member -> post's primary media, primary -> all member media in order), cached briefly."""
+    if not _has_table(conn, "post_member"):
+        return {}, {}
+    db_file = conn.execute("PRAGMA database_list").fetchone()[2] or f"memory:{id(conn)}"
+    now = time.monotonic()
+    cached = _post_cache.get(db_file)
+    if cached and now - cached[0] < POST_TTL_S:
+        return cached[1], cached[2]
+    to_primary: dict[int, int] = {}
+    members: dict[int, list[int]] = {}
+    for post_id, primary, media_id in conn.execute(
+            """SELECT p.id, p.primary_media_id, pm.media_id FROM post p JOIN post_member pm ON pm.post_id=p.id
+               ORDER BY p.id, pm.seq"""):
+        members.setdefault(primary, []).append(media_id)
+        to_primary.setdefault(media_id, primary)   # a photo reused by two posts belongs to the first
+    to_primary = {m: p for m, p in to_primary.items() if m != p}
+    _post_cache[db_file] = (now, to_primary, members)
+    return to_primary, members
+
+
+def expand_members(conn: sqlite3.Connection, media_ids: list[int]) -> list[int]:
+    """Posts' primaries followed by their members, so lenses see every photo's entities and tags."""
+    _, members = post_maps(conn)
+    out, seen = [], set()
+    for m in media_ids:
+        for x in members.get(m, [m]):
+            if x not in seen:
+                seen.add(x)
+                out.append(x)
+    return out
+
+
+SORTS = ("relevance", "newest", "oldest", "recent")
+
+
+def sort_media(conn: sqlite3.Connection, media_ids: list[int], sort: str) -> list[int]:
+    """Reorder ids: newest/oldest by item date (undated last), recent by when the models last read them."""
+    if sort == "relevance" or len(media_ids) < 2:
+        return media_ids
+    table = _temp_ids(conn, "sort_media", media_ids)
+    if sort == "recent":
+        key_sql = ("(SELECT MAX(d.created_at) FROM doc d WHERE d.media_id=m.id "
+                   "AND d.kind IN ('caption', 'transcript', 'keyframe', 'pdf_page'))")
+        direction = "DESC"
+    else:
+        key_sql = item_date_sql("m") if _has_column(conn, "media_meta", "item_date") else \
+            "(SELECT substr(MIN(s.date), 1, 10) FROM source s WHERE s.media_id=m.id)"
+        direction = "DESC" if sort == "newest" else "ASC"
+    rank = {m: i for i, m in enumerate(media_ids)}
+    keyed = conn.execute(f"SELECT m.id, {key_sql} FROM media m WHERE m.id IN (SELECT id FROM {table})").fetchall()
+    present = sorted((r for r in keyed if r[1] is not None), key=lambda r: (r[1], -rank[r[0]]),
+                     reverse=(direction == "DESC"))
+    missing = sorted((r for r in keyed if r[1] is None), key=lambda r: rank[r[0]])
+    return [r[0] for r in present] + [r[0] for r in missing]
+
+
 def group_by_media(conn: sqlite3.Connection, ranked: list[tuple[int, float]], q: str,
-                   limit: int = 40, offset: int = 0) -> tuple[list[Hit], list[int]]:
-    """Best doc per media, in rank order. Returns (hits for the page, all media ids in order)."""
+                   limit: int = 40, offset: int = 0, sort: str = "relevance") -> tuple[list[Hit], list[int]]:
+    """Best doc per item, in rank order, with a post's photos and videos folded into the post.
+
+    Returns (hits for the page, all item ids in order).
+    """
     if not ranked:
         return [], []
     table = _temp_ids(conn, "rank_docs", [d for d, _ in ranked])
     meta = {r[0]: r for r in conn.execute(
         f"SELECT id, media_id, kind, start_s, end_s, page, text FROM doc WHERE id IN (SELECT id FROM {table})")}
+    to_primary, _ = post_maps(conn)
     order: list[int] = []
     best: dict[int, tuple[int, float]] = {}
     for doc_id, score in ranked:
         row = meta.get(doc_id)
         if row is None:
             continue
-        if row[1] not in best:
-            best[row[1]] = (doc_id, score)
-            order.append(row[1])
+        item = to_primary.get(row[1], row[1])
+        if item not in best:
+            best[item] = (doc_id, score)
+            order.append(item)
+    order = sort_media(conn, order, sort)
     hits = []
-    for media_id in order[offset:offset + limit]:
-        doc_id, score = best[media_id]
-        _, _, kind, start_s, end_s, page, text = meta[doc_id]
-        hits.append(Hit(media_id, doc_id, kind, round(score, 5), _snippet(conn, doc_id, q, text),
-                        start_s, end_s, page))
+    for item in order[offset:offset + limit]:
+        doc_id, score = best[item]
+        _, media_id, kind, start_s, end_s, page, text = meta[doc_id]
+        hit = Hit(item, doc_id, kind, round(score, 5), _snippet(conn, doc_id, q, text), start_s, end_s, page)
+        hit.member_id = media_id if media_id != item else None
+        hits.append(hit)
     return hits, order
 
 
@@ -308,6 +379,10 @@ def cards(conn: sqlite3.Connection, media_ids: list[int]) -> dict[int, dict]:
                {"(SELECT date_source FROM media_meta x WHERE x.media_id=m.id)" if has_item_date else "NULL"} AS date_source,
                (SELECT json_extract(d.json, '$.description') FROM doc d
                  WHERE d.media_id=m.id AND d.kind='caption') AS description,
+               (SELECT json_extract(d.json, '$.title') FROM doc d
+                 WHERE d.media_id=m.id AND d.kind='caption') AS caption_title,
+               (SELECT json_extract(d.json, '$.summary') FROM doc d
+                 WHERE d.media_id=m.id AND d.kind='caption') AS summary,
                (SELECT d.text FROM doc d WHERE d.media_id=m.id AND d.kind != 'caption'
                  ORDER BY CASE d.kind WHEN 'legacy_caption' THEN 0 WHEN 'keyframe' THEN 1 WHEN 'pdf_page' THEN 2
                           WHEN 'transcript' THEN 3 ELSE 4 END, d.seq LIMIT 1) AS other_text,
@@ -315,11 +390,24 @@ def cards(conn: sqlite3.Connection, media_ids: list[int]) -> dict[int, dict]:
                (SELECT s.url FROM source s WHERE s.media_id=m.id ORDER BY s.id LIMIT 1) AS source_url
         FROM media m LEFT JOIN media_meta mm ON mm.media_id=m.id
         WHERE m.id IN (SELECT id FROM {table})""").fetchall()
+    posts: dict[int, dict] = {}
+    if _has_table(conn, "post"):
+        for pr in conn.execute(
+                f"""SELECT p.primary_media_id, p.url, pm.media_id, pm.role, pm.seq, m2.kind, m2.thumb_path,
+                           m2.duration, m2.status
+                    FROM post p JOIN post_member pm ON pm.post_id=p.id JOIN media m2 ON m2.id=pm.media_id
+                    WHERE p.primary_media_id IN (SELECT id FROM {table}) ORDER BY p.id, pm.seq"""):
+            post = posts.setdefault(pr[0], {"url": pr[1], "members": []})
+            if post["url"] != pr[1]:
+                continue  # a screenshot shared by two posts: keep the first
+            post["members"].append({"media_id": pr[2], "role": pr[3], "seq": pr[4], "kind": pr[5],
+                                    "thumb_url": f"/media/{pr[2]}/thumb" if pr[6] else None,
+                                    "duration": pr[7], "status": pr[8]})
     out = {}
     for r in rows:
         rel_path = r["rel_path"] or ""
         folder = os.path.dirname(rel_path) or "."
-        title = (r["digest_title"] or title_from_text(r["description"]) or title_from_text(r["legacy_caption"])
+        title = (r["caption_title"] or r["digest_title"] or title_from_text(r["description"]) or title_from_text(r["legacy_caption"])
                  or title_from_text(r["other_text"]) or os.path.basename(rel_path) or f"#{r['id']}")
         out[r["id"]] = {
             "media_id": r["id"],
@@ -338,6 +426,8 @@ def cards(conn: sqlite3.Connection, media_ids: list[int]) -> dict[int, dict]:
             "thumb_url": f"/media/{r['id']}/thumb" if r["thumb_path"] else None,
             "media_url": f"/media/{r['id']}/file" if r["status"] == "READY" else None,
             "source_url": r["source_url"],
+            "summary": r["summary"],
+            "post": posts.get(r["id"]) if len(posts.get(r["id"], {}).get("members", [])) > 1 else None,
         }
     return out
 
@@ -437,17 +527,24 @@ def correlations(conn: sqlite3.Connection, media_ids: list[int], limit: int = 15
 # ── Convenience ────────────────────────────────────────────────────────────
 
 def items_in_scope(conn: sqlite3.Connection, allowed: set[int] | None, limit: int = 40,
-                   offset: int = 0) -> list[int]:
-    """Media ids for an empty query: newest dated first, then undated by id."""
-    date = item_date_sql("m") if _has_column(conn, "media_meta", "item_date") else \
-        "(SELECT substr(MIN(s.date), 1, 10) FROM source s WHERE s.media_id=m.id)"
+                   offset: int = 0, sort: str = "newest") -> list[int]:
+    """Item ids for an empty query, posts folded to their screenshot. Default: newest dated first."""
     restrict = ""
     if allowed is not None:
         restrict = f"AND m.id IN (SELECT id FROM {_temp_ids(conn, 'scope_media', allowed)})"
-    return [r[0] for r in conn.execute(
+    ids = [r[0] for r in conn.execute(
         f"""SELECT m.id FROM media m
             WHERE m.status NOT IN ('EXCLUDED', 'UNSUPPORTED') AND m.kind IN ('image', 'video', 'pdf') {restrict}
-            ORDER BY {date} IS NULL, {date} DESC, m.id DESC LIMIT ? OFFSET ?""", (limit, offset))]
+            ORDER BY m.id DESC""")]
+    to_primary, _ = post_maps(conn)
+    items, seen = [], set()
+    for m in ids:
+        item = to_primary.get(m, m)
+        if item not in seen:
+            seen.add(item)
+            items.append(item)
+    items = sort_media(conn, items, "newest" if sort == "relevance" else sort)
+    return items[offset:offset + limit]
 
 
 def similar(conn: sqlite3.Connection, cfg, media_id: int, k: int = 12) -> list[int]:

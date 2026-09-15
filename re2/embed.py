@@ -30,22 +30,23 @@ class EmbedError(Exception):
     pass
 
 
-def embed_texts(client: httpx.Client, cfg, texts: list[str], prefix: str) -> np.ndarray:
+def embed_texts(client: httpx.Client, cfg, texts: list[str], prefix: str,
+                timeout: float = EMBED_TIMEOUT, retries: int = RETRIES) -> np.ndarray:
     """float32, L2-normalized, shape (len(texts), dims)."""
     out = np.zeros((len(texts), cfg.embed_dims), dtype=np.float32)
     for start in range(0, len(texts), BATCH):
         chunk = [prefix + (t or " ")[: cfg.embed_max_chars] for t in texts[start:start + BATCH]]
-        for attempt in range(RETRIES + 1):
+        for attempt in range(retries + 1):
             try:
                 resp = client.post(cfg.embed_url, json={"input": chunk, "model": cfg.embed_model},
-                                   timeout=EMBED_TIMEOUT)
-                if resp.status_code >= 500 and attempt < RETRIES:
+                                   timeout=timeout)
+                if resp.status_code >= 500 and attempt < retries:
                     time.sleep(RETRY_SLEEP)
                     continue
                 resp.raise_for_status()
                 break
             except httpx.TimeoutException as exc:
-                if attempt < RETRIES:
+                if attempt < retries:
                     time.sleep(RETRY_SLEEP)
                     continue
                 raise EmbedError(f"timeout: {exc}") from exc
@@ -170,15 +171,29 @@ def get_index(cfg, name: str) -> Index:
 _query_cache: OrderedDict[str, np.ndarray] = OrderedDict()
 _query_lock = threading.Lock()
 QUERY_CACHE_SIZE = 256
+QUERY_TIMEOUT = 3.0
+QUERY_BACKOFF_S = 30.0
+_query_down_until = 0.0
 
 
 def query_vector(client: httpx.Client, cfg, text: str) -> np.ndarray:
-    """Embedding for a search query; cached because typing re-sends prefixes."""
+    """Embedding for a search query; cached because typing re-sends prefixes.
+
+    Interactive: a short timeout, no retries, and after a failure no attempts for
+    QUERY_BACKOFF_S, so search stays fast (lexical only) while cube is unreachable.
+    """
+    global _query_down_until
     with _query_lock:
         if text in _query_cache:
             _query_cache.move_to_end(text)
             return _query_cache[text]
-    vec = embed_texts(client, cfg, [text], QUERY_PREFIX)[0]
+    if time.monotonic() < _query_down_until:
+        raise EmbedError("embedding server recently unreachable")
+    try:
+        vec = embed_texts(client, cfg, [text], QUERY_PREFIX, timeout=QUERY_TIMEOUT, retries=0)[0]
+    except EmbedError:
+        _query_down_until = time.monotonic() + QUERY_BACKOFF_S
+        raise
     with _query_lock:
         _query_cache[text] = vec
         while len(_query_cache) > QUERY_CACHE_SIZE:

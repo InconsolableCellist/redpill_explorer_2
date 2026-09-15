@@ -105,3 +105,50 @@ def test_timeline_counts_months(env):
     assert sum(m["image"] + m["video"] for m in data["months"]) + data["undated"] == 2
     assert client.get("/api/timeline", params={"q": "missiles"}).json()["undated"] + \
         sum(m["image"] for m in client.get("/api/timeline", params={"q": "missiles"}).json()["months"]) == 1
+
+
+def test_posts_fold_photos_into_the_screenshot(tmp_path):
+    from re2 import legacy, search
+
+    root = tmp_path / "corpus"
+    root.mkdir()
+    for name, color in (("screenshot_20260914_150141.jpg", "white"), ("screenshot_20260914_150141_photo1.jpg", "red"),
+                        ("screenshot_20260914_150141_photo2.png", "blue"), ("other.png", "green")):
+        Image.new("RGB", (60, 40), color).save(root / name)
+    (tmp_path / "archive_metadata.json").write_text(json.dumps([{
+        "url": "https://x.com/a/status/1", "date": "2026-09-14T15:01:48-06:00", "folder": ".",
+        "screenshot": "screenshot_20260914_150141.jpg",
+        "photos": ["screenshot_20260914_150141_photo1.jpg", "screenshot_20260914_150141_photo2.png"],
+        "videos": [], "restricted": False}]))
+    cfg = dataclasses.replace(config.load(), corpus_root=root, data_dir=tmp_path / "data",
+                              thumbs_dir=tmp_path / "thumbs", archive_metadata=tmp_path / "archive_metadata.json",
+                              embed_url="http://127.0.0.1:9/v1/embeddings")
+    conn = db.connect(cfg.db_path)
+    db.init_schema(conn)
+    scan.scan(conn, cfg)
+    assert legacy.reconcile_sources(conn, cfg).posts == 1
+    ids = {r[0]: r[1] for r in conn.execute("SELECT rel_path, media_id FROM media_path")}
+    shot, photo2 = ids["screenshot_20260914_150141.jpg"], ids["screenshot_20260914_150141_photo2.png"]
+    conn.execute("INSERT INTO doc(media_id, kind, text) VALUES (?, 'caption', 'a goat in a meatpacking plant')", (photo2,))
+    conn.execute("INSERT INTO doc(media_id, kind, text) VALUES (?, 'caption', 'a goat on a farm')", (ids["other.png"],))
+    conn.commit()
+    search._post_cache.clear()
+    client = TestClient(api.create_app(cfg))
+
+    msgs = lines(client.get("/api/stream", params={"q": "goat"}))
+    hits = next(m for m in msgs if m["t"] == "lexical")["hits"]
+    post_hit = next(h for h in hits if h["media_id"] == shot)
+    assert post_hit["hit"]["member_id"] == photo2           # the photo matched, the post is shown
+    assert [m["role"] for m in post_hit["post"]["members"]] == ["screenshot", "photo", "photo"]
+    assert photo2 not in [h["media_id"] for h in hits]
+
+    browse = lines(client.get("/api/stream"))
+    listed = [h["media_id"] for h in next(m for m in browse if m["t"] == "items")["hits"]]
+    assert sorted(listed) == sorted([shot, ids["other.png"]])  # photos never appear on their own
+
+    detail = client.get(f"/api/item/{photo2}").json()
+    assert detail["post"]["primary_media_id"] == shot and len(detail["post"]["members"]) == 3
+
+    oldest = lines(client.get("/api/stream", params={"sort": "oldest"}))
+    assert next(m for m in oldest if m["t"] == "items")["hits"]
+    assert client.get("/api/stream", params={"sort": "sideways"}).status_code == 400
