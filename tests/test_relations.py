@@ -29,9 +29,9 @@ def test_observed_and_semantic(monkeypatch):
     monkeypatch.setattr(relations, "MIN_ITEMS", 5)
     conn = archive()
     cfg = type("Cfg", (), {"chat_base_url": "http://chat.test/v1", "chat_model": "qwen"})()
-    replies = {"jews": [{"tag": "israelis", "score": 0.95}, {"tag": "gaza", "score": 0.9}, {"tag": "jews", "score": 1}],
-               "israelis": [{"tag": "jews", "score": 0.9}],
-               "gaza": [{"tag": "election interference", "score": 0.3}, {"tag": "nonsense", "score": 0.8}],
+    replies = {"jews": [["israelis", 95], ["gaza", 90], ["jews", 100]],
+               "israelis": [["jews", 90]],
+               "gaza": [["election interference", 30], ["nonsense", 80], ["malformed"]],
                "election interference": []}
     seen = []
 
@@ -46,5 +46,6 @@ def test_observed_and_semantic(monkeypatch):
     assert "screenshot" not in seen[0]["messages"][0]["content"]
     rel = {r["name"]: r for r in relations.related(conn, 1)}
     assert rel["israelis"]["observed"] == 1.0 and round(rel["israelis"]["semantic"], 3) == 0.925   # mean of both sides
-    assert rel["gaza"]["semantic"] == 0.9
+    assert rel["gaza"]["semantic"] == 0.9 * relations.ONE_SIDED    # gaza never named jews back
+    assert "dry_multiplier" in seen[0]
     assert relations.run(conn, cfg).anchors_selected == 0             # resumable: nothing left to score

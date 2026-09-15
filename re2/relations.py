@@ -5,7 +5,9 @@ Two scores per pair of the most used tags, kept separately in `tag_relation`:
   computed from the archive in seconds.
 - semantic: an LLM's 0..1 judgement of how related the concepts are (israelis/jews ~0.95,
   gaza/election interference ~0.3). For each anchor tag the model sees the whole tag list and
-  names the most related tags; a pair scored from both sides keeps the mean.
+  names the most related tags; a pair named from both sides keeps the mean, and a pair only one
+  side names is discounted (ONE_SIDED), because a model that runs out of true relations drifts
+  along the list and those drifts are rarely reciprocated.
 
 The LLM pass is resumable (`tag_relation_done`) and uses the [chat] model settings.
 """
@@ -27,8 +29,13 @@ log = logging.getLogger(__name__)
 
 MAX_TAGS = 400
 MIN_ITEMS = 15
-MAX_RELATED = 25
+MAX_RELATED = 20
 MIN_PAIR = 3
+ONE_SIDED = 0.6   # a relation only one tag's list names is discounted: drift is rarely reciprocated
+# DRY with only newlines as breakers penalises re-using a tag name straight after '],["' (the model
+# otherwise loops: "cartoon 75, cartoon 75, ...") without penalising the tokens that close the list.
+LOOP_BREAKER = {"dry_multiplier": 0.8, "dry_base": 1.75, "dry_allowed_length": 2, "dry_penalty_last_n": 400,
+                "dry_sequence_breakers": ["\n"]}
 TIMEOUT = 600.0
 
 # Tags that describe the format or platform rather than the content; they relate to everything.
@@ -64,12 +71,17 @@ CREATE TABLE IF NOT EXISTS tag_relation_done (
 SYSTEM_PROMPT = """\
 You rate how related search tags are, for a private archive of political and social-media material. Two tags are related when someone looking into one would want items tagged with the other, through shared people, groups, places, events, history, causes or ideology. Judge real-world relatedness, not wording.
 
-Scale: 1.0 the same thing or inseparable; 0.9 very closely bound (israelis and jews; gaza and israel hamas war; gaza and jews); 0.7 strongly linked; 0.5 often connected; 0.3 occasionally connected (gaza and election interference). Leave out anything below 0.3. Do not moralise; offensive tags are rated like any other.
+Scores are whole numbers: 100 the same thing or inseparable; 90 very closely bound (israelis and jews; gaza and israel hamas war; gaza and jews); 70 strongly linked; 50 often connected; 30 occasionally connected (gaza and election interference). Leave out anything below 30.
+
+Only list tags that truly are related. Most tags have only a handful of close relations; a short list is correct and padding it with loosely connected or popular tags is wrong. Do not moralise; offensive tags are rated like any other.
 
 The tags:
 {tags}"""
 
-USER_PROMPT = "Tag: {anchor}\nName up to {n} tags from the list that are most related to it, most related first, with scores."
+# Compact [name, score] pairs on one line: output tokens are the whole cost on slow servers, and
+# the verbose {"tag": ..., "score": ...} form used about three times as many.
+USER_PROMPT = ('Tag: {anchor}\nList the tags from the list that are related to it (at most {n}), most related first, '
+               'as compact JSON on one line: {{"related":[["tag",score],...]}}')
 
 
 def ensure_tables(conn: sqlite3.Connection) -> None:
@@ -109,13 +121,14 @@ def observed_scores(conn: sqlite3.Connection, tags: list[tuple]) -> dict[tuple[i
 
 
 def schema_for(names: list[str]) -> dict:
+    # llama.cpp rejects "items": false, so the pair length is bounded with minItems/maxItems instead.
     return {
         "type": "object",
         "properties": {"related": {
             "type": "array", "maxItems": MAX_RELATED,
-            "items": {"type": "object",
-                      "properties": {"tag": {"type": "string", "enum": names}, "score": {"type": "number"}},
-                      "required": ["tag", "score"], "additionalProperties": False}}},
+            "items": {"type": "array", "minItems": 2, "maxItems": 2,
+                      "prefixItems": [{"type": "string", "enum": names},
+                                      {"type": "integer", "minimum": 30, "maximum": 100}]}}},
         "required": ["related"], "additionalProperties": False,
     }
 
@@ -126,7 +139,7 @@ def score_anchor(client: httpx.Client, cfg, anchor: str, names: list[str], syste
         "messages": [{"role": "system", "content": system},
                      {"role": "user", "content": USER_PROMPT.format(anchor=anchor, n=MAX_RELATED)}],
         "response_format": {"type": "json_schema", "json_schema": {"name": "related", "schema": schema}},
-        "temperature": 0.2, "max_tokens": 900,
+        "temperature": 0.2, "max_tokens": 400, **LOOP_BREAKER,
         "chat_template_kwargs": {"enable_thinking": False}, "reasoning_budget": 0,
     }
     resp = client.post(f"{cfg.chat_base_url}/chat/completions", json=body, timeout=TIMEOUT)
@@ -153,7 +166,7 @@ class RelationStats:
 
 
 def run(conn: sqlite3.Connection, cfg, limit: int | None = None, observed_only: bool = False,
-        concurrency: int = 2, client_factory=httpx.Client, rescore: bool = False) -> RelationStats:
+        concurrency: int = 4, client_factory=httpx.Client, rescore: bool = False) -> RelationStats:
     ensure_tables(conn)
     if rescore:
         # After the tag vocabulary changes (e.g. a full re-extraction), every anchor is asked again.
@@ -200,11 +213,13 @@ def run(conn: sqlite3.Connection, cfg, limit: int | None = None, observed_only: 
     def on_result(anchor, related):
         anchor_id = anchor[0]
         rows = []
-        for r in related:
-            other = by_name.get(r.get("tag"))
+        for pair in related:
+            if not isinstance(pair, list) or len(pair) != 2:
+                continue
+            other = by_name.get(pair[0])
             if other is None or other == anchor_id:
                 continue
-            score = min(1.0, max(0.0, float(r.get("score") or 0)))
+            score = min(1.0, max(0.0, float(pair[1] or 0) / 100))
             a, b = sorted((anchor_id, other))
             rows.append((a, b, score if anchor_id == a else None, score if anchor_id == b else None))
         with conn:
@@ -239,9 +254,10 @@ def related(conn: sqlite3.Connection, tag_id: int, limit: int = 20) -> list[dict
     rows = conn.execute(
         """SELECT CASE WHEN r.a=? THEN r.b ELSE r.a END AS other, t.name, r.observed, r.n_ab,
                   CASE WHEN r.semantic_ab IS NOT NULL AND r.semantic_ba IS NOT NULL
-                       THEN (r.semantic_ab + r.semantic_ba) / 2 ELSE COALESCE(r.semantic_ab, r.semantic_ba) END AS semantic
+                       THEN (r.semantic_ab + r.semantic_ba) / 2
+                       ELSE COALESCE(r.semantic_ab, r.semantic_ba) * ? END AS semantic
            FROM tag_relation r JOIN tag t ON t.id = CASE WHEN r.a=? THEN r.b ELSE r.a END
-           WHERE r.a=? OR r.b=?""", (tag_id, tag_id, tag_id, tag_id)).fetchall()
+           WHERE r.a=? OR r.b=?""", (tag_id, ONE_SIDED, tag_id, tag_id, tag_id)).fetchall()
     out = [{"id": r[0], "name": r[1], "observed": r[2], "n_ab": r[3], "semantic": r[4],
             "score": round(r[4] if r[4] is not None else max(r[2] or 0, 0), 3)} for r in rows]
     out.sort(key=lambda d: (-d["score"], -(d["n_ab"] or 0)))
@@ -274,7 +290,7 @@ def related_graph(conn: sqlite3.Connection, allowed: set[int] | None, limit: int
         scores = [x for x in (sab, sba) if x is not None]
         if not scores:
             continue
-        score = sum(scores) / len(scores)
+        score = sum(scores) / 2 if len(scores) == 2 else scores[0] * ONE_SIDED
         if score >= min_score:
             edges.append({"a": a, "b": b, "w": round(score, 3), "n": 0, "observed": observed})
     edges.sort(key=lambda e: -e["w"])
