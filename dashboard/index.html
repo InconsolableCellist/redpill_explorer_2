@@ -2118,9 +2118,26 @@ async function streamTurns(url, body, turn) {
     if (!resp.ok) throw new Error((await resp.json().catch(() => ({}))).detail || resp.status);
     last = await followTurn(resp, turn);
   } catch (err) {
-    last.error = `${url.endsWith("argue") ? "Argue" : "Ask"} failed: ${err.message}`;
+    last = turn.run ? await reattach(turn, err) : (turn.error = `${url.endsWith("argue") ? "Argue" : "Ask"} failed: ${err.message}`, turn);
   }
   finishTurn(last);
+}
+/* The stream broke (network blip, laptop sleep, server restart). The run may still be going on the server:
+   follow it again from the current speaker; if the server no longer has it, say so and offer the text back. */
+async function reattach(turn, err) {
+  await new Promise((r) => setTimeout(r, 1500));
+  const resp = await fetch("/api/ask/runs").catch(() => null);
+  const run = resp?.ok ? (await resp.json()).runs.find((r) => r.run_id === turn.run) : null;
+  if (run) {
+    Object.assign(turn, { steps: [], text: "", cites: {} });
+    const ev = await fetch(`/api/ask/run/${run.run_id}/events?start=${run.turn_start || 0}`).catch(() => null);
+    if (ev?.ok) { say("Reconnected."); return followTurn(ev, turn).catch(() => turn); }
+  }
+  turn.error = `The connection dropped (${err.message}) and the server no longer has this run, most likely because it restarted. ` +
+    `Nothing was saved for this turn; your text is back in the box to send again.`;
+  const input = $("#askInput");
+  if (!input.value.trim() && S.ask.turns.includes(turn)) input.value = turn.speaker ? "" : turn.question;
+  return turn;
 }
 async function followTurn(resp, turn) {
   const reader = resp.body.getReader(), dec = new TextDecoder();
