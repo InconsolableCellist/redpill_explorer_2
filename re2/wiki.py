@@ -376,9 +376,15 @@ def attach_new(conn: sqlite3.Connection, cfg, stats: UpdateStats) -> None:
         rows = [row_of[m] for m in members if m in row_of]
         if not rows:
             return None, None
-        c = vecs[rows].mean(axis=0)
-        c /= max(float(np.linalg.norm(c)), 1e-12)
-        sims = vecs[rows] @ c
+        members_v = vecs[rows]
+        total = members_v.sum(axis=0)
+        c = total / max(float(np.linalg.norm(total)), 1e-12)
+        if len(rows) == 1:
+            return c, 1.0
+        # Each member against the centroid of the others: a member counts toward its own centroid, which
+        # would set the bar higher than any newcomer can reach in a small page.
+        others = total[None, :] - members_v
+        sims = (members_v * others).sum(axis=1) / np.maximum(np.linalg.norm(others, axis=1), 1e-12)
         return c, float(np.percentile(sims, 10)) if len(rows) >= 5 else float(sims.min())
 
     t_cent, t_floor, t_pages = [], [], []
@@ -469,10 +475,11 @@ def mark_stale(conn: sqlite3.Connection, stats: UpdateStats | None = None) -> Up
     with conn:
         for p in pages:
             stale = not p["built_at"]
-            if not stale:
+            if not stale and p["kind"] != "overview":   # the overview has no members of its own, only themes
                 n = changes(conn, p, hashes)
                 total = p["members_total"] or 0
                 stale = total > 0 and n >= max(1, math.ceil(STALE_FRACTION * total))
+            if not stale and p["built_at"]:
                 # A child page rewritten since this page was written.
                 stale = stale or any(c["built_at"] and c["built_at"] > p["built_at"]
                                      for c in pages if c["parent_slug"] == p["slug"] and c["kind"] != "entity")
