@@ -532,11 +532,16 @@ def _fill_candidates(conn, cfg, embed_client, question: str, scopes: list[str], 
 def run(conn: sqlite3.Connection, cfg, question: str, scopes: list[str] | None = None, mode: str = "informed",
         session_id: str | None = None, client: httpx.Client | None = None,
         embed_client: httpx.Client | None = None, items: list[int] | None = None, related: bool = False,
-        depth: float | None = None, control: Control | None = None) -> Iterator[tuple[str, dict]]:
+        depth: float | None = None, control: Control | None = None,
+        debate: dict | None = None) -> Iterator[tuple[str, dict]]:
     """One turn. items are what the user attached ("discuss this"); related gathers items around them;
-    depth (0..1) sets how much the agent reads and how much of the window the answer's notes may fill."""
+    depth (0..1) sets how much the agent reads and how much of the window the answer's notes may fill.
+    debate (argue.py) makes it one speaker's turn: {role, system, answer_system, instruction, label, cited}.
+    The question is then the debate prompt, the transcript replaces the session history, and the turn is
+    logged under the speaker's label with mode = role."""
     scopes = scopes or []
     mode = mode if mode in ANSWER_INSTRUCTIONS else "informed"
+    mode_instruction = ANSWER_INSTRUCTIONS[mode]
     session_id = session_id or uuid.uuid4().hex[:12]
     client = client or httpx.Client()
     embed_client = embed_client or httpx.Client()
@@ -551,6 +556,15 @@ def run(conn: sqlite3.Connection, cfg, question: str, scopes: list[str] | None =
     system = SYSTEM_PROMPT.replace("{wiki_tools}", WIKI_TOOLS if _has_wiki(conn) else "") \
                           .replace("{scope_note}", _scope_note(conn, scopes))
     past = history(conn, session_id)
+    answer_system, log_question = ANSWER_SYSTEM, question
+    if debate:
+        system += "\n\n" + debate["system"]
+        answer_system, log_question, past = debate["answer_system"], debate["label"], []
+        mode_instruction = f"{mode_instruction} {debate['instruction']}"
+        mode = debate["role"]
+        # Items cited earlier in the debate stay citable without being searched again.
+        for card in search.cards(conn, list(debate.get("cited") or [])).values():
+            ev.items.setdefault(card["media_id"], card)
     loop_budget_chars = cfg.chat_context_tokens * CHARS_PER_TOKEN * 0.7
     notes_budget = max(4000, int(pl.notes_tokens * CHARS_PER_TOKEN) - sum(len(m["content"]) for m in past))
 
@@ -654,10 +668,10 @@ def run(conn: sqlite3.Connection, cfg, question: str, scopes: list[str] | None =
 
         # A fresh conversation for the answer: after a run of JSON steps the model otherwise
         # keeps writing JSON. The research becomes notes in a single message.
-        answer_messages = [{"role": "system", "content": ANSWER_SYSTEM}, *past,
+        answer_messages = [{"role": "system", "content": answer_system}, *past,
                            {"role": "user", "content": ANSWER_PROMPT.format(
                                question=question, notes="\n\n".join(notes)[:notes_budget] or "(no research)",
-                               mode_instruction=ANSWER_INSTRUCTIONS[mode])}]
+                               mode_instruction=mode_instruction)}]
 
         def emit_cites():
             for n, ref in cites.new_cites:
@@ -701,7 +715,7 @@ def run(conn: sqlite3.Connection, cfg, question: str, scopes: list[str] | None =
             """INSERT INTO chat_log(question, retrieved_doc_ids, answer, citations_json, model, latency_ms,
                                     session_id, mode, trace_json, context_json)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (question, json.dumps(sorted(ev.items)), answer, json.dumps(citations), cfg.chat_model, latency,
+            (log_question, json.dumps(sorted(ev.items)), answer, json.dumps(citations), cfg.chat_model, latency,
              session_id, mode, json.dumps(trace, ensure_ascii=False), json.dumps(context)))
     if stopped:
         yield "stopped", {}
@@ -766,8 +780,15 @@ def start_run(cfg, question: str, scopes: list[str], mode: str, session_id: str 
               client: httpx.Client | None = None, embed_client: httpx.Client | None = None) -> Run:
     """Run one turn on a thread of its own, so it finishes (and is logged) whoever is watching."""
     session_id = session_id or uuid.uuid4().hex[:12]
-    r = Run(session_id, question, {"items": list(items or []), "related": related, "depth": depth, "scopes": scopes,
-                                   "mode": mode})
+    context = {"items": list(items or []), "related": related, "depth": depth, "scopes": scopes, "mode": mode}
+    return start_background(cfg, session_id, question, context, lambda conn, control: run(
+        conn, cfg, question, scopes=scopes, mode=mode, session_id=session_id, client=client,
+        embed_client=embed_client, items=items, related=related, depth=depth, control=control))
+
+
+def start_background(cfg, session_id: str, question: str, context: dict, events) -> Run:
+    """events(conn, control) yields (name, data); it runs on a thread with its own connection."""
+    r = Run(session_id, question, context)
     with _runs_lock:
         for rid in [k for k, v in RUNS.items() if v.finished and time.time() - v.finished > KEEP_FINISHED_S]:
             del RUNS[rid]
@@ -777,9 +798,7 @@ def start_run(cfg, question: str, scopes: list[str], mode: str, session_id: str 
     def work():
         conn = db.connect(cfg.db_path)
         try:
-            for name, data in run(conn, cfg, question, scopes=scopes, mode=mode, session_id=session_id,
-                                  client=client, embed_client=embed_client, items=items, related=related,
-                                  depth=depth, control=r.control):
+            for name, data in events(conn, r.control):
                 r.add(name, data)
         except Exception as exc:  # noqa: BLE001 - whoever watches must see an end, not silence
             log.exception("ask run %s failed", r.id)

@@ -191,6 +191,8 @@ ADDED_COLUMNS = [
     ("chat_log", "mode", "TEXT"),             # informed | archive
     ("chat_log", "trace_json", "TEXT"),       # the agent's steps: action, args, result size, timing
     ("chat_log", "context_json", "TEXT"),     # what the user attached: items, related, depth
+    ("chat_session", "kind", "TEXT"),         # NULL or 'ask' | 'argue'
+    ("chat_session", "seed_json", "TEXT"),    # argue: the Ask question and answer a debate started from
 ]
 
 

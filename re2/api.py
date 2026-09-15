@@ -349,6 +349,27 @@ def create_app(cfg: config.Config | None = None) -> FastAPI:
                             embed_client=embed_client)
         return sse(run.follow())
 
+    @app.post("/api/argue")
+    def argue_endpoint(body: dict = Body(...)):
+        """A debate turn: the AI speakers that are due (both sides when watching, the other side when the user
+        takes one), streamed like /api/ask. Each speaker's turn is logged as it finishes."""
+        from re2 import argue
+
+        role = body.get("user_role") or None
+        seed = body.get("seed") if isinstance(body.get("seed"), dict) else None
+        with closing(open_ro(cfg)) as conn:
+            scopes, items, depth = ask_context(conn, body)
+            try:
+                run = argue.start(cfg, session_id=body.get("session_id") or None, topic=str(body.get("topic") or ""),
+                                  user_role=role, user_text=str(body.get("user_text") or ""),
+                                  rounds=int(body.get("rounds") or 1), seed=seed, scopes=scopes,
+                                  mode=str(body.get("mode") or "informed"), depth=depth, items=items,
+                                  related=bool(body.get("related")), client=chat_client, embed_client=embed_client,
+                                  conn=conn)
+            except (ValueError, TypeError) as exc:
+                raise HTTPException(400, str(exc)) from exc
+        return sse(run.follow())
+
     @app.get("/api/ask/runs")
     def ask_runs():
         from re2 import ask
@@ -431,7 +452,7 @@ def create_app(cfg: config.Config | None = None) -> FastAPI:
             if not search._has_table(conn, "chat_session"):
                 return {"sessions": []}
             rows = conn.execute(
-                """SELECT s.id, s.title, s.created_at, COUNT(l.id) AS turns FROM chat_session s
+                """SELECT s.id, s.title, s.created_at, coalesce(s.kind, 'ask') AS kind, COUNT(l.id) AS turns FROM chat_session s
                    LEFT JOIN chat_log l ON l.session_id=s.id GROUP BY s.id
                    ORDER BY coalesce(MAX(l.ts), s.created_at) DESC LIMIT ?""",
                 (max(1, min(limit, 200)),)).fetchall()
@@ -446,6 +467,8 @@ def create_app(cfg: config.Config | None = None) -> FastAPI:
             rows = conn.execute(
                 """SELECT question, answer, citations_json, trace_json, context_json, mode, ts, latency_ms FROM chat_log
                    WHERE session_id=? ORDER BY id""", (session_id,)).fetchall()
+            meta = conn.execute("SELECT title, coalesce(kind, 'ask') AS kind, seed_json FROM chat_session WHERE id=?",
+                                (session_id,)).fetchone()
             turns = []
             for r in rows:
                 cites = json.loads(r["citations_json"] or "[]")
@@ -459,7 +482,9 @@ def create_app(cfg: config.Config | None = None) -> FastAPI:
                               "steps": json.loads(r["trace_json"] or "[]"), "mode": r["mode"], "ts": r["ts"],
                               "context": json.loads(r["context_json"] or "null"),
                               "sentences": ask.sentences_with_flags(r["answer"] or "")})
-            return {"session_id": session_id, "turns": turns}
+            return {"session_id": session_id, "turns": turns, "kind": meta["kind"] if meta else "ask",
+                    "title": meta["title"] if meta else None,
+                    "seed": json.loads(meta["seed_json"]) if meta and meta["seed_json"] else None}
 
     # ── Settings ──────────────────────────────────────────────────────────
 
