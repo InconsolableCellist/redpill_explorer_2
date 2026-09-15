@@ -349,11 +349,12 @@ def hit_dicts(conn: sqlite3.Connection, hits: list[Hit]) -> list[dict]:
 
 # ── Lenses and correlations ────────────────────────────────────────────────
 
-LENS_MEDIA = 500
+LENS_MEDIA = 500      # search results: lenses describe the best matches
+SCOPE_LENS_MEDIA = 20000  # browsing a scope with no query: lenses describe everything in it
 
 
-def lenses(conn: sqlite3.Connection, media_ids: list[int]) -> dict:
-    ids = media_ids[:LENS_MEDIA]
+def lenses(conn: sqlite3.Connection, media_ids: list[int], max_media: int = LENS_MEDIA) -> dict:
+    ids = media_ids[:max_media]
     if not ids:
         return {"n": 0, "entities": [], "tags": [], "folders": [], "kinds": {}, "statuses": {}, "months": []}
     table = _temp_ids(conn, "lens_media", ids)
@@ -407,9 +408,10 @@ def _overall_counts(conn: sqlite3.Connection, what: str) -> tuple[int, dict[int,
     return n_items, counts
 
 
-def correlations(conn: sqlite3.Connection, media_ids: list[int], limit: int = 15, min_count: int = 3) -> list[dict]:
+def correlations(conn: sqlite3.Connection, media_ids: list[int], limit: int = 15, min_count: int = 3,
+                 max_media: int = LENS_MEDIA) -> list[dict]:
     """Entities and tags over-represented in the result set, scored by lift * log(count)."""
-    ids = media_ids[:LENS_MEDIA]
+    ids = media_ids[:max_media]
     if len(ids) < min_count:
         return []
     table = _temp_ids(conn, "corr_media", ids)
@@ -474,3 +476,60 @@ def similar(conn: sqlite3.Connection, cfg, media_id: int, k: int = 12) -> list[i
 
 def dumps(obj) -> str:
     return json.dumps(obj, ensure_ascii=False, separators=(",", ":"))
+
+
+# ── Co-occurrence graph ────────────────────────────────────────────────────
+
+def cooccurrence(conn: sqlite3.Connection, allowed: set[int] | None, kind: str = "entity", limit: int = 150,
+                 min_pair: int = 3, min_npmi: float = 0.05) -> dict:
+    """Top entities (or tags) in scope as nodes; edges weighted by normalized PMI of sharing an item.
+
+    npmi = log(p_ab / (p_a * p_b)) / -log(p_ab), in [-1, 1]; 0 means independent.
+    """
+    if kind == "entity":
+        link, key, label_sql = "media_entity", "entity_id", "SELECT id, name, type FROM entity WHERE id IN"
+    else:
+        link, key, label_sql = "media_tag", "tag_id", "SELECT id, name, 'tag' FROM tag WHERE id IN"
+    # Excluded and unsupported files never get entities or tags, so only a scope needs a media filter.
+    restrict, pair_filter = "", ""
+    if allowed is not None:
+        table = _temp_ids(conn, "graph_media", allowed)
+        restrict = f"WHERE l.media_id IN (SELECT id FROM {table})"
+        pair_filter = f"AND a.media_id IN (SELECT id FROM {table})"
+    n_items = conn.execute(f"SELECT COUNT(DISTINCT l.media_id) FROM {link} l {restrict}").fetchone()[0]
+    counts = conn.execute(
+        f"""SELECT l.{key}, COUNT(DISTINCT l.media_id) AS n FROM {link} l {restrict}
+            GROUP BY l.{key} HAVING n >= 2 ORDER BY n DESC LIMIT ?""", (limit,)).fetchall()
+    if not counts or not n_items:
+        return {"kind": kind, "n_items": n_items, "nodes": [], "edges": []}
+    node_counts = {r[0]: r[1] for r in counts}
+    nodes_table = _temp_ids(conn, "graph_nodes", node_counts)
+    labels = {r[0]: (r[1], r[2]) for r in conn.execute(f"{label_sql} (SELECT id FROM {nodes_table})")}
+    # Pair counts as M.T @ M over an items x nodes incidence matrix: milliseconds, where the
+    # equivalent SQL self-join over the most common tags takes over a second.
+    node_ids = list(node_counts)
+    col = {node: j for j, node in enumerate(node_ids)}
+    rows = conn.execute(
+        f"""SELECT DISTINCT l.media_id, l.{key} FROM {link} l
+            WHERE l.{key} IN (SELECT id FROM {nodes_table}) {pair_filter.replace("a.media_id", "l.media_id")}""").fetchall()
+    item_index: dict[int, int] = {}
+    ii = np.fromiter((item_index.setdefault(m, len(item_index)) for m, _ in rows), dtype=np.int64, count=len(rows))
+    jj = np.fromiter((col[n] for _, n in rows), dtype=np.int64, count=len(rows))
+    incidence = np.zeros((len(item_index), len(node_ids)), dtype=np.float32)
+    incidence[ii, jj] = 1.0
+    together = incidence.T @ incidence
+    edges = []
+    for a_idx, b_idx in zip(*np.nonzero(np.triu(together, k=1) >= min_pair)):
+        n_ab = int(together[a_idx, b_idx])
+        a, b = node_ids[a_idx], node_ids[b_idx]
+        p_ab = n_ab / n_items
+        p_a, p_b = node_counts[a] / n_items, node_counts[b] / n_items
+        npmi = 1.0 if p_ab >= 1 else math.log(p_ab / (p_a * p_b)) / -math.log(p_ab)
+        if npmi >= min_npmi:
+            edges.append({"a": a, "b": b, "n": n_ab, "w": round(npmi, 3)})
+    edges.sort(key=lambda e: (-e["w"], -e["n"]))
+    edges = edges[: limit * 4]
+    prefix = "entity" if kind == "entity" else "tag"
+    nodes = [{"id": i, "scope": f"{prefix}:{i}", "name": labels.get(i, (str(i), ""))[0],
+              "type": labels.get(i, ("", kind))[1], "n": n} for i, n in node_counts.items()]
+    return {"kind": kind, "n_items": n_items, "nodes": nodes, "edges": edges}

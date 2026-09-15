@@ -394,6 +394,11 @@ mark { background: var(--hot-w); color: var(--ink); padding: 0 1px; }
 .src a { color: var(--blue); overflow-wrap: anywhere; font-size: 13px; }
 .src a:hover { color: var(--hot); }
 
+/* ── Graph ───────────────────────────────────────────────── */
+.gr { background: var(--stock-card); border: 1px solid var(--rule-soft); box-shadow: var(--shadow); padding: 8px 10px 6px; margin-bottom: 12px; }
+.gr canvas { width: 100%; height: min(62vh, 620px); display: block; cursor: pointer; touch-action: none; }
+.gr__bar { display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: baseline; justify-content: space-between; margin-top: 4px; }
+
 /* ── Timeline ────────────────────────────────────────────── */
 .tl { background: var(--stock-card); border: 1px solid var(--rule-soft); box-shadow: var(--shadow); padding: 10px 12px 6px; margin-bottom: 12px; }
 .tl canvas { width: 100%; height: 190px; display: block; cursor: crosshair; }
@@ -500,7 +505,7 @@ mark { background: var(--hot-w); color: var(--ink); padding: 0 1px; }
         <button class="btn mode-btn" data-mode="search" title="Search (gs)">Search</button>
         <button class="btn mode-btn" data-mode="timeline" title="Timeline (gt)">Timeline</button>
         <button class="btn mode-btn" data-mode="wiki" disabled title="Wiki (gw) — arrives with Phase 6">Wiki</button>
-        <button class="btn mode-btn" data-mode="graph" disabled title="Graph (gn) — arrives with Phase 8.4">Graph</button>
+        <button class="btn mode-btn" data-mode="graph" title="Graph (gn)">Graph</button>
         <button class="btn mode-btn" data-mode="map" disabled title="Map (gm) — arrives with Phase 8.4">Map</button>
         <button class="btn mode-btn" data-mode="ask" disabled title="Ask (ga) — arrives with Phase 7">Ask</button>
         <button class="btn" id="themeBtn" title="Theme">◐</button>
@@ -513,6 +518,7 @@ mark { background: var(--hot-w); color: var(--ink); padding: 0 1px; }
     <aside class="col lenses" id="lenses" aria-label="Lenses"></aside>
     <section class="col results" id="results" aria-label="Results">
       <div id="timeline" hidden></div>
+      <div id="graph" hidden></div>
       <div class="results__head"><span class="label" id="resultsLabel">Recent</span><span class="label tnum" id="resultsCount"></span></div>
       <div class="list" id="list"></div>
       <button class="btn more-btn" id="moreBtn" hidden>Load more</button>
@@ -564,7 +570,8 @@ mark { background: var(--hot-w); color: var(--ink); padding: 0 1px; }
         <div class="keys">
           <kbd>g s</kbd><span>Search</span>
           <kbd>g t</kbd><span>Timeline. There <kbd>h l</kbd> move by month, <kbd>H L</kbd> by year, <kbd>v</kbd> marks a range, <kbd>&gt;</kbd> narrows to it</span>
-          <kbd>g w</kbd><span>Wiki · <kbd>g n</kbd> graph · <kbd>g m</kbd> map · <kbd>g a</kbd> ask — as they are built</span>
+          <kbd>g n</kbd><span>Graph of who and what appear together. <kbd>h l</kbd> step through nodes, <kbd>&gt;</kbd> narrows to one, <kbd>T</kbd> switches entities / tags. Click a node; double-click narrows.</span>
+          <kbd>g w</kbd><span>Wiki · <kbd>g m</kbd> map · <kbd>g a</kbd> ask — as they are built</span>
           <kbd>?</kbd><span>This panel</span>
         </div>
       </div>
@@ -576,6 +583,7 @@ mark { background: var(--hot-w); color: var(--ink); padding: 0 1px; }
       <nav class="phone-modes">
         <button class="btn" data-mode="search">Search</button>
         <button class="btn" data-mode="timeline">Time</button>
+        <button class="btn" data-mode="graph">Graph</button>
       </nav>
     </div>
   </footer>
@@ -639,6 +647,7 @@ const S = {
   count: "",
   pending: "",
   tl: { data: null, cursor: -1, mark: null },
+  gr: { data: null, kind: store("graphKind") || "entity", cursor: 0, order: [], pos: null, hover: -1 },
 };
 
 /* ── URL hash ─────────────────────────────────────────────── */
@@ -660,7 +669,7 @@ function readHash() {
   let mode = parts[0] || "search";
   let open = p.get("open");
   if (mode === "item") { mode = "search"; open = parts[1]; }
-  if (!["search", "timeline"].includes(mode)) mode = "search";
+  if (!["search", "timeline", "graph"].includes(mode)) mode = "search";
   return { mode, q: p.get("q") || "", scopes: p.getAll("s"), open: open ? Number(open) : null };
 }
 
@@ -717,6 +726,7 @@ async function runSearch() {
   }
   finishStale(my);
   if (S.mode === "timeline" && my === gen) loadTimeline();
+  if (S.mode === "graph" && my === gen) loadGraph();
 }
 function finishStale(my) {
   if (my !== gen) return;
@@ -1207,9 +1217,188 @@ function tlNarrow() {
   pushScope(scope, scope.slice(5));
 }
 
+/* ── Graph ────────────────────────────────────────────────── */
+let grReq = 0;
+async function loadGraph() {
+  const my = ++grReq;
+  const resp = await fetch(`/api/graph?${queryParams({ kind: S.gr.kind })}`);
+  if (!resp.ok || my !== grReq) return;
+  const data = await resp.json();
+  S.gr.data = data;
+  S.gr.order = data.nodes.map((_, i) => i).sort((a, b) => data.nodes[b].n - data.nodes[a].n);
+  S.gr.cursor = Math.min(S.gr.cursor, Math.max(0, S.gr.order.length - 1));
+  S.gr.pos = layoutGraph(data);
+  renderGraph();
+  grListNode();
+}
+
+/* Fruchterman–Reingold on at most a few hundred nodes: a few hundred iterations,
+   then frozen. Deterministic starting points so the same scope draws the same map. */
+function layoutGraph(data) {
+  const n = data.nodes.length;
+  const idx = new Map(data.nodes.map((nd, i) => [nd.id, i]));
+  const pos = data.nodes.map((nd, i) => {
+    const a = i * 2.399963, r = Math.sqrt(i + 1) / Math.sqrt(n + 1);
+    return { x: Math.cos(a) * r, y: Math.sin(a) * r, dx: 0, dy: 0 };
+  });
+  const edges = data.edges.map((e) => [idx.get(e.a), idx.get(e.b), e.w]).filter((e) => e[0] != null && e[1] != null);
+  const k = 1.1 / Math.sqrt(Math.max(n, 1));
+  let temp = 0.12;
+  for (let it = 0; it < 320; it++) {
+    for (const p of pos) { p.dx = 0; p.dy = 0; }
+    for (let i = 0; i < n; i++) {
+      const pi = pos[i];
+      for (let j = i + 1; j < n; j++) {
+        const pj = pos[j];
+        let dx = pi.x - pj.x, dy = pi.y - pj.y;
+        const d2 = Math.max(dx * dx + dy * dy, 1e-6);
+        const f = (k * k) / d2;
+        dx *= f; dy *= f;
+        pi.dx += dx; pi.dy += dy; pj.dx -= dx; pj.dy -= dy;
+      }
+    }
+    for (const [a, b, w] of edges) {
+      const pa = pos[a], pb = pos[b];
+      const dx = pa.x - pb.x, dy = pa.y - pb.y;
+      const d = Math.sqrt(dx * dx + dy * dy) || 1e-3;
+      const f = (d * d / k) * (0.3 + w) / d;
+      pa.dx -= dx * f; pa.dy -= dy * f; pb.dx += dx * f; pb.dy += dy * f;
+    }
+    for (const p of pos) {
+      p.dx -= p.x * 0.6; p.dy -= p.y * 0.6;   // gravity keeps islands on the page
+      const d = Math.sqrt(p.dx * p.dx + p.dy * p.dy) || 1;
+      const step = Math.min(d, temp);
+      p.x += (p.dx / d) * step; p.y += (p.dy / d) * step;
+    }
+    temp *= 0.985;
+  }
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  for (const p of pos) { minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x); minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y); }
+  return pos.map((p) => ({ x: (p.x - minX) / ((maxX - minX) || 1), y: (p.y - minY) / ((maxY - minY) || 1) }));
+}
+
+function renderGraph() {
+  const host = $("#graph");
+  if (!host.firstChild) {
+    host.innerHTML = `<div class="gr"><canvas id="grCanvas" aria-label="Co-occurrence graph"></canvas>` +
+      `<div class="gr__bar"><span class="label" id="grCur"></span><span class="meta" id="grInfo"></span></div></div>`;
+    const canvas = $("#grCanvas");
+    const pick = (e) => {
+      const r = canvas.getBoundingClientRect();
+      const mx = e.clientX - r.left, my = e.clientY - r.top;
+      let best = -1, bestD = 18 * 18;
+      (S.gr.screen || []).forEach((p, i) => {
+        const d = (p.x - mx) ** 2 + (p.y - my) ** 2;
+        if (d < Math.max(bestD, p.r * p.r)) { best = i; bestD = d; }
+      });
+      return best;
+    };
+    canvas.addEventListener("mousemove", (e) => { const i = pick(e); if (i !== S.gr.hover) { S.gr.hover = i; drawGraph(); } });
+    canvas.addEventListener("mouseleave", () => { S.gr.hover = -1; drawGraph(); });
+    canvas.addEventListener("click", (e) => {
+      const i = pick(e); if (i < 0) return;
+      S.gr.cursor = S.gr.order.indexOf(i); setFocus("results"); drawGraph(); grListNode();
+    });
+    canvas.addEventListener("dblclick", (e) => { const i = pick(e); if (i >= 0) { S.gr.cursor = S.gr.order.indexOf(i); grNarrow(); } });
+    new ResizeObserver(() => drawGraph()).observe(canvas);
+  }
+  drawGraph();
+}
+
+function drawGraph() {
+  const canvas = $("#grCanvas");
+  const data = S.gr.data;
+  if (!canvas || !data || !S.gr.pos) return;
+  const dpr = window.devicePixelRatio || 1;
+  const w = canvas.clientWidth, h = canvas.clientHeight;
+  canvas.width = w * dpr; canvas.height = h * dpr;
+  const g = canvas.getContext("2d");
+  g.scale(dpr, dpr);
+  g.clearRect(0, 0, w, h);
+  $("#grInfo").textContent = `${fmtN(data.nodes.length)} ${data.kind === "entity" ? "entities" : "tags"} · ${fmtN(data.edges.length)} links · ${fmtN(data.n_items)} items · T switches`;
+  if (!data.nodes.length) {
+    $("#grCur").textContent = data.kind === "entity" ? "No entities here yet — they arrive as the vision model reads images. T for tags." : "No tags here.";
+    S.gr.screen = [];
+    return;
+  }
+  const pad = 36;
+  const maxN = Math.max(...data.nodes.map((nd) => nd.n));
+  const screen = S.gr.pos.map((p, i) => ({
+    x: pad + p.x * (w - 2 * pad), y: pad + p.y * (h - 2 * pad),
+    r: 2.5 + 11 * Math.sqrt(data.nodes[i].n / maxN),
+  }));
+  S.gr.screen = screen;
+  const idx = new Map(data.nodes.map((nd, i) => [nd.id, i]));
+  const cur = S.gr.order[S.gr.cursor];
+  const focus = S.gr.hover >= 0 ? S.gr.hover : cur;
+  const neighbors = new Set();
+  const ink = cssVar("--ink"), ink3 = cssVar("--ink-3"), rule = cssVar("--rule"), blue = cssVar("--blue"), hot = cssVar("--hot");
+  for (const e of data.edges) {
+    const a = idx.get(e.a), b = idx.get(e.b);
+    const on = a === focus || b === focus;
+    if (on) { neighbors.add(a); neighbors.add(b); }
+    g.strokeStyle = on ? hot : rule;
+    g.globalAlpha = on ? 0.35 + 0.6 * e.w : 0.12 + 0.5 * e.w;
+    g.lineWidth = on ? 1.5 : 1;
+    g.beginPath(); g.moveTo(screen[a].x, screen[a].y); g.lineTo(screen[b].x, screen[b].y); g.stroke();
+  }
+  g.globalAlpha = 1;
+  data.nodes.forEach((nd, i) => {
+    const p = screen[i];
+    const dim = focus != null && focus >= 0 && neighbors.size && !neighbors.has(i) && i !== focus;
+    g.globalAlpha = dim ? 0.35 : 1;
+    g.fillStyle = i === cur ? hot : blue;
+    g.beginPath(); g.arc(p.x, p.y, p.r, 0, Math.PI * 2); g.fill();
+    if (i === focus && i !== cur) { g.strokeStyle = hot; g.lineWidth = 2; g.stroke(); }
+  });
+  g.globalAlpha = 1;
+  const labelled = new Set([...S.gr.order.slice(0, 28), cur, focus, ...neighbors]);
+  g.font = `11px ${cssVar("--font-mono")}`;
+  g.textBaseline = "middle";
+  for (const i of labelled) {
+    if (i == null || i < 0) continue;
+    const p = screen[i], nd = data.nodes[i];
+    const label = nd.name.length > 28 ? nd.name.slice(0, 27) + "…" : nd.name;
+    const x = p.x + p.r + 4, tw = g.measureText(label).width;
+    g.fillStyle = cssVar("--stock-card"); g.globalAlpha = 0.8;
+    g.fillRect(x - 2, p.y - 7, tw + 4, 14);
+    g.globalAlpha = 1;
+    g.fillStyle = i === cur ? hot : (neighbors.has(i) || i === focus ? ink : ink3);
+    g.fillText(label, x, p.y);
+  }
+  const nd = data.nodes[cur];
+  if (nd) $("#grCur").textContent = `${nd.name} · ${fmtN(nd.n)} items · ${Math.max(0, neighbors.size - 1)} linked`;
+}
+
+let grListTimer = 0;
+function grMove(delta) {
+  if (!S.gr.order.length) return;
+  S.gr.cursor = Math.max(0, Math.min(S.gr.order.length - 1, S.gr.cursor + delta));
+  drawGraph();
+  clearTimeout(grListTimer);
+  grListTimer = setTimeout(grListNode, 160);
+}
+async function grListNode() {
+  const nd = S.gr.data?.nodes[S.gr.order[S.gr.cursor]];
+  if (!nd) return;
+  const p = queryParams({ limit: 40 });
+  p.append("s", nd.scope);
+  const resp = await fetch(`/api/items?${p}`);
+  if (!resp.ok) return;
+  const data = await resp.json();
+  S.hits = data.hits; S.more = false;
+  $("#resultsLabel").textContent = `${nd.name}${S.q ? " · matching" : ""}`;
+  S.cursor.results = 0;
+  renderResults();
+}
+function grNarrow() {
+  const nd = S.gr.data?.nodes[S.gr.order[S.gr.cursor]];
+  if (nd) pushScope(nd.scope, nd.name);
+}
+
 /* ── Modes ────────────────────────────────────────────────── */
 function setMode(mode) {
-  if (!["search", "timeline"].includes(mode)) return say(`${mode[0].toUpperCase() + mode.slice(1)} arrives in a later phase.`);
+  if (!["search", "timeline", "graph"].includes(mode)) return say(`${mode[0].toUpperCase() + mode.slice(1)} arrives in a later phase.`);
   S.mode = mode;
   navigate();
 }
@@ -1217,13 +1406,14 @@ function renderModes() {
   $$("[data-mode]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.mode === S.mode)));
   const tl = $("#timeline");
   tl.hidden = S.mode !== "timeline";
-  if (S.mode === "timeline") loadTimeline();
+  $("#graph").hidden = S.mode !== "graph";
 }
 
 /* ── Actions ──────────────────────────────────────────────── */
 function narrowHere() {
   // In the timeline, > narrows to the month (or marked range) on the axis; * still takes an item's entity.
   if (S.mode === "timeline" && S.focus === "results" && S.tl.months?.length) return tlNarrow();
+  if (S.mode === "graph" && S.focus === "results" && S.gr.order.length) return grNarrow();
   if (S.focus === "lenses") {
     const row = rowsOf("lenses")[S.cursor.lenses];
     if (row) return pushScope(row.dataset.scope, row.dataset.label);
@@ -1354,14 +1544,16 @@ function onKey(e) {
   if (seq === "y") return done(() => { if (k === "y") copyCitation(); });
 
   const timelineAxis = S.mode === "timeline" && S.focus === "results";
+  const graphAxis = S.mode === "graph" && S.focus === "results";
   const inReaderVideo = S.focus === "reader" && $("#reader video");
 
   switch (k) {
     case "g": case "y": e.preventDefault(); S.pending = k; paintMode(); return;
     case "j": case "ArrowDown": return done(() => move(n));
     case "k": case "ArrowUp": return done(() => move(-n));
-    case "h": return done(() => timelineAxis ? tlMove(-n) : setFocus(COLS[Math.max(0, COLS.indexOf(S.focus) - 1)]));
-    case "l": return done(() => timelineAxis ? tlMove(n) : setFocus(S.open != null ? COLS[Math.min(2, COLS.indexOf(S.focus) + 1)] : "results"));
+    case "h": return done(() => timelineAxis ? tlMove(-n) : graphAxis ? grMove(-n) : setFocus(COLS[Math.max(0, COLS.indexOf(S.focus) - 1)]));
+    case "l": return done(() => timelineAxis ? tlMove(n) : graphAxis ? grMove(n) : setFocus(S.open != null ? COLS[Math.min(2, COLS.indexOf(S.focus) + 1)] : "results"));
+    case "T": if (S.mode === "graph") return done(() => { S.gr.kind = S.gr.kind === "entity" ? "tag" : "entity"; store("graphKind", S.gr.kind); S.gr.cursor = 0; loadGraph(); say(`Graph of ${S.gr.kind === "entity" ? "entities" : "tags"}.`); }); break;
     case "H": if (timelineAxis) return done(() => tlMove(-12 * n)); break;
     case "L": if (timelineAxis) return done(() => tlMove(12 * n)); break;
     case "v": if (timelineAxis) return done(() => { S.tl.mark = S.tl.mark == null ? S.tl.cursor : null; drawTimeline(); say(S.tl.mark == null ? "Range cleared." : "Range started: move, then > to narrow."); }); break;
@@ -1469,6 +1661,7 @@ $("#themeBtn").addEventListener("click", () => {
   document.documentElement.dataset.theme = next;
   store("theme", next);
   drawTimeline();
+  drawGraph();
 });
 window.addEventListener("popstate", fromHash);
 new ResizeObserver(() => {

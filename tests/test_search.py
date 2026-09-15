@@ -111,3 +111,19 @@ def test_lenses_and_correlations(conn):
 
 def test_items_in_scope_orders_by_date(conn):
     assert search.items_in_scope(conn, None)[:2] == [1, 4]
+
+
+def test_cooccurrence_graph(conn):
+    conn.executescript("""
+        INSERT INTO media(id, uid, kind, status) VALUES (6, 'f', 'image', 'READY'), (7, 'g', 'image', 'READY'),
+                                                         (8, 'h', 'image', 'READY');
+        INSERT INTO media_entity(media_id, entity_id) VALUES (1, 3), (6, 1), (6, 3), (7, 1), (7, 3), (8, 2);
+    """)
+    g = search.cooccurrence(conn, None, kind="entity", min_pair=2)
+    names = {n["id"]: n["name"] for n in g["nodes"]}
+    assert set(names.values()) == {"Ukraine", "Georgia", "Justin Trudeau"}
+    assert len(g["edges"]) == 1
+    edge = g["edges"][0]
+    assert {names[edge["a"]], names[edge["b"]]} == {"Ukraine", "Justin Trudeau"} and edge["n"] == 4 and edge["w"] > 0
+    scoped = search.cooccurrence(conn, {6, 7}, kind="entity", min_pair=2)
+    assert scoped["n_items"] == 2

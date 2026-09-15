@@ -84,13 +84,14 @@ def create_app(cfg: config.Config | None = None) -> FastAPI:
                              "n_in_scope": None if allowed is None else len(allowed)})
                 query = q.strip()
                 if not query:
-                    order = search.items_in_scope(conn, allowed, limit=search.LENS_MEDIA)
+                    order = search.items_in_scope(conn, allowed, limit=search.SCOPE_LENS_MEDIA)
                     card_map = search.cards(conn, order[:HITS_PER_PAGE])
                     yield _line({"t": "items", "hits": [card_map[m] for m in order[:HITS_PER_PAGE] if m in card_map],
                                  "more": len(order) > HITS_PER_PAGE})
-                    yield _line({"t": "lenses", "data": search.lenses(conn, order)})
+                    yield _line({"t": "lenses", "data": search.lenses(conn, order, max_media=search.SCOPE_LENS_MEDIA)})
                     if allowed is not None:
-                        yield _line({"t": "correlations", "data": search.correlations(conn, order)})
+                        yield _line({"t": "correlations", "data": search.correlations(
+                            conn, order, max_media=search.SCOPE_LENS_MEDIA)})
                     lap("total", started)
                     yield _line({"t": "done", "ms": timings})
                     return
@@ -175,6 +176,20 @@ def create_app(cfg: config.Config | None = None) -> FastAPI:
                 if weak:
                     row["weak"] += n
             return {"months": [months[k] for k in sorted(months)], "undated": undated, "events": []}
+
+    @app.get("/api/graph")
+    def graph(q: str = "", s: list[str] = Query(default=[]), kind: str = "entity", limit: int = 150):
+        """Co-occurrence network of entities (or tags) over the items in scope, weighted by normalized PMI."""
+        if kind not in ("entity", "tag"):
+            raise HTTPException(400, "kind must be entity or tag")
+        limit = max(10, min(limit, 300))
+        with closing(open_ro(cfg)) as conn:
+            allowed, _ = parse_scopes(conn, s)
+            if q.strip():
+                matched = set(search.group_by_media(
+                    conn, search.lexical(conn, q.strip(), k=20000, allowed=allowed), q, limit=0)[1])
+                allowed = matched if allowed is None else allowed & matched
+            return search.cooccurrence(conn, allowed, kind=kind, limit=limit)
 
     # ── Items ─────────────────────────────────────────────────────────────
 
