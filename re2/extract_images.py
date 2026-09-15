@@ -19,6 +19,9 @@ from re2.config import REPO_ROOT
 log = logging.getLogger(__name__)
 
 STAGE = "vlm_image"
+# Bump when the image prompt or schema changes enough that every caption should be redone.
+# Captions made with an older version are extracted again after the uncaptioned images.
+PROMPT_VERSION = 2
 LOW_RES_SIDE = 500
 USER_TEXT = "Catalogue this image."
 LOW_RES_TEXT = " The image is a low-resolution thumbnail; transcribe what is legible."
@@ -64,20 +67,19 @@ def store_entities(conn: sqlite3.Connection, media_id: int, entities: dict) -> N
 def store_image_result(conn: sqlite3.Connection, cfg, media_id: int, d: dict, low_res: bool) -> None:
     """Write one extraction in a single transaction."""
     payload = {k: v for k, v in d.items() if not k.startswith("_")}
+    payload["prompt_version"] = PROMPT_VERSION
     with conn:
+        # Replace rather than update, so a redone caption gets a new doc id and the embed step,
+        # which tracks doc ids, embeds the new text.
+        conn.execute("DELETE FROM doc WHERE media_id=? AND kind IN ('caption', 'ocr') AND seq=0", (media_id,))
         conn.execute(
-            """INSERT INTO doc(media_id, kind, seq, text, json, model) VALUES (?, 'caption', 0, ?, ?, ?)
-               ON CONFLICT(media_id, kind, seq) DO UPDATE SET
-                 text=excluded.text, json=excluded.json, model=excluded.model""",
+            "INSERT INTO doc(media_id, kind, seq, text, json, model) VALUES (?, 'caption', 0, ?, ?, ?)",
             (media_id, caption_text(d), json.dumps(payload, ensure_ascii=False), cfg.vision_model),
         )
         ocr = (d.get("ocr_text") or "").strip()
         if ocr:
-            conn.execute(
-                """INSERT INTO doc(media_id, kind, seq, text, model) VALUES (?, 'ocr', 0, ?, ?)
-                   ON CONFLICT(media_id, kind, seq) DO UPDATE SET text=excluded.text, model=excluded.model""",
-                (media_id, ocr, cfg.vision_model),
-            )
+            conn.execute("INSERT INTO doc(media_id, kind, seq, text, model) VALUES (?, 'ocr', 0, ?, ?)",
+                         (media_id, ocr, cfg.vision_model))
         conn.execute(
             """INSERT INTO media_meta(media_id, sensitivity, media_type, language, low_res)
                VALUES (?, ?, ?, ?, ?)
@@ -112,6 +114,7 @@ class Job:
     folder: str | None = None
     rel_path: str | None = None
     item_date: str | None = None
+    redo: bool = False  # has a caption from an older prompt version
 
 
 @dataclass
@@ -121,7 +124,7 @@ class ExtractStats:
     failed: int = 0
     tiled: int = 0
     retried_long: int = 0
-    retitled: int = 0
+    redone: int = 0
     completion_tokens: int = 0
     prompt_tokens: int = 0
     interrupted: bool = False
@@ -135,7 +138,7 @@ class ExtractStats:
         avg_out = self.completion_tokens / self.done if self.done else 0
         avg_in = self.prompt_tokens / self.done if self.done else 0
         return (f"selected={self.selected} done={self.done} failed={self.failed} tiled={self.tiled} "
-                f"retried_long={self.retried_long} retitled={self.retitled} "
+                f"retried_long={self.retried_long} redone={self.redone} "
                 f"rate={self.rate_per_min():.1f}/min avg_prompt_tokens={avg_in:.0f} "
                 f"avg_completion_tokens={avg_out:.0f}" + (" INTERRUPTED" if self.interrupted else ""))
 
@@ -150,12 +153,14 @@ def select_jobs(conn: sqlite3.Connection, cfg, limit: int | None, include_thumbn
                    (SELECT p.rel_path FROM media_path p WHERE p.media_id=m.id AND p.readable=1
                     ORDER BY p.id LIMIT 1) AS rel_path,
                    (SELECT p.rel_path FROM media_path p WHERE p.media_id=m.id ORDER BY p.id LIMIT 1) AS any_path,
-                   (SELECT mm.item_date FROM media_meta mm WHERE mm.media_id=m.id) AS item_date
+                   (SELECT mm.item_date FROM media_meta mm WHERE mm.media_id=m.id) AS item_date,
+                   EXISTS (SELECT 1 FROM doc d WHERE d.media_id=m.id AND d.kind='caption') AS redo
             FROM media m
             WHERE m.kind='image' AND m.status IN ({','.join('?' * len(statuses))})
-              AND NOT EXISTS (SELECT 1 FROM doc d WHERE d.media_id=m.id AND d.kind='caption')
-            ORDER BY m.status='THUMBNAIL_ONLY', m.id""",
-        statuses,
+              AND NOT EXISTS (SELECT 1 FROM doc d WHERE d.media_id=m.id AND d.kind='caption'
+                              AND coalesce(json_extract(d.json, '$.prompt_version'), 0) >= ?)
+            ORDER BY redo, m.status='THUMBNAIL_ONLY', m.id""",
+        (*statuses, PROMPT_VERSION),
     ).fetchall()
     jobs = []
     for r in rows:
@@ -171,79 +176,10 @@ def select_jobs(conn: sqlite3.Connection, cfg, limit: int | None, include_thumbn
         long_output = vlm.is_tall(r["width"], r["height"]) or r["id"] in ran_out
         name = r["rel_path"] or r["any_path"]
         folder = os.path.dirname(name) if name else None
-        jobs.append(Job(r["id"], path, low_res, long_output, folder, name, r["item_date"]))
+        jobs.append(Job(r["id"], path, low_res, long_output, folder, name, r["item_date"], bool(r["redo"])))
         if limit is not None and len(jobs) >= limit:
             break
     return jobs
-
-
-def _image_path(conn: sqlite3.Connection, cfg, media_id: int) -> Path | None:
-    row = conn.execute(
-        """SELECT (SELECT p.rel_path FROM media_path p WHERE p.media_id=m.id AND p.readable=1 ORDER BY p.id LIMIT 1),
-                  m.thumb_path FROM media m WHERE m.id=?""", (media_id,)).fetchone()
-    if row and row[0]:
-        return Path(cfg.corpus_root) / row[0]
-    if row and row[1]:
-        return REPO_ROOT / row[1]
-    return None
-
-
-RETITLE_STAGE = "vlm_retitle"
-
-
-def retitle(conn: sqlite3.Connection, cfg, client_factory=httpx.Client, limit: int | None = None) -> tuple[int, bool]:
-    """Add title and summary to captions extracted before those fields existed. Returns (done, finished)."""
-    skip = db.pending_failures(conn, RETITLE_STAGE)
-    rows = [(r[0], json.loads(r[1])) for r in conn.execute(
-        """SELECT media_id, json FROM doc WHERE kind='caption' AND json IS NOT NULL
-             AND json_extract(json, '$.title') IS NULL ORDER BY media_id""") if r[0] not in skip]
-    rows = [(media_id, caption, _image_path(conn, cfg, media_id)) for media_id, caption in rows]
-    if limit is not None:
-        rows = rows[:limit]
-    if not rows:
-        return 0, True
-    log.info("adding titles and summaries to %d earlier captions", len(rows))
-    local = threading.local()
-    clients: list[httpx.Client] = []
-    lock = threading.Lock()
-    done = 0
-
-    def work(row):
-        media_id, caption, path = row
-        client = getattr(local, "client", None)
-        if client is None:
-            client = local.client = client_factory()
-            with lock:
-                clients.append(client)
-        if path is None:
-            raise FileNotFoundError(f"no image for media {media_id}")
-        images = vlm.prepare_images(path, cfg.vision_max_side, cfg.vision_max_tiles)
-        text = ("Earlier catalogue entry:\n" + json.dumps(caption, ensure_ascii=False)[:6000] +
-                "\n\nWrite the title and summary for this image." + vlm.tiles_note(len(images)))
-        return vlm.extract(client, cfg, images, vlm.RETITLE_SCHEMA, vlm.RETITLE_SYSTEM_PROMPT, text, max_tokens=400)
-
-    def on_result(row, result):
-        nonlocal done
-        media_id, caption, _ = row
-        caption.update(title=result["title"], summary=result["summary"])
-        with conn:
-            conn.execute("UPDATE doc SET json=?, text=? WHERE media_id=? AND kind='caption'",
-                         (json.dumps(caption, ensure_ascii=False), caption_text(caption), media_id))
-            db.clear_failure(conn, RETITLE_STAGE, media_id)
-        done += 1
-
-    def on_error(row, exc):
-        log.warning("retitle %s failed: %s", row[0], exc)
-        with conn:
-            db.upsert_failure(conn, RETITLE_STAGE, row[0], None, f"{type(exc).__name__}: {exc}"[:2000])
-
-    try:
-        finished = runner.run_jobs(rows, work, on_result, on_error, cfg.vision_concurrency,
-                                   total=len(rows), desc="retitle")
-    finally:
-        for client in clients:
-            client.close()
-    return done, finished
 
 
 def sized_for_server(cfg, client_factory=httpx.Client, requested: int = 0):
@@ -266,11 +202,11 @@ def run(conn: sqlite3.Connection, cfg, limit: int | None = None, include_thumbna
         client_factory=httpx.Client, concurrency: int = 0) -> ExtractStats:
     if concurrency or not cfg.vision_concurrency:
         cfg = sized_for_server(cfg, client_factory, concurrency)
-    retitled, finished = retitle(conn, cfg, client_factory)
-    if not finished:
-        return ExtractStats(interrupted=True, started=time.monotonic())
     jobs = select_jobs(conn, cfg, limit, include_thumbnail_only)
-    stats = ExtractStats(selected=len(jobs), started=time.monotonic(), retitled=retitled)
+    stats = ExtractStats(selected=len(jobs), started=time.monotonic())
+    redo = sum(j.redo for j in jobs)
+    log.info("%d images to extract: %d new, %d redone with prompt version %d",
+             len(jobs), len(jobs) - redo, redo, PROMPT_VERSION)
     local = threading.local()
     clients: list[httpx.Client] = []
     lock = threading.Lock()
@@ -293,6 +229,7 @@ def run(conn: sqlite3.Connection, cfg, limit: int | None = None, include_thumbna
         store_image_result(conn, cfg, job.media_id, result, job.low_res)
         usage = result.get("_usage") or {}
         stats.done += 1
+        stats.redone += job.redo
         stats.tiled += result["_tiles"] > 1
         stats.completion_tokens += int(usage.get("completion_tokens") or 0)
         stats.prompt_tokens += int(usage.get("prompt_tokens") or 0)

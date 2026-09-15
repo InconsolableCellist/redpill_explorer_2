@@ -2,7 +2,9 @@
 # Caption, OCR, tag and extract entities for every image with the vision model on cube.
 #
 # Safe to stop at any time with Ctrl-C and re-run: each image is saved as soon as
-# it finishes, and a re-run skips images that already have a caption.
+# it finishes, and a re-run skips images that already have a caption from the current prompt
+# (PROMPT_VERSION in re2/extract_images.py). Uncaptioned images go first, then images whose
+# caption came from an older prompt are redone.
 #   Ctrl-C once   finish the few requests already in flight, then exit
 #   Ctrl-C twice  exit immediately (in-flight images are redone next run)
 #

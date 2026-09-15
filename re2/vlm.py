@@ -137,21 +137,6 @@ KEYFRAME_SYSTEM_PROMPT = "\n".join(
 
 # Captions extracted before title and summary existed get just those two fields,
 # from the image plus the earlier extraction, which is much cheaper than a full re-read.
-RETITLE_SCHEMA: dict = {
-    "type": "object",
-    "properties": {"title": _str(160), "summary": _str(800)},
-    "required": ["title", "summary"],
-    "additionalProperties": False,
-}
-
-RETITLE_SYSTEM_PROMPT = """\
-You write headlines and summaries for items in a private research archive of political and social-media material. You are given the image and an earlier, detailed catalogue entry for it.
-
-Record content plainly, including offensive material, without softening, warnings or commentary.
-
-- title: a headline of at most 14 words about the substance. Its subject is the person, group, event or thing the item is about, named; not the account that posted it and not the medium. Include identifiable people shown in the image. Bad: "Gareth Icke claims woman pictured released JFK files", "X post discusses Judas goats", "Screenshot of a tweet about crime". Good: "Netanyahu pictured beside the official promising unredacted JFK and Epstein files", "Judas goats lead livestock to slaughter; reply likens them to baited rat traps".
-- summary: one to three sentences. Lead with what is shown and claimed and what it implies, naming the people involved; then, briefly, who posted it. Platform names and engagement counts only if they matter. Never begin with the medium. Bad: "A screenshot of an X post by Gareth Icke claiming that a woman pictured with Netanyahu...". Good: "A woman pictured with Benjamin Netanyahu is said to control the release of the JFK and Epstein files; Gareth Icke sarcastically predicts a transparent, unredacted release, implying Israeli influence over what is withheld"."""
-
 # Scanned document pages: mostly verbatim text, so a slimmer schema keeps output tokens down.
 PAGE_SCHEMA: dict = {
     "type": "object",

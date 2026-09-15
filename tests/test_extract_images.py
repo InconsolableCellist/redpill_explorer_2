@@ -94,30 +94,23 @@ def test_previous_length_failures_go_to_long_phase(tmp_path):
     assert jobs == {ids[0]: True, ids[1]: False}
 
 
-def test_retitle_adds_title_and_summary_to_old_captions(tmp_path):
+def test_captions_from_older_prompt_are_redone_after_new_images(tmp_path):
     root = tmp_path / "corpus"
     root.mkdir()
-    Image.new("RGB", (500, 400)).save(root / "old.png")
+    for shade, name in enumerate(("old.png", "current.png", "new.png")):
+        Image.new("RGB", (500, 400), (shade * 60, 0, 0)).save(root / name)
     conn = db.connect(":memory:")
     db.init_schema(conn)
-    cfg = SimpleNamespace(corpus_root=root, base_url="http://vlm.test/v1", vision_model="gemma-test",
-                          vision_max_tokens=100, vision_max_side=1024, vision_concurrency=2, vision_max_tiles=6)
+    cfg = SimpleNamespace(corpus_root=root, vision_model="gemma-test")
     scan.scan(conn, cfg)
-    media_id = conn.execute("SELECT id FROM media").fetchone()[0]
-    old = sample_result()
-    del old["title"], old["summary"]
-    conn.execute("INSERT INTO doc(media_id, kind, text, json) VALUES (?, 'caption', ?, ?)",
-                 (media_id, extract_images.caption_text(old), json.dumps(old)))
-
-    def handler(request):
-        body = json.loads(request.content)
-        assert "Earlier catalogue entry" in body["messages"][1]["content"][0]["text"]
-        return httpx.Response(200, json={"choices": [{"message": {"content": json.dumps(
-            {"title": "Netanyahu beside official", "summary": "The claim first."})}}]})
-
-    done, finished = extract_images.retitle(
-        conn, cfg, client_factory=lambda: httpx.Client(transport=httpx.MockTransport(handler)))
-    assert (done, finished) == (1, True)
-    text, raw = conn.execute("SELECT text, json FROM doc WHERE kind='caption'").fetchone()
-    assert text.startswith("Netanyahu beside official\nThe claim first.") and json.loads(raw)["title"]
-    assert extract_images.retitle(conn, cfg)[0] == 0
+    ids = {r[1]: r[0] for r in conn.execute("SELECT media_id, rel_path FROM media_path")}
+    conn.execute("INSERT INTO doc(media_id, kind, text, json) VALUES (?, 'caption', 'old', '{}')", (ids["old.png"],))
+    extract_images.store_image_result(conn, cfg, ids["current.png"], sample_result(), False)
+    jobs = extract_images.select_jobs(conn, cfg, None, True)
+    assert [(j.media_id, j.redo) for j in jobs] == [(ids["new.png"], False), (ids["old.png"], True)]
+    old_doc = conn.execute("SELECT id FROM doc WHERE media_id=? AND kind='caption'", (ids["old.png"],)).fetchone()[0]
+    extract_images.store_image_result(conn, cfg, ids["old.png"], sample_result(), False)
+    new_doc = conn.execute("SELECT id FROM doc WHERE media_id=? AND kind='caption'", (ids["old.png"],)).fetchone()[0]
+    assert new_doc != old_doc  # a new doc id, so the embed step picks up the new text
+    assert conn.execute("SELECT count(*) FROM doc_fts WHERE doc_fts MATCH 'old'").fetchone()[0] == 0
+    assert [j.media_id for j in extract_images.select_jobs(conn, cfg, None, True)] == [ids["new.png"]]
