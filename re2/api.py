@@ -337,6 +337,23 @@ def create_app(cfg: config.Config | None = None) -> FastAPI:
         run.control.stop.set()
         return {"stopping": run.finished is None}
 
+    @app.get("/api/topics")
+    def topics():
+        """Themes and their topics from the latest clustering run, largest first, for pickers."""
+        with closing(open_ro(cfg)) as conn:
+            run = db.kv_get(conn, "cluster_run") if search._has_table(conn, "cluster") else None
+            if not run:
+                return {"themes": []}
+            rows = conn.execute(
+                """SELECT c.id, c.level, c.parent_id, c.label, COUNT(cm.media_id) AS n FROM cluster c
+                   LEFT JOIN cluster_member cm ON cm.cluster_id=c.id WHERE c.run_id=? GROUP BY c.id ORDER BY n DESC""",
+                (run,)).fetchall()
+        themes = {r["id"]: {"id": r["id"], "label": r["label"], "n": r["n"], "topics": []} for r in rows if r["level"] == "theme"}
+        for r in rows:
+            if r["level"] == "topic" and r["parent_id"] in themes:
+                themes[r["parent_id"]]["topics"].append({"id": r["id"], "label": r["label"], "n": r["n"]})
+        return {"themes": list(themes.values())}
+
     @app.get("/api/ask/plan")
     def ask_plan(depth: float | None = None, s: list[str] = Query(default=[])):
         """What a depth means with the current chat model: notes budget, reading limits, and the scope's size."""
@@ -432,9 +449,11 @@ def create_app(cfg: config.Config | None = None) -> FastAPI:
             args = status.get("args") or []
             ctx = next((args[i + 1] for i, a in enumerate(args[:-1]) if a in ("--ctx-size", "-c")), None)
             parallel = next((args[i + 1] for i, a in enumerate(args[:-1]) if a in ("--parallel", "-np")), None)
-            models.append({"id": m.get("id"), "state": status.get("value"),
-                           "ctx": int(ctx) if str(ctx or "").isdigit() else None,
-                           "parallel": int(parallel) if str(parallel or "").isdigit() else None})
+            ctx = int(ctx) if str(ctx or "").isdigit() else None
+            parallel = int(parallel) if str(parallel or "").isdigit() else None
+            unified = "--kv-unified" in args or not parallel   # llama.cpp's automatic parallel shares one cache
+            models.append({"id": m.get("id"), "state": status.get("value"), "ctx": ctx, "parallel": parallel,
+                           "request_ctx": ctx if ctx is None or unified else ctx // max(parallel, 1)})
         return {"ok": True, "models": models}
 
     @app.post("/api/settings")

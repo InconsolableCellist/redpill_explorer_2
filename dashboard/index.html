@@ -456,6 +456,47 @@ mark { background: var(--hot-w); color: var(--ink); padding: 0 1px; }
 .composer textarea:focus { border-color: var(--blue); }
 .composer__side { display: flex; gap: 5px; align-items: stretch; }
 .ask__err { color: var(--hot); font-family: var(--font-mono); font-size: 11.5px; }
+.turn__stopped { font-family: var(--font-mono); font-size: 10.5px; color: var(--hot); letter-spacing: .08em; text-transform: uppercase; }
+.turn__ctx { font-family: var(--font-mono); font-size: 10.5px; color: var(--ink-3); margin: -4px 0 8px; }
+.composer__ctx { flex: 1 1 100%; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.attach { display: inline-flex; align-items: center; gap: 7px; font-family: var(--font-mono); font-size: 11px; color: var(--ink); border: 1px solid color-mix(in srgb, var(--blue) 45%, var(--rule)); background: var(--blue-w); padding: 2px 7px 2px 2px; max-width: 100%; }
+.attach i { flex: none; width: 26px; height: 26px; background: var(--stock-well) center/cover no-repeat; }
+.attach span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.attach::after { content: "×"; color: var(--ink-3); margin-left: 2px; }
+.attach:hover::after { color: var(--hot); }
+.composer__tune { flex: 1 1 100%; display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; }
+.tune { display: inline-flex; align-items: center; gap: 6px; }
+.tune input[type="range"] { width: 130px; accent-color: var(--blue); }
+.tune input:not([type]) { font-family: var(--font-mono); font-size: 11px; width: 8.5em; padding: 4px 6px; border: 1px solid var(--rule); background: var(--stock-card); color: var(--ink); outline: none; }
+.tune input:not([type]):focus { border-color: var(--blue); }
+.tune input.is-bad { border-color: var(--hot); }
+.tune__plan { flex: 1 1 220px; }
+.topic-pick { flex: 1 1 100%; max-height: 38vh; overflow: auto; border-top: 1px solid var(--rule-soft); padding-top: 8px; }
+.topic-pick__bar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 8px; position: sticky; top: 0; background: var(--stock-bar); padding-bottom: 4px; }
+.topic-pick__bar input { flex: 1 1 160px; font-family: var(--font-mono); font-size: 11px; padding: 5px 7px; border: 1px solid var(--rule); background: var(--stock-card); color: var(--ink); outline: none; }
+.topic-pick h4 { font-family: var(--font-mono); font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-3); font-weight: 500; margin: 8px 0 4px; }
+.topic-pick .chips button[aria-pressed="true"] { background: var(--blue); border-color: var(--blue); color: var(--on-ink); }
+.session { position: relative; padding-right: 22px; }
+.session .del { position: absolute; right: 2px; top: 4px; width: 18px; height: 18px; line-height: 16px; text-align: center; color: var(--ink-3); font-size: 13px; opacity: 0; }
+.session:hover .del, .session.is-cursor .del { opacity: 1; }
+.session .del:hover { color: var(--hot); }
+.session .live { color: var(--hot); }
+.settings { display: flex; flex-direction: column; gap: 14px; margin-bottom: 14px; }
+.settings > p { color: var(--ink-2); font-size: 13px; margin: 0; }
+.svc { background: var(--stock-card); border: 1px solid var(--rule-soft); box-shadow: var(--shadow); padding: 12px 14px 14px; }
+.svc h3 { font-family: var(--font-display); font-size: 18px; font-weight: 600; margin: 0 0 2px; }
+.svc > p { font-size: 12.5px; color: var(--ink-3); margin: 0 0 10px; }
+.svc label { display: grid; grid-template-columns: minmax(110px, 170px) 1fr; gap: 10px; align-items: center; margin: 6px 0; }
+.svc input { font-family: var(--font-mono); font-size: 12px; padding: 6px 8px; border: 1px solid var(--rule); background: var(--stock); color: var(--ink); outline: none; min-width: 0; }
+.svc input:focus { border-color: var(--blue); }
+.svc input.is-changed { border-color: var(--blue); background: var(--blue-w); }
+.svc__models { margin-top: 8px; display: flex; flex-direction: column; gap: 1px; max-height: 240px; overflow: auto; }
+.svc__models button { display: grid; grid-template-columns: 1fr auto auto; gap: 12px; text-align: left; font-family: var(--font-mono); font-size: 11px; color: var(--ink-2); padding: 4px 6px; border-left: 2px solid transparent; }
+.svc__models button:hover { background: var(--stock-well); color: var(--ink); }
+.svc__models button.is-current { border-left-color: var(--blue); color: var(--ink); }
+.svc__models .on { color: var(--focus); }
+.settings__bar { display: flex; gap: 8px; align-items: center; position: sticky; bottom: 44px; background: var(--stock-bar); border: 1px solid var(--rule); padding: 8px; box-shadow: var(--shadow-lift); }
+@media (max-width: 560px) { .svc label { grid-template-columns: 1fr; gap: 3px; } }
 .session { width: 100%; text-align: left; padding: 5px 6px; font-size: 12.5px; color: var(--ink-2); border-left: 2px solid transparent; }
 .session small { display: block; font-family: var(--font-mono); font-size: 10px; color: var(--ink-3); }
 .session.is-current { border-left-color: var(--blue); color: var(--ink); background: var(--stock-card); }
@@ -593,6 +634,7 @@ mark { background: var(--hot-w); color: var(--ink); padding: 0 1px; }
         <button class="btn mode-btn" data-mode="graph" title="Graph (g r)">Graph<span class="hint">gr</span></button>
         <button class="btn mode-btn" data-mode="map" title="Map (g m)">Map<span class="hint">gm</span></button>
         <button class="btn mode-btn" data-mode="ask" title="Ask (g a, or a to ask within the current scopes)">Ask<span class="hint">ga</span></button>
+        <button class="btn mode-btn" data-mode="settings" title="Settings: the model servers this uses (g ,)">Settings<span class="hint">g,</span></button>
         <button class="btn" id="themeBtn" title="Theme">◐</button>
         <button class="btn" id="helpBtn" aria-expanded="false" aria-controls="panel" title="Keys (?)">?</button>
       </nav>
@@ -608,14 +650,25 @@ mark { background: var(--hot-w); color: var(--ink); padding: 0 1px; }
       <div id="ask" class="ask" hidden>
         <div class="ask__log" id="askLog"></div>
         <form class="composer" id="composer">
+          <div class="composer__ctx" id="askCtx" hidden></div>
           <textarea id="askInput" rows="2" placeholder="Ask about the archive…  (Enter sends, Shift-Enter new line, Esc leaves)" aria-label="Question"></textarea>
           <div class="composer__side">
             <button class="btn" type="submit" id="askSend">Ask</button>
             <button class="btn" type="button" id="askMode" title="m: informed uses general knowledge too; archive answers only from the archive">informed</button>
             <button class="btn" type="button" id="askNew" title="Start a new conversation">new</button>
           </div>
+          <div class="composer__tune">
+            <label class="tune" title="How much the agent reads, and how much of the model's context the answer's notes may fill. Deeper is slower.">
+              <span class="label">depth</span><input type="range" id="askDepth" min="0" max="100" step="5" aria-label="Research depth"></label>
+            <span class="meta tune__plan" id="askPlan"></span>
+            <label class="tune" title="Limit the conversation to a period: YYYY, YYYY-MM or YYYY-MM-DD. Either end may be empty.">
+              <span class="label">period</span><input id="askFrom" placeholder="from" size="10" aria-label="Period start"><span class="meta">–</span><input id="askTo" placeholder="to" size="10" aria-label="Period end"></label>
+            <button class="btn" type="button" id="askTopics" aria-expanded="false" title="Limit the conversation to one or more topics">topics</button>
+          </div>
+          <div class="topic-pick" id="topicPick" hidden></div>
         </form>
       </div>
+      <div id="settings" class="settings" hidden></div>
       <div class="results__head"><span class="label" id="resultsLabel">Recent</span><span class="review" id="review" hidden></span><span><button class="sort-btn" id="sortBtn" title="Change sort (S)">sort <b id="sortName">relevance</b></button> <span class="label tnum" id="resultsCount"></span></span></div>
       <div class="list" id="list"></div>
       <button class="btn more-btn" id="moreBtn" hidden>Load more</button>
@@ -673,6 +726,9 @@ mark { background: var(--hot-w); color: var(--ink); padding: 0 1px; }
           <kbd>g t</kbd><span>Timeline. With the chart focused, <kbd>h l</kbd> move by month, <kbd>H L</kbd> by year, <kbd>v</kbd> marks a range, <kbd>&gt;</kbd> narrows to it</span>
           <kbd>g r</kbd><span>Graph (<kbd>g n</kbd> too): entities that appear together, tags that appear together, or tags related in meaning — <kbd>T</kbd> cycles. With the chart focused, <kbd>h l</kbd> step through nodes, <kbd>&gt;</kbd> narrows to one. Click a node; double-click narrows.</span>
           <kbd>g m</kbd><span>Map of the whole archive by meaning; your scope lights up. With the chart focused, <kbd>h l</kbd> step through topics (<kbd>T</kbd> for themes), <kbd>z</kbd> zooms to one, <kbd>+ -</kbd> zoom, <kbd>0</kbd> resets, <kbd>&gt;</kbd> narrows. Scroll to zoom, drag to pan, click a dot to open it.</span>
+          <kbd>D</kbd><span>Discuss the item under the cursor: a new Ask conversation with its full record attached, and related items (near in time or meaning) if <b>+ related</b> is on. Depth sets how much is read; period and topics narrow it.</span>
+          <kbd>d d</kbd><span>On a conversation in Ask's left column: delete it</span>
+          <kbd>g ,</kbd><span>Settings: which model servers Ask, captions, embeddings and speech-to-text use</span>
           <kbd>g a</kbd><span>Ask a question; the agent searches the archive and answers with numbered sources. <kbd>a</kbd> asks within your current scopes. In ask mode <kbd>/</kbd> focuses the question, <kbd>m</kbd> switches informed / archive-only, <kbd>j k</kbd> walk the citations, <kbd>Enter</kbd> opens one.</span>
           <kbd>g c</kbd><span>Caption review: images captioned with the current prompt, newest first, updating live while an extraction runs. <kbd>R</kbd> refreshes by hand.</span>
           <kbd>g w</kbd><span>Wiki — once it is compiled</span>
@@ -758,7 +814,10 @@ const S = {
   tl: { data: null, cursor: -1, mark: null },
   gr: { data: null, kind: store("graphKind") || "entity", cursor: 0, order: [], pos: null, hover: -1 },
   mp: { data: null, level: "topic", order: [], cursor: 0, scope: null, view: { s: 1, x: 0, y: 0 }, hover: -1 },
-  ask: { session: null, turns: [], busy: false, mode: store("askMode") || "informed", ctl: null, sessions: [] },
+  ask: { session: null, turns: [], mode: store("askMode") || "informed", sessions: [],
+         live: new Map(),   // run id -> turn, for turns still running on the server
+         attach: [], related: store("askRelated") ?? true, depth: store("askDepth") ?? 35, topics: null, picked: new Set() },
+  settings: null,
 };
 
 /* ── URL hash ─────────────────────────────────────────────── */
@@ -782,7 +841,7 @@ function readHash() {
   let mode = parts[0] || "search";
   let open = p.get("open");
   if (mode === "item") { mode = "search"; open = parts[1]; }
-  if (!["search", "timeline", "graph", "map", "ask"].includes(mode)) mode = "search";
+  if (!["search", "timeline", "graph", "map", "ask", "settings"].includes(mode)) mode = "search";
   const sort = SORTS.includes(p.get("sort")) ? p.get("sort") : "relevance";
   return { mode, q: p.get("q") || "", scopes: p.getAll("s"), sort, open: open ? Number(open) : null,
            session: p.get("session") };
@@ -951,6 +1010,7 @@ function navigate(replace = false) {
   renderModes();
   pollReview();
   if (S.mode === "ask") return renderAskMode();
+  if (S.mode === "settings") return renderSettings();
   scheduleSearch(0);
 }
 
@@ -1276,7 +1336,8 @@ function renderReader() {
 
   el.innerHTML =
     `<div class="reader__bar"><span class="label">${escapeHtml(d.kind)} · #${d.media_id}</span>` +
-    `<span><button class="btn" data-copy title="Copy citation (yy)">Cite</button> <button class="btn mobile-close" data-close>Close</button></span></div>` +
+    `<span><button class="btn" data-discuss title="Discuss this item in Ask, with its full record attached (D)">Discuss</button> ` +
+    `<button class="btn" data-copy title="Copy citation (yy)">Cite</button> <button class="btn mobile-close" data-close>Close</button></span></div>` +
     `<div class="reader__body">` +
     galleryHtml(d) +
     `<div class="preview">${preview}</div>` +
@@ -1468,10 +1529,18 @@ function tlNarrow() {
 }
 
 /* ── Ask ──────────────────────────────────────────────────── */
+const DISCUSS_PROMPT = "Discuss this: what it shows, what it means, and the context around it.";
+const DATE_BOUND = /^\d{4}(-\d{2}(-\d{2})?)?$/;
+
 function renderAskMode() {
   $("#askMode").textContent = S.ask.mode;
+  $("#askDepth").value = S.ask.depth;
+  syncPeriodInputs();
+  renderAskCtx();
   renderAskLog();
   loadSessions();
+  fetchPlan();
+  attachServerRuns();
 }
 async function loadSessions() {
   const resp = await fetch("/api/ask/sessions");
@@ -1481,7 +1550,8 @@ async function loadSessions() {
   $("#lenses").innerHTML = `<div class="lens-group"><h3><span class="label">Conversations</span></h3>` +
     (S.ask.sessions.length ? S.ask.sessions.map((x) =>
       `<button class="session${x.id === S.ask.session ? " is-current" : ""}" data-session="${escapeHtml(x.id)}">${escapeHtml(x.title || "(untitled)")}` +
-      `<small>${escapeHtml((x.created_at || "").slice(0, 16))} · ${x.turns} turn${x.turns === 1 ? "" : "s"}</small></button>`).join("")
+      `<small>${x.running ? `<span class="live">● running</span> · ` : ""}${escapeHtml((x.created_at || "").slice(0, 16))} · ${x.turns} turn${x.turns === 1 ? "" : "s"}</small>` +
+      `<span class="del" data-del="${escapeHtml(x.id)}" title="Delete this conversation (d d)">×</span></button>`).join("")
       : `<div class="empty">No conversations yet.</div>`) + `</div>`;
   $("#lenses").classList.remove("is-stale");
   paintCursor("lenses", false);
@@ -1492,12 +1562,33 @@ async function loadSession(id) {
   const data = await resp.json();
   S.ask.session = id;
   S.ask.turns = data.turns.map((t) => ({
-    question: t.question, scopes: [], steps: (t.steps || []).filter((x) => x.action !== "answer").map((x) => ({ action: x.action, args: x.args, summary: "" })),
-    text: t.answer || "", sentences: t.sentences, cites: Object.fromEntries((t.citations || []).map((c) => [c.n, c])), done: true,
+    question: t.question, scopes: [], context: t.context, stopped: (t.steps || []).some((x) => x.action === "stopped"),
+    steps: (t.steps || []).filter((x) => !["answer", "stopped", "fill"].includes(x.action)).map((x) => ({ action: x.action, args: x.args, summary: "" })),
+    text: t.answer || "", sentences: t.sentences, cites: Object.fromEntries((t.citations || []).map((c) => [c.n, c])), done: true, session: id,
   }));
+  // Turns still running for this conversation carry on below the logged ones.
+  for (const turn of S.ask.live.values()) if (turn.session === id && !turn.done) S.ask.turns.push(turn);
+  const last = data.turns.at(-1)?.context;
+  S.ask.attach = (last?.items || []).map((mid) => ({ media_id: mid, title: `#${mid}` }));
+  if (last) S.ask.related = !!last.related;
+  fillAttachCards();
   writeHash(true);
+  renderAskCtx();
   renderAskLog();
   loadSessions();
+}
+function newConversation() {
+  S.ask.session = null; S.ask.turns = []; S.ask.attach = [];
+  writeHash(true); renderAskCtx(); renderAskLog(); loadSessions(); fetchPlan();
+}
+async function deleteSession(id) {
+  const x = S.ask.sessions.find((v) => v.id === id);
+  if (!x || !confirm(`Delete the conversation “${x.title || "(untitled)"}”? This cannot be undone.`)) return;
+  const resp = await fetch(`/api/ask/session/${encodeURIComponent(id)}`, { method: "DELETE" });
+  if (!resp.ok) return say("Could not delete that conversation.");
+  for (const [rid, turn] of S.ask.live) if (turn.session === id) S.ask.live.delete(rid);
+  say("Conversation deleted.");
+  if (S.ask.session === id) newConversation(); else loadSessions();
 }
 function toggleAskMode() {
   S.ask.mode = S.ask.mode === "informed" ? "archive" : "informed";
@@ -1505,6 +1596,127 @@ function toggleAskMode() {
   $("#askMode").textContent = S.ask.mode;
   say(S.ask.mode === "informed" ? "Informed: general knowledge plus the archive." : "Archive-only: answers come only from the archive.");
 }
+
+/* Discuss: a new conversation about one item, with its full record (and optionally related items) attached. */
+function discussItem(card) {
+  if (!card) return say("Nothing under the cursor to discuss.");
+  S.ask.session = null; S.ask.turns = [];
+  S.ask.attach = [{ media_id: card.media_id, title: card.title, thumb_url: card.thumb_url ?? null }];
+  setMode("ask");
+  const input = $("#askInput");
+  input.value = DISCUSS_PROMPT;
+  setTimeout(() => { input.focus(); input.select(); }, 0);
+  say(`Discussing #${card.media_id}. Edit the question or press Enter.${S.ask.related ? " Related items come along." : ""}`);
+}
+async function fillAttachCards() {
+  for (const a of S.ask.attach) {
+    if (a.thumb_url !== undefined) continue;
+    const resp = await fetch(`/api/item/${a.media_id}`);
+    if (!resp.ok) continue;
+    const d = await resp.json();
+    Object.assign(a, { title: d.title, thumb_url: d.thumb_url || null });
+    renderAskCtx();
+  }
+}
+function renderAskCtx() {
+  const el = $("#askCtx");
+  el.hidden = !S.ask.attach.length;
+  el.innerHTML = S.ask.attach.map((a) =>
+    `<button type="button" class="attach" data-unattach="${a.media_id}" title="About #${a.media_id}. Click to detach.">` +
+    `<i${a.thumb_url ? ` style="background-image:url('${escapeHtml(a.thumb_url)}')"` : ""}></i><span>${escapeHtml(a.title || "#" + a.media_id)}</span></button>`).join("") +
+    (S.ask.attach.length ? `<button type="button" class="btn" id="askRelated" aria-pressed="${S.ask.related}" title="Also gather items near in time or meaning">+ related</button>` : "");
+}
+
+/* Depth and scope estimate, from the server's view of the chat model. */
+let planTimer = 0;
+function fetchPlan() {
+  clearTimeout(planTimer);
+  planTimer = setTimeout(async () => {
+    const p = new URLSearchParams({ depth: S.ask.depth / 100 });
+    for (const x of S.scopes) p.append("s", x);
+    const resp = await fetch(`/api/ask/plan?${p}`);
+    if (!resp.ok) return;
+    const d = await resp.json();
+    const k = (n) => n >= 1000 ? `${(n / 1000).toFixed(n >= 10000 ? 0 : 1)}k` : String(n);
+    $("#askPlan").textContent = `notes up to ~${k(d.notes_tokens)} of ${k(d.context_tokens)} tokens (≈${fmtN(Math.floor(d.notes_tokens / d.item_tokens))} items)` +
+      ` · ${d.searches} searches · ${d.opens} opens` + (S.ask.attach.length && S.ask.related ? ` · ${d.related} related` : "") +
+      (d.in_scope != null ? ` · ${fmtN(d.in_scope)} in scope` : "");
+    $("#askPlan").title = `${d.model}. Deeper reads more before answering and hands the answer more of what it found; the answer takes longer to start.`;
+  }, 120);
+}
+
+/* Period and topics are ordinary scopes, so they show as chips and apply to search too. */
+function syncPeriodInputs() {
+  const d = S.scopes.find((x) => x.startsWith("date:"));
+  const [lo, hi] = d ? (d.slice(5).includes("..") ? d.slice(5).split("..") : [d.slice(5), d.slice(5)]) : ["", ""];
+  if (document.activeElement !== $("#askFrom")) $("#askFrom").value = lo;
+  if (document.activeElement !== $("#askTo")) $("#askTo").value = hi;
+}
+function applyPeriod() {
+  const lo = $("#askFrom").value.trim(), hi = $("#askTo").value.trim();
+  let bad = false;
+  for (const [el, v] of [[$("#askFrom"), lo], [$("#askTo"), hi]]) {
+    const wrong = !!v && !DATE_BOUND.test(v);
+    el.classList.toggle("is-bad", wrong);
+    bad ||= wrong;
+  }
+  if (bad) return say("Dates are YYYY, YYYY-MM or YYYY-MM-DD.");
+  const i = S.scopes.findIndex((x) => x.startsWith("date:"));
+  const scope = lo || hi ? `date:${lo}..${hi}` : null;
+  if ((i >= 0 ? S.scopes[i] : null) === scope) return;
+  if (i >= 0) S.scopes.splice(i, 1);
+  if (scope) { S.labels[scope] = lo && hi ? `${lo} – ${hi}` : lo ? `from ${lo}` : `until ${hi}`; S.scopes.push(scope); }
+  say(scope ? `Period: ${S.labels[scope]}.` : "Period cleared.");
+  navigate(true);
+}
+async function toggleTopics(force) {
+  const el = $("#topicPick");
+  const show = force ?? el.hidden;
+  el.hidden = !show;
+  $("#askTopics").setAttribute("aria-expanded", String(show));
+  if (!show) return;
+  if (!S.ask.topics) {
+    el.innerHTML = `<div class="empty">Loading topics…</div>`;
+    const resp = await fetch("/api/topics");
+    S.ask.topics = resp.ok ? (await resp.json()).themes : [];
+  }
+  const cur = S.scopes.find((x) => x.startsWith("cluster:"));
+  S.ask.picked = new Set(cur ? cur.slice(8).split(",").map(Number) : []);
+  renderTopicPick();
+  setTimeout(() => $("#topicFilter")?.focus(), 0);
+}
+function renderTopicPick(filter = "") {
+  const el = $("#topicPick");
+  if (!S.ask.topics.length) { el.innerHTML = `<div class="empty">No topics yet — run: uv run re2 recluster</div>`; return; }
+  const f = filter.toLowerCase();
+  const chip = (t) => `<button type="button" class="chip" data-topic="${t.id}" aria-pressed="${S.ask.picked.has(t.id)}">${escapeHtml(t.label || "#" + t.id)} <b>${fmtN(t.n)}</b></button>`;
+  const groups = S.ask.topics.map((th) => {
+    const hit = !f || (th.label || "").toLowerCase().includes(f);
+    const topics = th.topics.filter((t) => hit || (t.label || "").toLowerCase().includes(f));
+    return topics.length ? `<h4>${escapeHtml(th.label || "theme")}</h4><div class="chips">${topics.map(chip).join("")}</div>` : "";
+  }).join("");
+  const focusFilter = document.activeElement?.id === "topicFilter";
+  el.innerHTML = `<div class="topic-pick__bar"><input id="topicFilter" placeholder="filter topics" value="${escapeHtml(filter)}">` +
+    `<button type="button" class="btn" data-topics="apply">use ${S.ask.picked.size || "no"} topic${S.ask.picked.size === 1 ? "" : "s"}</button>` +
+    `<button type="button" class="btn" data-topics="close">close</button></div>` + (groups || `<div class="empty">No topic matches.</div>`);
+  if (focusFilter) { const inp = $("#topicFilter"); inp.focus(); inp.setSelectionRange(inp.value.length, inp.value.length); }
+}
+function applyTopics() {
+  const i = S.scopes.findIndex((x) => x.startsWith("cluster:"));
+  if (i >= 0) S.scopes.splice(i, 1);
+  const ids = [...S.ask.picked];
+  let scope = null;
+  if (ids.length) {
+    scope = `cluster:${ids.join(",")}`;
+    const names = S.ask.topics.flatMap((th) => th.topics).filter((t) => S.ask.picked.has(t.id)).map((t) => t.label);
+    S.labels[scope] = names.length > 2 ? `${names.slice(0, 2).join(" or ")} or ${names.length - 2} more` : names.join(" or ");
+    S.scopes.push(scope);
+  }
+  toggleTopics(false);
+  say(scope ? `Topics: ${S.labels[scope]}.` : "Topics cleared.");
+  navigate(true);
+}
+
 function stepLine(st, live) {
   const args = st.args || {};
   const detail = args.query ?? args.id ?? args.slug ?? "";
@@ -1558,17 +1770,21 @@ function sourcesHtml(turn) {
 }
 function renderAskLog() {
   const log = $("#askLog");
+  const scopeLine = (turn) => turn.scopes?.length ? `<div class="turn__scope">within ${turn.scopes.map((x) => escapeHtml(S.labels[x] || x)).join(" › ")}</div>` : "";
+  const ctxLine = (turn) => turn.context?.items?.length ? `<div class="turn__ctx">about ${turn.context.items.map((m) => `#${m}`).join(", ")}${turn.context.related ? " and related items" : ""}</div>` : "";
   log.innerHTML = S.ask.turns.length ? S.ask.turns.map((turn, i) =>
-    `<article class="turn" data-turn="${i}"><div class="turn__q">${escapeHtml(turn.question)}</div>` +
-    (turn.scopes?.length ? `<div class="turn__scope">within ${turn.scopes.map((x) => escapeHtml(S.labels[x] || x)).join(" › ")}</div>` : "") +
+    `<article class="turn" data-turn="${i}"><div class="turn__q">${escapeHtml(turn.question)}</div>` + ctxLine(turn) + scopeLine(turn) +
     `<div class="steps">${turn.steps.map((st, j) => stepLine(st, !turn.done && !turn.text && j === turn.steps.length - 1)).join("")}` +
     `${!turn.done && !turn.text ? `<div class="is-live">${turn.steps.length ? "thinking" : "starting"}</div>` : ""}</div>` +
     `<div class="answer">${answerHtml(turn)}</div>` +
+    (turn.stopped ? `<div class="turn__stopped">stopped</div>` : "") +
     (turn.error ? `<div class="ask__err">${escapeHtml(turn.error)}</div>` : "") +
     sourcesHtml(turn) + `</article>`).join("") :
-    `<div class="empty">Ask a question about the archive. The agent searches, reads the items it finds, and answers with numbered sources you can open.${S.scopes.length ? "<br>It will look only within your current scopes." : ""}</div>`;
-  $("#askSend").disabled = S.ask.busy;
-  $("#askSend").textContent = S.ask.busy ? "…" : "Ask";
+    `<div class="empty">Ask a question about the archive. The agent searches, reads the items it finds, and answers with numbered sources you can open.` +
+    `${S.scopes.length ? "<br>It will look only within your current scopes." : ""}${S.ask.attach.length ? "<br>The attached item goes along in full." : ""}</div>`;
+  const live = S.ask.turns.some((t) => !t.done);
+  $("#askSend").textContent = live ? "Stop" : "Ask";
+  $("#askSend").title = live ? "Stop this answer" : "Send (Enter)";
 }
 function openCitation(el) {
   const turn = S.ask.turns[Number(el.closest(".turn")?.dataset.turn)];
@@ -1577,53 +1793,169 @@ function openCitation(el) {
   if (c.card) openItem(c.card.hit?.member_id ?? c.card.media_id, c.card.hit || null);
   else if (c.page) say(`Wiki page ${c.page.slug}: wiki mode arrives once the wiki is compiled.`);
 }
+/* A turn runs on the server whether or not anyone watches; these follow its event stream. */
 async function sendQuestion() {
   const input = $("#askInput");
   const question = input.value.trim();
-  if (!question || S.ask.busy) return;
+  if (!question) return;
+  if (S.ask.turns.some((t) => !t.done)) return say("Still answering: press Stop first, or start a new conversation.");
   input.value = "";
-  const turn = { question, scopes: [...S.scopes], steps: [], text: "", cites: {}, done: false };
+  const items = S.ask.attach.map((a) => a.media_id);
+  const turn = { question, scopes: [...S.scopes], steps: [], text: "", cites: {}, done: false, session: S.ask.session,
+                 context: { items, related: S.ask.related } };
   S.ask.turns.push(turn);
-  S.ask.busy = true;
   renderAskLog();
   $("#askLog .turn:last-child")?.scrollIntoView({ block: "start" });
-  S.ask.ctl = new AbortController();
   try {
     const resp = await fetch("/api/ask", {
-      method: "POST", headers: { "Content-Type": "application/json" }, signal: S.ask.ctl.signal,
-      body: JSON.stringify({ question, scopes: S.scopes, mode: S.ask.mode, session_id: S.ask.session }),
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ question, scopes: S.scopes, mode: S.ask.mode, session_id: S.ask.session,
+                             items, related: S.ask.related, depth: S.ask.depth / 100 }),
     });
     if (!resp.ok) throw new Error((await resp.json().catch(() => ({}))).detail || resp.status);
-    const reader = resp.body.getReader(), dec = new TextDecoder();
-    let buf = "", pending = 0;
-    const repaint = () => { if (!pending) pending = requestAnimationFrame(() => { pending = 0; renderAskLog(); }); };
-    for (;;) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      buf += dec.decode(value, { stream: true });
-      let sep;
-      while ((sep = buf.indexOf("\n\n")) >= 0) {
-        const block = buf.slice(0, sep); buf = buf.slice(sep + 2);
-        const name = /^event: (.*)$/m.exec(block)?.[1];
-        const data = /^data: (.*)$/m.exec(block)?.[1];
-        if (!name || !data) continue;
-        const d = JSON.parse(data);
-        if (name === "step") turn.steps.push(d);
-        else if (name === "token") turn.text += d.text;
-        else if (name === "cite") turn.cites[d.n] = d;
-        else if (name === "final") { turn.text = d.text; turn.sentences = d.sentences; }
-        else if (name === "done") { turn.done = true; S.ask.session = d.session_id; writeHash(true); say(`Answered in ${Math.round(d.ms / 1000)} s after ${d.steps} steps.`); }
-        else if (name === "error") { turn.error = d.msg; turn.done = true; }
-        repaint();
-      }
-    }
+    await followTurn(resp, turn);
   } catch (err) {
-    if (err.name !== "AbortError") { turn.error = `Ask failed: ${err.message}`; }
+    turn.error = `Ask failed: ${err.message}`;
   }
+  finishTurn(turn);
+}
+async function followTurn(resp, turn) {
+  const reader = resp.body.getReader(), dec = new TextDecoder();
+  let buf = "", pending = 0;
+  const shown = () => S.mode === "ask" && S.ask.turns.includes(turn);
+  const repaint = () => { if (shown() && !pending) pending = requestAnimationFrame(() => { pending = 0; renderAskLog(); }); };
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buf += dec.decode(value, { stream: true });
+    let sep;
+    while ((sep = buf.indexOf("\n\n")) >= 0) {
+      const block = buf.slice(0, sep); buf = buf.slice(sep + 2);
+      const name = /^event: (.*)$/m.exec(block)?.[1];
+      const data = /^data: (.*)$/m.exec(block)?.[1];
+      if (!name || !data) continue;
+      const d = JSON.parse(data);
+      if (name === "start") {
+        turn.run = d.run_id; turn.session = d.session_id;
+        S.ask.live.set(d.run_id, turn);
+        if (S.ask.turns.includes(turn) && S.ask.session !== d.session_id) { S.ask.session = d.session_id; if (S.mode === "ask") writeHash(true); }
+        loadSessions();
+      }
+      else if (name === "step") turn.steps.push(d);
+      else if (name === "token") turn.text += d.text;
+      else if (name === "cite") turn.cites[d.n] = d;
+      else if (name === "stopped") turn.stopped = true;
+      else if (name === "final") { turn.text = d.text; turn.sentences = d.sentences; }
+      else if (name === "done") { turn.done = true; if (shown()) say(d.stopped ? "Stopped." : `Answered in ${Math.round(d.ms / 1000)} s after ${d.steps} steps.`); }
+      else if (name === "error") { turn.error = d.msg; turn.done = true; }
+      repaint();
+    }
+  }
+}
+function finishTurn(turn) {
   turn.done = true;
-  S.ask.busy = false;
-  renderAskLog();
+  if (turn.run) S.ask.live.delete(turn.run);
+  if (S.mode === "ask" && S.ask.turns.includes(turn)) renderAskLog();
   loadSessions();
+}
+async function stopTurn() {
+  const turn = S.ask.turns.find((t) => !t.done);
+  if (!turn?.run) return;
+  say("Stopping…");
+  await fetch(`/api/ask/run/${turn.run}/stop`, { method: "POST" });
+}
+/* After a reload, or for turns started in another tab: watch the server's running turns again. */
+async function attachServerRuns() {
+  const resp = await fetch("/api/ask/runs");
+  if (!resp.ok) return;
+  for (const r of (await resp.json()).runs) {
+    if (S.ask.live.has(r.run_id)) continue;
+    const turn = { question: r.question, scopes: r.context.scopes || [], steps: [], text: "", cites: {}, done: false,
+                   session: r.session_id, run: r.run_id, context: r.context };
+    S.ask.live.set(r.run_id, turn);
+    if (S.ask.session === r.session_id && !S.ask.turns.includes(turn)) { S.ask.turns.push(turn); renderAskLog(); }
+    fetch(`/api/ask/run/${r.run_id}/events`).then((ev) => ev.ok ? followTurn(ev, turn) : null)
+      .catch((err) => { turn.error = String(err); }).finally(() => finishTurn(turn));
+  }
+}
+
+/* ── Settings ─────────────────────────────────────────────── */
+const SERVICES = [
+  ["chat", "Chat", "Ask's research agent and answers. Takes effect on the next question.",
+    [["base_url", "Server URL", "url"], ["model", "Model", "model"], ["context_tokens", "Context tokens", "int"]]],
+  ["vision", "Vision", "Image captions, tags and entities, and PDF OCR. extract_images.sh and pdf_ocr.sh read it when next started.",
+    [["base_url", "Server URL", "url"], ["vision_model", "Model", "model"], ["vision_concurrency", "Requests at once (0 fits the server)", "int"]]],
+  ["embed", "Embeddings", "Meaning search, similar items and embed.sh. A new URL works at once; a different model needs embed.sh --rebuild.",
+    [["url", "Embeddings URL", "url"], ["model", "Model", "model"]]],
+  ["asr", "Speech to text", "faster-whisper on this machine's GPU. asr.sh reads it when next started.",
+    [["model", "Model", "text"], ["device", "Device (cuda or cpu)", "text"], ["compute_type", "Compute type", "text"]]],
+];
+async function renderSettings() {
+  const el = $("#settings");
+  const resp = await fetch("/api/settings");
+  if (!resp.ok) { el.innerHTML = `<div class="empty">Could not read the settings.</div>`; return; }
+  S.settings = await resp.json();
+  const sv = S.settings.services;
+  el.innerHTML = `<p>The model servers the dashboard and the batch scripts use. Saving writes <code>${escapeHtml(S.settings.file)}</code>` +
+    ` (git-ignored; <code>config.toml</code> stays as it is). Anyone who can open this page can change these.</p>` +
+    SERVICES.map(([name, title, note, fields]) => `<section class="svc" data-svc="${name}"><h3>${escapeHtml(title)}</h3><p>${escapeHtml(note)}</p>` +
+      fields.map(([key, label, type]) => `<label><span class="label">${escapeHtml(label)}</span>` +
+        `<input data-key="${key}" data-type="${type}" value="${escapeHtml(String(sv[name][key] ?? ""))}"` +
+        `${type === "int" ? ` inputmode="numeric"` : ""} spellcheck="false" autocomplete="off"></label>`).join("") +
+      (fields.some((f) => f[2] === "model") ? `<div class="svc__models" data-models></div>` : "") + `</section>`).join("") +
+    `<div class="settings__bar"><button class="btn" type="button" data-save>Save</button><button class="btn" type="button" data-revert>Revert</button><span class="meta" id="settingsNote"></span></div>`;
+  for (const [name] of SERVICES) if ($(`[data-svc="${name}"] [data-models]`)) loadModels(name);
+}
+async function loadModels(name) {
+  const box = $(`[data-svc="${name}"]`);
+  const list = $("[data-models]", box);
+  const url = ($('[data-key="base_url"]', box) || $('[data-key="url"]', box)).value.trim();
+  if (!url) return;
+  list.innerHTML = `<span class="meta">Asking ${escapeHtml(url)} for its models…</span>`;
+  const resp = await fetch(`/api/settings/models?${new URLSearchParams({ base_url: url })}`);
+  const d = resp.ok ? await resp.json() : { ok: false, error: `HTTP ${resp.status}` };
+  if (!box.isConnected) return;
+  if (!d.ok) { list.innerHTML = `<span class="meta">No model list: ${escapeHtml(d.error || "")}</span>`; return; }
+  const modelKey = name === "vision" ? "vision_model" : "model";
+  const cur = $(`[data-key="${modelKey}"]`, box).value;
+  list.innerHTML = d.models.map((m) => `<button type="button" data-pick="${escapeHtml(m.id)}" data-ctx="${m.request_ctx ?? ""}" class="${m.id === cur ? "is-current" : ""}">` +
+    `<span>${escapeHtml(m.id)}</span><span class="${m.state === "loaded" ? "on" : ""}">${escapeHtml(m.state || "")}</span>` +
+    `<span>${m.request_ctx ? `${fmtN(m.request_ctx)} ctx${m.parallel ? ` · ${m.parallel} slots` : ""}` : ""}</span></button>`).join("") ||
+    `<span class="meta">The server lists no models.</span>`;
+}
+function settingsValues() {
+  const out = {};
+  for (const [name, , , fields] of SERVICES) {
+    out[name] = {};
+    for (const [key, , type] of fields) {
+      const v = $(`[data-svc="${name}"] [data-key="${key}"]`).value.trim();
+      out[name][key] = type === "int" ? Number(v) : v;
+    }
+  }
+  return out;
+}
+function markChanged() {
+  const sv = S.settings?.services;
+  if (!sv) return;
+  let n = 0;
+  for (const inp of $$("#settings input[data-key]")) {
+    const name = inp.closest("[data-svc]").dataset.svc;
+    const changed = inp.value.trim() !== String(sv[name][inp.dataset.key] ?? "");
+    inp.classList.toggle("is-changed", changed);
+    n += changed;
+  }
+  $("#settingsNote").textContent = n ? `${n} unsaved change${n === 1 ? "" : "s"}` : "";
+}
+async function saveSettings() {
+  const resp = await fetch("/api/settings", {
+    method: "POST", headers: { "Content-Type": "application/json", "X-RE2-Settings": "1" },
+    body: JSON.stringify({ services: settingsValues() }),
+  });
+  const d = await resp.json().catch(() => ({}));
+  if (!resp.ok) return say(`Not saved: ${d.detail || resp.status}`, true);
+  say("Saved. Ask and search use the new settings now; batch scripts when next started.");
+  S.ask.topics = null;
+  renderSettings();
 }
 
 /* ── Map ──────────────────────────────────────────────────── */
@@ -2052,7 +2384,7 @@ function grNarrow() {
 
 /* ── Modes ────────────────────────────────────────────────── */
 function setMode(mode) {
-  if (!["search", "timeline", "graph", "map", "ask"].includes(mode)) return say(`${mode[0].toUpperCase() + mode.slice(1)} arrives in a later phase.`);
+  if (!["search", "timeline", "graph", "map", "ask", "settings"].includes(mode)) return say(`${mode[0].toUpperCase() + mode.slice(1)} arrives in a later phase.`);
   S.mode = mode;
   S.onChart = true;
   navigate();
@@ -2064,11 +2396,12 @@ function renderModes() {
   $("#graph").hidden = S.mode !== "graph";
   $("#map").hidden = S.mode !== "map";
   paintCursor("results", false);
-  const asking = S.mode === "ask";
+  const asking = S.mode === "ask", setting = S.mode === "settings";
   $("#ask").hidden = !asking;
-  $(".results__head").hidden = asking;
-  $("#list").hidden = asking;
-  if (asking) $("#moreBtn").hidden = true;
+  $("#settings").hidden = !setting;
+  $(".results__head").hidden = asking || setting;
+  $("#list").hidden = asking || setting;
+  if (asking || setting) $("#moreBtn").hidden = true;
 }
 
 /* ── Actions ──────────────────────────────────────────────── */
@@ -2223,7 +2556,7 @@ function paintMode() {
 }
 const WHICH_KEY = {
   g: ["Go to", [["g", "top of the column"], ["s", "search"], ["t", "timeline"], ["r", "graph"], ["m", "map"], ["a", "ask"],
-                ["c", "caption review (live)"], ["w", "wiki", "off"]]],
+                ["c", "caption review (live)"], [",", "settings"], ["w", "wiki", "off"]]],
   y: ["Copy", [["y", "citation for the item under the cursor"]]],
 };
 function showWhichKey(prefix) {
@@ -2291,6 +2624,11 @@ function onKey(e) {
     else if (k === "m") setMode("map");
     else if (k === "a") setMode("ask");
     else if (k === "c") startReview();
+    else if (k === ",") setMode("settings");
+  });
+  if (seq === "d") return done(() => {
+    const row = rowsOf("lenses")[S.cursor.lenses];
+    if (k === "d" && S.mode === "ask" && S.focus === "lenses" && row?.dataset.session) deleteSession(row.dataset.session);
   });
   if (seq === "y") return done(() => { if (k === "y") copyCitation(); });
 
@@ -2302,6 +2640,8 @@ function onKey(e) {
 
   switch (k) {
     case "g": case "y": e.preventDefault(); S.pending = k; paintMode(); showWhichKey(k); return;
+    case "d": if (S.mode === "ask" && S.focus === "lenses") { e.preventDefault(); S.pending = "d"; paintMode(); return; } break;
+    case "D": return done(() => discussItem(currentCard()));
     case "S": return done(cycleSort);
     case "R": return done(() => { reviewNew = 0; scheduleSearch(0); pollReview(); say("Refreshed."); });
     case "O": return done(openOriginal);
@@ -2420,6 +2760,7 @@ $("#list").addEventListener("click", (e) => {
 $("#reader").addEventListener("click", (e) => {
   if (e.target.closest("[data-close]")) return closeReader();
   if (e.target.closest("[data-copy]")) { S.focus = "reader"; return copyCitation(); }
+  if (e.target.closest("[data-discuss]")) return discussItem(S.item);
   if (e.target.closest("[data-veil].is-veiled")) { e.preventDefault(); return toggleVeil(); }
   const row = e.target.closest("[data-r]");
   if (!row || row.tagName === "A" || row.tagName === "VIDEO") return;  // links and video controls work natively
@@ -2428,9 +2769,9 @@ $("#reader").addEventListener("click", (e) => {
   activateReaderRow(row);
 });
 $("#moreBtn").addEventListener("click", loadMore);
-$("#composer").addEventListener("submit", (e) => { e.preventDefault(); sendQuestion(); });
+$("#composer").addEventListener("submit", (e) => { e.preventDefault(); if (S.ask.turns.some((t) => !t.done)) stopTurn(); else sendQuestion(); });
 $("#askMode").addEventListener("click", toggleAskMode);
-$("#askNew").addEventListener("click", () => { S.ask.session = null; S.ask.turns = []; writeHash(true); renderAskLog(); loadSessions(); $("#askInput").focus(); });
+$("#askNew").addEventListener("click", () => { newConversation(); $("#askInput").focus(); });
 $("#askLog").addEventListener("click", (e) => {
   const el = e.target.closest(".cite, .source");
   if (!el) return;
@@ -2439,8 +2780,52 @@ $("#askLog").addEventListener("click", (e) => {
   openCitation(el);
 });
 $("#lenses").addEventListener("click", (e) => {
+  const del = e.target.closest("[data-del]");
+  if (del) { e.stopPropagation(); return deleteSession(del.dataset.del); }
   const row = e.target.closest(".session");
   if (row) loadSession(row.dataset.session);
+});
+$("#askDepth").addEventListener("input", (e) => { S.ask.depth = Number(e.target.value); store("askDepth", S.ask.depth); fetchPlan(); });
+for (const id of ["#askFrom", "#askTo"]) $(id).addEventListener("change", applyPeriod);
+$("#composer").addEventListener("keydown", (e) => {
+  // Enter in the small inputs must not send the question.
+  if (e.key !== "Enter" || e.target === $("#askInput")) return;
+  if (e.target.matches("input")) { e.preventDefault(); if (e.target.id === "askFrom" || e.target.id === "askTo") applyPeriod(); }
+});
+$("#askTopics").addEventListener("click", () => toggleTopics());
+$("#topicPick").addEventListener("click", (e) => {
+  const t = e.target.closest("[data-topic]");
+  if (t) { const id = Number(t.dataset.topic); S.ask.picked.has(id) ? S.ask.picked.delete(id) : S.ask.picked.add(id); return renderTopicPick($("#topicFilter")?.value || ""); }
+  const act = e.target.closest("[data-topics]")?.dataset.topics;
+  if (act === "apply") applyTopics();
+  if (act === "close") toggleTopics(false);
+});
+$("#topicPick").addEventListener("input", (e) => { if (e.target.id === "topicFilter") renderTopicPick(e.target.value); });
+$("#askCtx").addEventListener("click", (e) => {
+  if (e.target.closest("#askRelated")) {
+    S.ask.related = !S.ask.related; store("askRelated", S.ask.related);
+    say(S.ask.related ? "Related items (near in time or meaning) come along." : "Only the attached item goes along.");
+  }
+  const un = e.target.closest("[data-unattach]");
+  if (un) { S.ask.attach = S.ask.attach.filter((a) => a.media_id !== Number(un.dataset.unattach)); say("Detached."); }
+  renderAskCtx(); fetchPlan();
+});
+$("#settings").addEventListener("click", (e) => {
+  if (e.target.closest("[data-save]")) return saveSettings();
+  if (e.target.closest("[data-revert]")) return renderSettings();
+  const pick = e.target.closest("[data-pick]");
+  if (pick) {
+    const box = pick.closest("[data-svc]");
+    $(`[data-key="${box.dataset.svc === "vision" ? "vision_model" : "model"}"]`, box).value = pick.dataset.pick;
+    const ctx = $('[data-key="context_tokens"]', box);
+    if (ctx && pick.dataset.ctx) ctx.value = pick.dataset.ctx;   // a request's share of the server's context
+    $$("[data-pick]", box).forEach((b) => b.classList.toggle("is-current", b === pick));
+    markChanged();
+  }
+});
+$("#settings").addEventListener("input", markChanged);
+$("#settings").addEventListener("change", (e) => {
+  if (e.target.matches('[data-key="base_url"], [data-key="url"]')) loadModels(e.target.closest("[data-svc]").dataset.svc);
 });
 $("#sortBtn").addEventListener("click", cycleSort);
 $$("[data-mode]").forEach((b) => b.addEventListener("click", () => setMode(b.dataset.mode)));
@@ -2472,6 +2857,8 @@ function fromHash() {
   if (S.mode === "ask") {
     if (h.session && h.session !== S.ask.session) loadSession(h.session);
     renderAskMode();
+  } else if (S.mode === "settings") {
+    renderSettings();
   } else {
     scheduleSearch(0);
   }
