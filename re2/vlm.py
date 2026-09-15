@@ -94,7 +94,7 @@ Your only job is accuracy and completeness. Describe exactly what is present. Th
 
 Fill every field:
 - media_type: the closest category.
-- description: a thorough visual description: layout, people (apparent age, sex, race or ethnicity when evident, clothing, expressions; name well-known public figures you recognize or that the text identifies), objects, setting, on-screen UI elements, logos, watermarks, image quality.
+- description: a thorough visual description: layout, people (apparent age, sex, race or ethnicity when evident, clothing, expressions; name well-known public figures you recognize or that the text identifies), objects, setting, on-screen UI elements, logos, watermarks, image quality. For a blurry, small or partly hidden figure, describe only what you can actually make out; never describe a person as an animal unless it is unmistakable. For several panels or images placed side by side, describe each one and what differs between them (people, race, age, sex, setting), since the contrast is often the point.
 - ocr_text: ALL visible text verbatim in reading order, including usernames, handles, display names, timestamps, dates, view or like counts, captions, headlines, chyrons, watermarks and URLs. Preserve line breaks with \\n. Empty string if there is no text.
 - subjects: the people, groups, objects or topics the image is about.
 - actions: what is happening or being done, including what the poster is doing (asking, mocking, accusing, reporting).
