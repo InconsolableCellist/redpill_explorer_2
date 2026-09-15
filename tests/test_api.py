@@ -91,6 +91,49 @@ def test_item_detail(env):
     assert client.get(f"/api/item/{ids['cookies.txt']}").status_code == 404
 
 
+def test_recaption_endpoint(env, monkeypatch):
+    import httpx
+
+    from re2 import extract_images
+    from tests.test_vlm import sample_result
+
+    client, ids = env
+    shot = ids["ukraine/shot.png"]
+    seen = []
+
+    def handler(request):
+        seen.append(json.loads(request.content))
+        if "model is down" in request.content.decode():
+            return httpx.Response(400, text="bad request")
+        result = sample_result()
+        result["entities"]["people"] = ["Volodymyr Zelenskyy"]
+        return httpx.Response(200, json={"choices": [{"message": {"content": json.dumps(result)}}]})
+
+    real = extract_images.recaption
+    monkeypatch.setattr(extract_images, "recaption", lambda *a, **kw: real(
+        *a, **{**kw, "client_factory": lambda: httpx.Client(transport=httpx.MockTransport(handler))}))
+    url = f"/api/item/{shot}/recaption"
+    write = {"X-RE2-Write": "1"}
+    assert client.post(url, json={"context": "Zelenskyy in Kyiv"}).status_code == 403
+    assert client.post(url, json={"context": "  "}, headers=write).status_code == 400
+    assert client.post(url, json={"context": "x" * 2001}, headers=write).status_code == 400
+    assert client.post(f"/api/item/{ids['clip.mp4']}/recaption", json={"context": "a clip"}, headers=write).status_code == 400
+    assert client.post("/api/item/999999/recaption", json={"context": "nothing"}, headers=write).status_code == 404
+    assert not seen
+
+    resp = client.post(url, json={"context": "Zelenskyy in Kyiv"}, headers=write)
+    assert resp.status_code == 200
+    detail = resp.json()
+    assert "owner says about this image: Zelenskyy in Kyiv." in seen[0]["messages"][1]["content"][0]["text"]
+    cap = detail["docs"]["caption"][0]["json"]
+    assert cap["user_context"] == "Zelenskyy in Kyiv" and cap["prompt_version"] == extract_images.PROMPT_VERSION
+    assert [e["name"] for e in detail["entities"]] == ["Volodymyr Zelenskyy"]
+
+    failed = client.post(url, json={"context": "model is down"}, headers=write)
+    assert failed.status_code == 502 and "vision model failed" in failed.json()["detail"]
+    assert client.get(f"/api/item/{shot}").json()["docs"]["caption"][0]["json"]["user_context"] == "Zelenskyy in Kyiv"
+
+
 def test_legacy_routes(env):
     client, _ = env
     assert client.get("/legacy/").status_code == 200

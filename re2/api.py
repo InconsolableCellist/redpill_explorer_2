@@ -21,6 +21,7 @@ from re2.config import REPO_ROOT
 log = logging.getLogger(__name__)
 
 HITS_PER_PAGE = 40
+RECAPTION_MAX_CHARS = 2000
 DASHBOARD = REPO_ROOT / "dashboard" / "index.html"
 PUBLIC = REPO_ROOT / "public"
 TEMPLATES = REPO_ROOT / "templates"
@@ -529,6 +530,39 @@ def create_app(cfg: config.Config | None = None) -> FastAPI:
                 "post": post,
                 "similar": [sim_cards[m] for m in similar_ids if m in sim_cards],
             }
+
+    @app.post("/api/item/{media_id}/recaption")
+    def item_recaption(media_id: int, request: Request, body: dict = Body(...)):
+        """Reads the image again with the owner's note about it; waits for the vision model (often a minute)."""
+        from re2 import extract_images, vlm
+
+        # Same guard as settings: a custom header needs a CORS preflight, which this app never grants.
+        if request.headers.get("x-re2-write") != "1":
+            raise HTTPException(403, "missing X-RE2-Write header")
+        context = str(body.get("context") or "").strip()
+        if not context:
+            raise HTTPException(400, "context is required")
+        if len(context) > RECAPTION_MAX_CHARS:
+            raise HTTPException(400, f"context is limited to {RECAPTION_MAX_CHARS:,} characters")
+        with closing(open_ro(cfg)) as conn:
+            card = search.cards(conn, [media_id]).get(media_id)
+        if card is None or card["status"] in ("EXCLUDED", "UNSUPPORTED"):
+            raise HTTPException(404, "not found")
+        if card["kind"] != "image":
+            raise HTTPException(400, "only images can be recaptioned")
+        conn = db.connect(cfg.db_path)
+        try:
+            extract_images.recaption(conn, cfg, media_id, context)
+        except LookupError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        except OSError as exc:
+            raise HTTPException(500, f"could not read the image: {exc}"[:300]) from exc
+        except (vlm.VLMError, ValueError) as exc:   # ValueError: a reply that is not JSON at all
+            log.warning("recaption of %s failed: %s", media_id, exc)
+            raise HTTPException(502, f"vision model failed: {exc}"[:300]) from exc
+        finally:
+            conn.close()
+        return item(media_id)
 
     def _first_readable(conn: sqlite3.Connection, media_id: int) -> Path | None:
         for (rel_path,) in conn.execute(

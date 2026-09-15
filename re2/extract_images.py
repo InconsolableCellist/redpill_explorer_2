@@ -88,6 +88,8 @@ def store_image_result(conn: sqlite3.Connection, cfg, media_id: int, d: dict, lo
             (media_id, d.get("sensitivity"), d.get("media_type"), d.get("language"), int(low_res)),
         )
         tags.set_media_tags(conn, media_id, {t: 1.0 for t in d.get("tags") or []}, "vlm")
+        # An image's entities come only from its caption, so a redone caption replaces them like its tags.
+        conn.execute("DELETE FROM media_entity WHERE media_id=?", (media_id,))
         store_entities(conn, media_id, d.get("entities"))
         db.clear_failure(conn, STAGE, media_id)
 
@@ -115,6 +117,7 @@ class Job:
     rel_path: str | None = None
     item_date: str | None = None
     redo: bool = False  # has a caption from an older prompt version
+    user_context: str | None = None  # what the archive's owner said about the image; kept across redos
 
 
 @dataclass
@@ -143,18 +146,39 @@ class ExtractStats:
                 f"avg_completion_tokens={avg_out:.0f}" + (" INTERRUPTED" if self.interrupted else ""))
 
 
+# What a job needs to know about one image; `m` is the media row.
+JOB_COLUMNS = """m.id, m.status, m.width, m.height, m.thumb_path,
+    (SELECT p.rel_path FROM media_path p WHERE p.media_id=m.id AND p.readable=1 ORDER BY p.id LIMIT 1) AS rel_path,
+    (SELECT p.rel_path FROM media_path p WHERE p.media_id=m.id ORDER BY p.id LIMIT 1) AS any_path,
+    (SELECT mm.item_date FROM media_meta mm WHERE mm.media_id=m.id) AS item_date,
+    EXISTS (SELECT 1 FROM doc d WHERE d.media_id=m.id AND d.kind='caption') AS redo,
+    (SELECT json_extract(d.json, '$.user_context') FROM doc d WHERE d.media_id=m.id AND d.kind='caption'
+     ORDER BY d.id DESC LIMIT 1) AS user_context"""
+
+
+def job_from_row(cfg, r, ran_out: set[int] = frozenset()) -> Job | None:
+    """The file to read (the original, else its thumbnail) and the hints to send; None if there is neither."""
+    if r["status"] == "READY" and r["rel_path"]:
+        small = r["width"] is not None and max(r["width"], r["height"] or 0) < LOW_RES_SIDE
+        path, low_res = Path(cfg.corpus_root) / r["rel_path"], small
+    elif r["thumb_path"]:
+        path, low_res = REPO_ROOT / r["thumb_path"], True
+    else:
+        return None
+    long_output = vlm.is_tall(r["width"], r["height"]) or r["id"] in ran_out
+    name = r["rel_path"] or r["any_path"]
+    folder = os.path.dirname(name) if name else None
+    return Job(r["id"], path, low_res, long_output, folder, name, r["item_date"], bool(r["redo"]),
+               r["user_context"] or None)
+
+
 def select_jobs(conn: sqlite3.Connection, cfg, limit: int | None, include_thumbnail_only: bool) -> list[Job]:
     statuses = ("READY", "THUMBNAIL_ONLY") if include_thumbnail_only else ("READY",)
     skip = db.pending_failures(conn, STAGE)
     ran_out = {r[0] for r in conn.execute(
         "SELECT media_id FROM failure WHERE stage=? AND error LIKE '%finish_reason=length%'", (STAGE,))}
     rows = conn.execute(
-        f"""SELECT m.id, m.status, m.width, m.height, m.thumb_path,
-                   (SELECT p.rel_path FROM media_path p WHERE p.media_id=m.id AND p.readable=1
-                    ORDER BY p.id LIMIT 1) AS rel_path,
-                   (SELECT p.rel_path FROM media_path p WHERE p.media_id=m.id ORDER BY p.id LIMIT 1) AS any_path,
-                   (SELECT mm.item_date FROM media_meta mm WHERE mm.media_id=m.id) AS item_date,
-                   EXISTS (SELECT 1 FROM doc d WHERE d.media_id=m.id AND d.kind='caption') AS redo
+        f"""SELECT {JOB_COLUMNS}
             FROM media m
             WHERE m.kind='image' AND m.status IN ({','.join('?' * len(statuses))})
               AND NOT EXISTS (SELECT 1 FROM doc d WHERE d.media_id=m.id AND d.kind='caption'
@@ -166,17 +190,10 @@ def select_jobs(conn: sqlite3.Connection, cfg, limit: int | None, include_thumbn
     for r in rows:
         if r["id"] in skip:
             continue
-        if r["status"] == "READY" and r["rel_path"]:
-            small = r["width"] is not None and max(r["width"], r["height"] or 0) < LOW_RES_SIDE
-            path, low_res = Path(cfg.corpus_root) / r["rel_path"], small
-        elif r["thumb_path"]:
-            path, low_res = REPO_ROOT / r["thumb_path"], True
-        else:
+        job = job_from_row(cfg, r, ran_out)
+        if job is None:
             continue
-        long_output = vlm.is_tall(r["width"], r["height"]) or r["id"] in ran_out
-        name = r["rel_path"] or r["any_path"]
-        folder = os.path.dirname(name) if name else None
-        jobs.append(Job(r["id"], path, low_res, long_output, folder, name, r["item_date"], bool(r["redo"])))
+        jobs.append(job)
         if limit is not None and len(jobs) >= limit:
             break
     return jobs
@@ -198,6 +215,61 @@ def sized_for_server(cfg, client_factory=httpx.Client, requested: int = 0):
     return cfg
 
 
+def user_context_note(note: str | None) -> str:
+    if not note or not note.strip():
+        return ""
+    note = note.strip()
+    return (f" The archive's owner says about this image: {note}{'' if note[-1] in '.!?' else '.'}"
+            " Treat this as reliable context: use it for the identity of people, statues, places, events and dates,"
+            " and for saved_as, while still describing only what is visible.")
+
+
+def extract_job(client: httpx.Client, cfg, job: Job, max_tokens: int | None = None) -> dict:
+    images = vlm.prepare_images(job.path, cfg.vision_max_side, cfg.vision_max_tiles, dense=job.long_output)
+    text = (USER_TEXT + (LOW_RES_TEXT if job.low_res else "") + vlm.folder_note(job.folder)
+            + vlm.filename_note(job.rel_path) + vlm.date_note(job.item_date) + vlm.tiles_note(len(images))
+            + user_context_note(job.user_context))
+    result = vlm.extract(client, cfg, images, vlm.IMAGE_SCHEMA, vlm.IMAGE_SYSTEM_PROMPT, text,
+                         max_tokens=max_tokens, sampling=vlm.LOOP_BREAKER if job.long_output else None)
+    result["_tiles"] = len(images)
+    if job.user_context:
+        result["user_context"] = job.user_context  # saved in the caption JSON, so a later redo sends it again
+    return result
+
+
+def owner_captioned(conn: sqlite3.Connection, media_id: int) -> bool:
+    """True when the image has a current-version caption made with the owner's context."""
+    return conn.execute(
+        """SELECT 1 FROM doc WHERE media_id=? AND kind='caption' AND json_extract(json, '$.user_context') IS NOT NULL
+           AND coalesce(json_extract(json, '$.prompt_version'), 0) >= ?""", (media_id, PROMPT_VERSION)).fetchone() is not None
+
+
+def recaption(conn: sqlite3.Connection, cfg, media_id: int, note: str, client_factory=httpx.Client) -> dict:
+    """Read one image again with the owner's note about it, and save it like any other extraction.
+
+    Raises LookupError when there is no such image or nothing to read, vlm.VLMError when the model fails.
+    """
+    row = conn.execute(f"SELECT {JOB_COLUMNS} FROM media m WHERE m.id=? AND m.kind='image'", (media_id,)).fetchone()
+    job = job_from_row(cfg, row) if row else None
+    if job is None:
+        raise LookupError(f"media {media_id} is not an image with a file or thumbnail to read")
+    job.user_context = note.strip()
+    with client_factory() as client:
+        try:
+            result = extract_job(client, cfg, job)
+        except vlm.VLMLengthError as exc:
+            save_raw(cfg, media_id, exc)
+            if job.long_output:
+                raise
+            job.long_output = True
+            result = extract_job(client, cfg, job, cfg.vision_max_tokens_tall)
+        except vlm.VLMError as exc:
+            save_raw(cfg, media_id, exc)
+            raise
+    store_image_result(conn, cfg, media_id, result, job.low_res)
+    return result
+
+
 def run(conn: sqlite3.Connection, cfg, limit: int | None = None, include_thumbnail_only: bool = True,
         client_factory=httpx.Client, concurrency: int = 0) -> ExtractStats:
     if concurrency or not cfg.vision_concurrency:
@@ -217,15 +289,13 @@ def run(conn: sqlite3.Connection, cfg, limit: int | None = None, include_thumbna
             client = local.client = client_factory()
             with lock:
                 clients.append(client)
-        images = vlm.prepare_images(job.path, cfg.vision_max_side, cfg.vision_max_tiles, dense=job.long_output)
-        text = (USER_TEXT + (LOW_RES_TEXT if job.low_res else "") + vlm.folder_note(job.folder)
-                + vlm.filename_note(job.rel_path) + vlm.date_note(job.item_date) + vlm.tiles_note(len(images)))
-        result = vlm.extract(client, cfg, images, vlm.IMAGE_SCHEMA, vlm.IMAGE_SYSTEM_PROMPT, text,
-                             max_tokens=max_tokens, sampling=vlm.LOOP_BREAKER if job.long_output else None)
-        result["_tiles"] = len(images)
-        return result
+        return extract_job(client, cfg, job, max_tokens)
 
     def on_result(job: Job, result: dict) -> None:
+        if owner_captioned(conn, job.media_id):
+            # Recaptioned from the dashboard with the owner's note while this job waited in the queue.
+            log.info("media %s was recaptioned with the owner's context meanwhile; keeping that", job.media_id)
+            return
         store_image_result(conn, cfg, job.media_id, result, job.low_res)
         usage = result.get("_usage") or {}
         stats.done += 1

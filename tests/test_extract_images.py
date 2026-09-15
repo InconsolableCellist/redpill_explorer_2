@@ -131,3 +131,85 @@ def test_newest_images_are_read_first(tmp_path):
         conn.execute("INSERT INTO media_meta(media_id, item_date) VALUES (?, ?)", (ids[name], when))
     order = [j.media_id for j in extract_images.select_jobs(conn, cfg, None, True)]
     assert order == [ids["2026.png"], ids["2024.png"], ids["2019.png"], ids["undated.png"]]
+
+
+def _recaption_env(tmp_path):
+    root = tmp_path / "corpus"
+    (root / "protests").mkdir(parents=True)
+    Image.new("RGB", (800, 600), "gray").save(root / "protests" / "statue.png")
+    conn = db.connect(":memory:")
+    db.init_schema(conn)
+    cfg = SimpleNamespace(corpus_root=root, base_url="http://vlm.test/v1", vision_model="gemma-test",
+                          vision_max_tokens=100, vision_max_side=1024, vision_concurrency=1,
+                          vision_max_tiles=6, vision_max_tokens_tall=300, data_dir=tmp_path / "data")
+    scan.scan(conn, cfg)
+    media_id = conn.execute("SELECT media_id FROM media_path").fetchone()[0]
+    generic = sample_result()
+    generic["tags"], generic["entities"]["places"] = ["toppled statue"], ["Somewhere"]
+    extract_images.store_image_result(conn, cfg, media_id, generic, False)
+    return conn, cfg, media_id
+
+
+def caption_json(conn, media_id):
+    return json.loads(conn.execute("SELECT json FROM doc WHERE media_id=? AND kind='caption'", (media_id,)).fetchone()[0])
+
+
+def test_recaption_sends_the_owners_note_and_saves_it(tmp_path):
+    conn, cfg, media_id = _recaption_env(tmp_path)
+    requests = []
+
+    def handler(request):
+        requests.append(json.loads(request.content))
+        result = sample_result()
+        result["tags"] = ["christopher columbus", "st paul"]
+        result["entities"]["people"] = ["Christopher Columbus"]
+        return httpx.Response(200, json={"choices": [{"message": {"content": json.dumps(result)}}]})
+
+    note = "This is the Columbus statue toppled at the Minnesota State Capitol, 10 June 2020"
+    extract_images.recaption(conn, cfg, media_id, f"  {note}  ",
+                             client_factory=lambda: httpx.Client(transport=httpx.MockTransport(handler)))
+    text = requests[0]["messages"][1]["content"][0]["text"]
+    assert text.startswith(extract_images.USER_TEXT)
+    assert 'folder "protests"' in text  # the normal hints still go along
+    assert f"The archive's owner says about this image: {note}. Treat this as reliable context" in text
+    assert requests[0]["messages"][0]["content"] == extract_images.vlm.IMAGE_SYSTEM_PROMPT
+    saved = caption_json(conn, media_id)
+    assert saved["user_context"] == note and saved["prompt_version"] == extract_images.PROMPT_VERSION
+    assert sorted(r[0] for r in conn.execute(
+        "SELECT t.name FROM media_tag mt JOIN tag t ON t.id=mt.tag_id WHERE mt.media_id=?", (media_id,))) == [
+        "christopher columbus", "st paul"]
+    assert [r[0] for r in conn.execute(
+        "SELECT e.name FROM media_entity me JOIN entity e ON e.id=me.entity_id WHERE me.media_id=?", (media_id,))] == [
+        "Christopher Columbus"]
+    assert extract_images.select_jobs(conn, cfg, None, True) == []  # current version: the batch leaves it alone
+
+
+def test_redo_of_an_older_caption_keeps_the_owners_note(tmp_path):
+    conn, cfg, media_id = _recaption_env(tmp_path)
+    old = {**sample_result(), "user_context": "The Columbus statue", "prompt_version": 1}
+    conn.execute("UPDATE doc SET json=? WHERE media_id=? AND kind='caption'", (json.dumps(old), media_id))
+    texts = []
+
+    def handler(request):
+        texts.append(json.loads(request.content)["messages"][1]["content"][0]["text"])
+        return httpx.Response(200, json={"choices": [{"message": {"content": json.dumps(sample_result())}}]})
+
+    [job] = extract_images.select_jobs(conn, cfg, None, True)
+    assert job.redo and job.user_context == "The Columbus statue"
+    extract_images.run(conn, cfg, client_factory=lambda: httpx.Client(transport=httpx.MockTransport(handler)))
+    assert "owner says about this image: The Columbus statue." in texts[0]
+    saved = caption_json(conn, media_id)
+    assert saved["user_context"] == "The Columbus statue" and saved["prompt_version"] == extract_images.PROMPT_VERSION
+
+
+def test_batch_does_not_overwrite_a_recaption_made_while_queued(tmp_path):
+    conn, cfg, media_id = _recaption_env(tmp_path)
+    conn.execute("UPDATE doc SET json=? WHERE media_id=? AND kind='caption'", (json.dumps(sample_result()), media_id))
+
+    def handler(request):
+        # The dashboard recaptions the image while the batch's request for it is in flight.
+        extract_images.store_image_result(conn, cfg, media_id, {**sample_result(), "user_context": "note"}, False)
+        return httpx.Response(200, json={"choices": [{"message": {"content": json.dumps(sample_result())}}]})
+
+    stats = extract_images.run(conn, cfg, client_factory=lambda: httpx.Client(transport=httpx.MockTransport(handler)))
+    assert stats.selected == 1 and caption_json(conn, media_id)["user_context"] == "note"

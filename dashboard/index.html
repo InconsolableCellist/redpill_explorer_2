@@ -404,6 +404,16 @@ mark { background: var(--hot-w); color: var(--ink); padding: 0 1px; }
   color: var(--ink-2);
 }
 .chips { display: flex; flex-wrap: wrap; gap: 5px; }
+.recap { display: flex; flex-direction: column; gap: 7px; padding: 10px 11px; background: var(--stock-bar); border: 1px solid var(--rule); border-left: 3px solid var(--blue); }
+.recap textarea { width: 100%; min-height: 88px; max-height: 40vh; resize: vertical; border: 1px solid var(--rule); background: var(--stock-card); padding: 8px 9px; font-size: 13.5px; line-height: 1.45; outline: none; }
+.recap textarea:focus { border-color: var(--blue); }
+.recap textarea:read-only { color: var(--ink-3); }
+.reader .recap__hint { font-size: 11.5px; line-height: 1.45; color: var(--ink-3); }
+.reader .recap__err { font-size: 12.5px; color: var(--hot); }
+.recap [data-recap-go] { color: var(--blue); border-color: var(--blue); }
+.recap__bar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.recap__time { font-family: var(--font-mono); font-size: 10.5px; letter-spacing: .06em; color: var(--focus); }
+.reader .context p { color: var(--ink); border-left: 2px solid var(--blue); padding-left: 8px; }
 .r-focus { outline: 2px solid var(--hot); outline-offset: 1px; }
 .preview [data-r].r-focus, .preview.r-focus { outline-offset: -2px; }
 .review { font-family: var(--font-mono); font-size: 10.5px; color: var(--focus); white-space: nowrap; }
@@ -714,6 +724,7 @@ mark { background: var(--hot-w); color: var(--ink); padding: 0 1px; }
           <kbd>l</kbd><span>Into the reader, then <kbd>j k</kbd> down through the post's photos and videos, the preview, keyframes and similar items, and <kbd>h l</kbd> along each row: <kbd>Enter</kbd> swaps a thumbnail into the preview, or opens the preview itself in a new tab</span>
           <kbd>x</kbd><span>Reveal / veil the item under the cursor · <kbd>X</kbd> cycles the veil threshold</span>
           <kbd>y y</kbd><span>Copy a citation: title — date — source — link</span>
+          <kbd>C</kbd><span>Recaption an image: tell the vision model what it shows (who, where, when) and it reads the image again with your note, which is kept with the caption. <kbd>Ctrl-Enter</kbd> sends, <kbd>Esc</kbd> cancels.</span>
           <kbd>n N</kbd><span>Next / previous highlighted match in the reader</span>
           <kbd>Space</kbd><span>Play / pause the reader's video</span>
           <kbd>← →</kbd><span>In the reader: seek 5 s · <kbd>t</kbd> jumps to the matching moment</span>
@@ -1335,7 +1346,8 @@ function renderReader() {
 
   el.innerHTML =
     `<div class="reader__bar"><span class="label">${escapeHtml(d.kind)} · #${d.media_id}</span>` +
-    `<span><button class="btn" data-discuss title="Discuss this item in Ask, with its full record attached (D)">Discuss</button> ` +
+    `<span>${d.kind === "image" ? `<button class="btn" data-recaption title="Tell the vision model what this image is and have it read the image again (C)">Recaption</button> ` : ""}` +
+    `<button class="btn" data-discuss title="Discuss this item in Ask, with its full record attached (D)">Discuss</button> ` +
     `<button class="btn" data-copy title="Copy citation (yy)">Cite</button> <button class="btn mobile-close" data-close>Close</button></span></div>` +
     `<div class="reader__body">` +
     galleryHtml(d) +
@@ -1346,6 +1358,7 @@ function renderReader() {
     `${d.legacy_spicy != null ? `<span title="The 2024 tagger's guess; not used for veiling">old spicy ${d.legacy_spicy.toFixed(1)}</span>` : ""}${d.width ? `<span>${d.width}×${d.height}</span>` : ""}${badges({ ...d, hit: S.openHit })}</div>` +
     (cap ? `<div class="meta"><span title="The image prompt version and model that wrote this caption">caption v${escapeHtml(cap.prompt_version ?? 1)} · ${escapeHtml(capDoc.model || "?")}${capDoc.created_at ? ` · ${escapeHtml(capDoc.created_at)} UTC` : ""}</span></div>` : "") +
     (cap?.summary ? `<p class="lede">${escapeHtml(cap.summary)}</p>` : "") +
+    (cap?.user_context ? `<section class="context"><h3 class="label">Your context</h3><p>${escapeHtml(cap.user_context)}</p></section>` : "") +
     section("Saved as", cap?.saved_as && cap.saved_as !== "unclear" ? `<p>${escapeHtml(cap.saved_as)}</p>` : "") +
     section("Later context", cap?.later_context && !/^none known\.?$/i.test(cap.later_context) ? `<p>${escapeHtml(cap.later_context)}</p>` : "") +
     section("Source", sources) +
@@ -1369,6 +1382,96 @@ function renderReader() {
   const v = $("#reader video");
   if (v && S.openHit?.start_s != null) v.addEventListener("loadedmetadata", () => { v.currentTime = S.openHit.start_s; }, { once: true });
   paintCursor("reader", false);
+}
+
+/* Recaption: the owner says what an image is (who, where, when) and the vision model reads it again with that.
+   The server waits for the model, which shares its slots with any batch captioning, so this can take minutes. */
+let recap = null;        // { id, started, timer } while a request runs
+let recapHint = null;    // the vision model and server, fetched once
+const RECAP_PLACEHOLDER = "What should the model know? e.g. This is the Columbus statue toppled at the Minnesota State Capitol, St. Paul, 10 June 2020.";
+async function openRecaption() {
+  if (!S.item) {
+    const card = currentCard();
+    if (!card) return say("Nothing under the cursor to recaption.");
+    await openItem(card.hit?.member_id ?? card.media_id, card.hit);
+  }
+  const d = S.item;
+  if (!d) return;
+  if (d.kind !== "image") return say("Only images can be recaptioned.");
+  let box = $("#reader .recap");
+  if (!box) {
+    box = document.createElement("div");
+    box.className = "recap";
+    box.innerHTML =
+      `<label class="label" for="recapText">Recaption #${d.media_id} with your context</label>` +
+      `<textarea id="recapText" maxlength="2000" placeholder="${escapeHtml(RECAP_PLACEHOLDER)}"></textarea>` +
+      `<p class="recap__hint" data-recap-hint>Reads the image again with the vision model, the same prompt and your note. It may take a minute.</p>` +
+      `<p class="recap__err" data-recap-err hidden></p>` +
+      `<div class="recap__bar"><button class="btn" data-recap-go title="Ctrl-Enter">Recaption</button><button class="btn" data-recap-cancel title="Esc">Cancel</button><span class="recap__time" data-recap-time></span></div>`;
+    $("textarea", box).value = (recap?.id === d.media_id ? recap.context : d.docs.caption?.[0]?.json?.user_context) || "";
+    $("#reader .reader__body").prepend(box);
+  }
+  paintRecap();
+  $("#reader").scrollTop = 0;
+  const ta = $("textarea", box);
+  ta.focus();
+  ta.setSelectionRange(ta.value.length, ta.value.length);
+  try {
+    recapHint ??= (await (await fetch("/api/settings")).json()).services.vision;
+    const hint = $("#reader [data-recap-hint]");
+    let host = recapHint.base_url;
+    try { host = new URL(recapHint.base_url).host; } catch { /* show it as written */ }
+    if (hint) hint.textContent = `Reads the image again with ${recapHint.vision_model} on ${host}: the same prompt plus your note. It may take a minute, longer while a batch is captioning.`;
+  } catch { /* the generic hint stays */ }
+}
+function closeRecaption() {
+  const box = $("#reader .recap");
+  if (!box) return;
+  box.remove();
+  if (recap) say(`Still reading #${recap.id}; the reader updates when it is done.`);
+  setFocus("reader");
+}
+function paintRecap(error = "") {
+  const box = $("#reader .recap");
+  if (!box) return;
+  const busy = !!recap && recap.id === S.item?.media_id;
+  $("[data-recap-go]", box).disabled = !!recap;
+  $("textarea", box).readOnly = busy;
+  $("[data-recap-time]", box).textContent = busy ? `reading… ${Math.round((Date.now() - recap.started) / 1000)} s`
+    : recap ? `busy with #${recap.id}` : "";
+  const err = $("[data-recap-err]", box);
+  err.textContent = error;
+  err.hidden = !error;
+}
+async function submitRecaption() {
+  const box = $("#reader .recap");
+  if (!box || recap || !S.item) return;
+  const id = S.item.media_id;
+  const context = $("textarea", box).value.trim();
+  if (!context) return paintRecap("Write what the model should know first.");
+  recap = { id, context, started: Date.now(), timer: setInterval(() => paintRecap(), 1000) };
+  paintRecap();
+  let payload = null, error = "";
+  try {
+    const resp = await fetch(`/api/item/${id}/recaption`, {
+      method: "POST", headers: { "Content-Type": "application/json", "X-RE2-Write": "1" }, body: JSON.stringify({ context }),
+    });
+    if (resp.ok) payload = await resp.json();
+    else {
+      const detail = (await resp.json().catch(() => null))?.detail;
+      error = typeof detail === "string" ? detail : `HTTP ${resp.status}`;
+    }
+  } catch (err) {
+    error = `Could not reach the server: ${err.message}`;
+  }
+  clearInterval(recap.timer);
+  recap = null;
+  if (payload) {
+    if (S.open === id) { S.item = payload; renderReader(); }
+    return say(`Recaptioned #${id}.`);
+  }
+  if (S.open === id && $("#reader .recap")) paintRecap(error);
+  else say(`Recaption of #${id} failed: ${error}`, true);
 }
 
 /* Highlight the query's words inside the reader, as text nodes, never as HTML. */
@@ -2738,6 +2841,7 @@ function onKey(e) {
     case "g": case "y": e.preventDefault(); S.pending = k; paintMode(); showWhichKey(k); return;
     case "d": if (S.mode === "ask" && S.focus === "lenses") { e.preventDefault(); S.pending = "d"; paintMode(); return; } break;
     case "D": return done(() => discussItem(currentCard()));
+    case "C": return done(openRecaption);
     case "S": return done(cycleSort);
     case "R": return done(() => { reviewNew = 0; scheduleSearch(0); pollReview(); say("Refreshed."); });
     case "O": return done(openOriginal);
@@ -2858,12 +2962,21 @@ $("#reader").addEventListener("click", (e) => {
   if (e.target.closest("[data-close]")) return closeReader();
   if (e.target.closest("[data-copy]")) { S.focus = "reader"; return copyCitation(); }
   if (e.target.closest("[data-discuss]")) return discussItem(S.item);
+  if (e.target.closest("[data-recaption]")) return openRecaption();
+  if (e.target.closest("[data-recap-go]")) return submitRecaption();
+  if (e.target.closest("[data-recap-cancel]")) return closeRecaption();
   if (e.target.closest("[data-veil].is-veiled")) { e.preventDefault(); return toggleVeil(); }
   const row = e.target.closest("[data-r]");
   if (!row || row.tagName === "A" || row.tagName === "VIDEO") return;  // links and video controls work natively
   S.cursor.reader = rowsOf("reader").indexOf(row);
   setFocus("reader");
   activateReaderRow(row);
+});
+$("#reader").addEventListener("keydown", (e) => {
+  // The global key handler ignores textareas, so the recaption box handles its own keys.
+  if (e.target.id !== "recapText") return;
+  if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); submitRecaption(); }
+  else if (e.key === "Escape") { e.preventDefault(); closeRecaption(); }
 });
 $("#moreBtn").addEventListener("click", loadMore);
 $("#composer").addEventListener("submit", (e) => { e.preventDefault(); if (S.ask.turns.some((t) => !t.done)) stopTurn(); else sendQuestion(); });
