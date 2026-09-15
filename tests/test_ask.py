@@ -134,6 +134,7 @@ def test_exhaustive_reads_every_candidate_in_batches(archive, monkeypatch):
     conn.executescript(f"INSERT INTO media(id, uid, kind, status) VALUES {rows}; INSERT INTO doc(media_id, kind, seq, text) VALUES {docs};")
     conn.commit()
     monkeypatch.setattr(ask, "_batch_chars", lambda cfg: 9000)       # about nine records a batch
+    monkeypatch.setattr(ask, "SPLIT_PAUSE_S", 0)
     seen = []
 
     def handler(request):
@@ -145,6 +146,8 @@ def test_exhaustive_reads_every_candidate_in_batches(archive, monkeypatch):
                       if sum(1 for b in seen if b.get("response_format")) == 1 else json.dumps({"thought": "", "action": "answer", "args": {}})]
         elif last.startswith("Question:") and "archive items (batch" in last:
             ids = re.findall(r"^\[m:(\d+)\]", last, flags=re.M)
+            if len(ids) > 6:   # the server has less room than the batch needs
+                return httpx.Response(500, text='{"error":{"code":500,"message":"Context size has been exceeded."}}')
             chunks = ["- Trudeau and missiles " + " ".join(f"[m:{i}]" for i in ids)]
         else:
             chunks = ["Everything read [m:10] [m:39]."]
@@ -156,8 +159,11 @@ def test_exhaustive_reads_every_candidate_in_batches(archive, monkeypatch):
     cov = dict(events)["coverage"]
     assert cov["keyword"] == 32 and cov["read"] == 32 and cov["batches"] >= 3 and not cov["capped"]
     batch_calls = [b for b in seen if "archive items (batch" in b["messages"][-1]["content"]]
-    read_ids = {m for b in batch_calls for m in re.findall(r"^\[m:(\d+)\]", b["messages"][-1]["content"], flags=re.M)}
-    assert len(batch_calls) == cov["batches"] and len(read_ids) == 32
+    read = [re.findall(r"^\[m:(\d+)\]", b["messages"][-1]["content"], flags=re.M) for b in batch_calls]
+    # Batches that overflowed were split and read again, so every item still reached the model once.
+    ok = [ids for ids in read if len(ids) <= 6]
+    assert len(ok) == cov["batches"] and len(read) > len(ok) and sorted(m for ids in ok for m in ids) == sorted(set(m for ids in ok for m in ids))
+    assert len({m for ids in ok for m in ids}) == 32
     assert dict(events)["final"]["text"] == "Everything read [1] [2]."
 
 

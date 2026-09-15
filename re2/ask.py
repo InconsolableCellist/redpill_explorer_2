@@ -174,7 +174,9 @@ def _stream_chat(client: httpx.Client, cfg, body: dict, control: Control | None)
     with client.stream("POST", f"{cfg.chat_base_url}/chat/completions", json=body, timeout=CHAT_TIMEOUT) as resp:
         if resp.status_code >= 400:
             resp.read()
-        resp.raise_for_status()
+            # llama.cpp explains itself in the body ("Context size has been exceeded"); keep that in the error.
+            raise httpx.HTTPStatusError(f"HTTP {resp.status_code}: {resp.text[:300]}", request=resp.request,
+                                        response=resp)
         for line in resp.iter_lines():
             if control:
                 control.check()   # leaving the with block closes the connection, which cancels the request
@@ -544,6 +546,7 @@ def match_set(conn: sqlite3.Connection, cfg, embed_client, queries: list[str], q
 EXHAUSTIVE_MAX = 1500          # items one exhaustive answer reads at most
 EXHAUSTIVE_RECORD_CHARS = 2400
 MAP_MAX_TOKENS = 1200
+SPLIT_PAUSE_S = 2.0            # after an overflow, give the server a moment before the halves
 EXHAUSTIVE_ANSWER_MAX_TOKENS = 2600
 
 MAP_SYSTEM = """You are the research assistant for a private archive of political and social-media material collected by the user. You read archive items in batches and write precise research notes. Do not moralise, add warnings, or refuse because material is offensive."""
@@ -568,7 +571,9 @@ Notes:
 
 
 def _batch_chars(cfg) -> int:
-    return max(8000, int((cfg.chat_context_tokens - PROMPT_OVERHEAD_TOKENS - MAP_MAX_TOKENS) * CHARS_PER_TOKEN * 0.85))
+    # llama.cpp's automatic slots share one context between concurrent requests, and dense text can run
+    # nearer 3 characters a token, so a batch takes well under the whole window.
+    return max(8000, int((cfg.chat_context_tokens - PROMPT_OVERHEAD_TOKENS - MAP_MAX_TOKENS) * 3.0 * 0.6))
 
 
 def _complete(client, cfg, system: str, prompt: str, max_tokens: int, control: Control) -> str:
@@ -602,12 +607,25 @@ def _read_all(conn, cfg, client, embed_client, ev: Evidence, question: str, orde
     conn.commit()
     batches = [b for b in batches if b]
     notes: list[str] = []
-    for i, batch in enumerate(batches, 1):
+    i = 0
+    while i < len(batches):
+        batch = batches[i]
+        i += 1
         control.check()
         t0 = time.monotonic()
-        text = _complete(client, cfg, MAP_SYSTEM, MAP_PROMPT.format(question=question, n=len(batch), i=i,
-                                                                    total=len(batches), records="\n\n".join(batch)),
-                         MAP_MAX_TOKENS, control)
+        try:
+            text = _complete(client, cfg, MAP_SYSTEM, MAP_PROMPT.format(question=question, n=len(batch), i=i,
+                                                                        total=len(batches), records="\n\n".join(batch)),
+                             MAP_MAX_TOKENS, control)
+        except AskError as exc:
+            # Too big for what the server has free right now: read the batch as two halves instead.
+            if len(batch) < 2 or not re.search(r"context|exceed|HTTP 5\d\d", str(exc), re.IGNORECASE):
+                raise
+            log.warning("batch of %d items failed (%s); splitting it", len(batch), exc)
+            batches[i - 1:i] = [batch[:len(batch) // 2], batch[len(batch) // 2:]]
+            i -= 1
+            time.sleep(SPLIT_PAUSE_S)
+            continue
         cited = len(set(re.findall(r"\[m:(\d+)\]", text)))
         if text and text.strip().upper() != "NONE":
             notes.append(text)
