@@ -42,6 +42,7 @@ img, video { display: block; max-width: 100%; }
   --blue-w: #E2E4FA;
   --hot:    #E1550A;
   --hot-w:  #FBE3D4;
+  --focus:  #00875A;
 
   --on-ink: #F6F7F9;
 
@@ -75,6 +76,7 @@ img, video { display: block; max-width: 100%; }
     --blue-w: #1B2140;
     --hot:    #FF8A44;
     --hot-w:  #3A2214;
+    --focus:  #35D08A;
 
     --on-ink: #0B0D11;
 
@@ -87,7 +89,7 @@ img, video { display: block; max-width: 100%; }
   --stock:#E4E6EA; --stock-well:#D6D9E0; --stock-card:#F4F5F7; --stock-bar:#EDEEF1;
   --rule:#C0C5D0; --rule-soft:#D0D4DC; --dot:#B9BFCB;
   --ink:#14161D; --ink-2:#4C5364; --ink-3:#79808F;
-  --blue:#2A3BD0; --blue-w:#E2E4FA; --hot:#E1550A; --hot-w:#FBE3D4;
+  --blue:#2A3BD0; --blue-w:#E2E4FA; --hot:#E1550A; --hot-w:#FBE3D4; --focus:#00875A;
   --on-ink:#F6F7F9;
   --shadow: 0 1px 0 rgba(20,22,29,.05), 0 6px 18px -10px rgba(20,22,29,.35);
   --shadow-lift: 0 2px 2px rgba(20,22,29,.08), 0 22px 40px -18px rgba(20,22,29,.55);
@@ -96,7 +98,7 @@ img, video { display: block; max-width: 100%; }
   --stock:#0F1116; --stock-well:#0A0C10; --stock-card:#191D25; --stock-bar:#14171E;
   --rule:#2B313D; --rule-soft:#22272F; --dot:#1C212A;
   --ink:#E9EBF0; --ink-2:#A3AAB9; --ink-3:#737A89;
-  --blue:#7285FF; --blue-w:#1B2140; --hot:#FF8A44; --hot-w:#3A2214;
+  --blue:#7285FF; --blue-w:#1B2140; --hot:#FF8A44; --hot-w:#3A2214; --focus:#35D08A;
   --on-ink:#0B0D11;
   --shadow: 0 1px 0 rgba(0,0,0,.4), 0 8px 20px -12px rgba(0,0,0,.9);
   --shadow-lift: 0 2px 4px rgba(0,0,0,.5), 0 26px 44px -20px rgba(0,0,0,1);
@@ -244,9 +246,13 @@ kbd {
 }
 .col { position: relative; min-width: 0; }
 .col.is-focus::after {
-  /* Which column the motions go to: a hot hairline along its top edge. */
-  content: ""; position: absolute; left: 0; right: 0; top: 0; height: 2px; background: var(--hot);
+  /* Which column the motions go to: a green bar along its top edge. */
+  content: ""; position: absolute; left: 0; right: 0; top: 0; height: 3px; background: var(--focus); z-index: 3;
 }
+/* The side columns scroll inside themselves, so their bar rides on a sticky element instead. */
+.lenses.is-focus::after, .reader.is-focus::after { content: none; }
+.lenses.is-focus::before { content: ""; display: block; position: sticky; top: -12px; height: 3px; margin: -12px 0 9px; background: var(--focus); z-index: 3; }
+.reader.is-focus .reader__bar { box-shadow: inset 0 3px 0 var(--focus); }
 
 .lenses {
   grid-area: lenses;
@@ -356,7 +362,8 @@ mark { background: var(--hot-w); color: var(--ink); padding: 0 1px; }
 .sort-btn:hover, .sort-btn:hover b { color: var(--hot); }
 .gallery { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; }
 .gallery button { flex: none; width: 64px; height: 64px; background: var(--stock-well) center/cover no-repeat; border: 1px solid var(--rule); position: relative; }
-.gallery button.is-current { outline: 2px solid var(--hot); outline-offset: 1px; }
+.gallery button.is-current { outline: 2px solid var(--blue); outline-offset: 1px; box-shadow: inset 0 -4px 0 var(--blue); }
+.gallery button.r-focus { outline-color: var(--hot); }
 .gallery button span { position: absolute; left: 2px; bottom: 2px; font-family: var(--font-mono); font-size: 9px; background: var(--ink); color: var(--stock); padding: 0 3px; }
 .lede { font-size: 14.5px !important; line-height: 1.55; color: var(--ink) !important; }
 .preview a { display: block; cursor: zoom-in; }
@@ -395,6 +402,9 @@ mark { background: var(--hot-w); color: var(--ink); padding: 0 1px; }
 }
 .chips { display: flex; flex-wrap: wrap; gap: 5px; }
 .r-focus { outline: 2px solid var(--hot); outline-offset: 1px; }
+.preview [data-r].r-focus, .preview.r-focus { outline-offset: -2px; }
+.review { font-family: var(--font-mono); font-size: 10.5px; color: var(--focus); white-space: nowrap; }
+.review b { font-weight: 500; }
 .tline { display: grid; grid-template-columns: 44px 1fr; gap: 8px; width: 100%; padding: 3px 4px; font-size: 13px; line-height: 1.45; color: var(--ink-2); }
 .tline span:first-child { font-family: var(--font-mono); font-size: 10.5px; color: var(--blue); padding-top: 2px; }
 .tline:hover { background: color-mix(in srgb, var(--ink) 5%, transparent); }
@@ -603,7 +613,7 @@ mark { background: var(--hot-w); color: var(--ink); padding: 0 1px; }
           </div>
         </form>
       </div>
-      <div class="results__head"><span class="label" id="resultsLabel">Recent</span><span><button class="sort-btn" id="sortBtn" title="Change sort (S)">sort <b id="sortName">relevance</b></button> <span class="label tnum" id="resultsCount"></span></span></div>
+      <div class="results__head"><span class="label" id="resultsLabel">Recent</span><span class="review" id="review" hidden></span><span><button class="sort-btn" id="sortBtn" title="Change sort (S)">sort <b id="sortName">relevance</b></button> <span class="label tnum" id="resultsCount"></span></span></div>
       <div class="list" id="list"></div>
       <button class="btn more-btn" id="moreBtn" hidden>Load more</button>
     </section>
@@ -644,7 +654,8 @@ mark { background: var(--hot-w); color: var(--ink); padding: 0 1px; }
         <h3>Items</h3>
         <div class="keys">
           <kbd>Enter</kbd><span>Open in the reader (<kbd>o</kbd> too). On a lens: narrow.</span>
-          <kbd>O</kbd><span>Open the full-size file in a new tab (or click the preview)</span>
+          <kbd>O</kbd><span>Open the full-size file in a new tab (or click the preview). In the reader, the photo, video or keyframe under the cursor.</span>
+          <kbd>l</kbd><span>Into the reader, then <kbd>j k</kbd> over the post's photos and videos, the preview, keyframes and similar items: <kbd>Enter</kbd> swaps a thumbnail into the preview, or opens the preview itself in a new tab</span>
           <kbd>x</kbd><span>Reveal / veil the item under the cursor · <kbd>X</kbd> cycles the veil threshold</span>
           <kbd>y y</kbd><span>Copy a citation: title — date — source — link</span>
           <kbd>n N</kbd><span>Next / previous highlighted match in the reader</span>
@@ -660,6 +671,7 @@ mark { background: var(--hot-w); color: var(--ink); padding: 0 1px; }
           <kbd>g r</kbd><span>Graph (<kbd>g n</kbd> too): entities that appear together, tags that appear together, or tags related in meaning — <kbd>T</kbd> cycles. <kbd>h l</kbd> step through nodes, <kbd>&gt;</kbd> narrows to one. Click a node; double-click narrows.</span>
           <kbd>g m</kbd><span>Map of the whole archive by meaning; your scope lights up. <kbd>h l</kbd> step through topics (<kbd>T</kbd> for themes), <kbd>z</kbd> zooms to one, <kbd>+ -</kbd> zoom, <kbd>0</kbd> resets, <kbd>&gt;</kbd> narrows. Scroll to zoom, drag to pan, click a dot to open it.</span>
           <kbd>g a</kbd><span>Ask a question; the agent searches the archive and answers with numbered sources. <kbd>a</kbd> asks within your current scopes. In ask mode <kbd>/</kbd> focuses the question, <kbd>m</kbd> switches informed / archive-only, <kbd>j k</kbd> walk the citations, <kbd>Enter</kbd> opens one.</span>
+          <kbd>g c</kbd><span>Caption review: images captioned with the current prompt, newest first, updating live while an extraction runs. <kbd>R</kbd> refreshes by hand.</span>
           <kbd>g w</kbd><span>Wiki — once it is compiled</span>
           <kbd>?</kbd><span>This panel</span>
         </div>
@@ -864,7 +876,7 @@ function onMessage(m) {
     case "lexical":
     case "fused":
       S.hits = m.hits; S.more = m.more;
-      $("#resultsLabel").textContent = m.t === "items" ? (S.scopes.length ? "In scope, newest first" : "Recent") :
+      $("#resultsLabel").textContent = m.t === "items" ? (S.scopes.length ? `In scope, ${S.sort === "relevance" ? "newest" : SORT_NAMES[S.sort]} first` : "Recent") :
         m.t === "lexical" ? "Matches" : "Matches · words + meaning";
       renderResults();
       $("#results").classList.remove("is-stale");
@@ -903,7 +915,7 @@ async function loadMore() {
 }
 
 /* ── Scopes ───────────────────────────────────────────────── */
-const SCOPE_NAMES = { text: "words", entity: "", tag: "tag", folder: "folder", kind: "kind", status: "status", date: "date", page: "page", media: "item", cluster: "topic" };
+const SCOPE_NAMES = { text: "words", entity: "", tag: "tag", folder: "folder", kind: "kind", status: "status", date: "date", page: "page", media: "item", cluster: "topic", caption: "captions" };
 
 function renderScopes(n) {
   $("#scopes").innerHTML = S.scopes.map((s, i) => {
@@ -933,6 +945,7 @@ function navigate(replace = false) {
   writeHash(replace);
   renderScopes();
   renderModes();
+  pollReview();
   if (S.mode === "ask") return renderAskMode();
   scheduleSearch(0);
 }
@@ -1172,20 +1185,21 @@ function section(title, body) {
 function renderReader() {
   const d = S.item;
   const el = $("#reader");
-  const cap = d.docs.caption?.[0]?.json || null;
+  const capDoc = d.docs.caption?.[0] || {};
+  const cap = capDoc.json || null;
   const legacy = d.docs.legacy_caption?.[0]?.text;
   let preview;
   if (d.kind === "video" && d.media_url) {
-    preview = `<video controls preload="metadata" src="${escapeHtml(d.media_url)}"${d.thumb_url ? ` poster="${escapeHtml(d.thumb_url)}"` : ""}></video>`;
+    preview = `<video controls preload="metadata" src="${escapeHtml(d.media_url)}"${d.thumb_url ? ` poster="${escapeHtml(d.thumb_url)}"` : ""} data-r data-href="${escapeHtml(d.media_url)}" title="Enter opens in a new tab · Space plays"></video>`;
     preview += `<a class="label" href="${escapeHtml(d.media_url)}" target="_blank" rel="noopener" style="padding:4px 0">open in a new tab ↗</a>`;
   } else if (d.kind === "image" && (d.media_url || d.thumb_url)) {
     const full = escapeHtml(d.media_url || d.thumb_url);
-    preview = `<div class="${veiled(d) ? "is-veiled" : ""}" data-veil><a href="${full}" target="_blank" rel="noopener" title="Open full size in a new tab (O)" data-zoom><img src="${full}" alt=""></a></div>`;
+    preview = `<div class="${veiled(d) ? "is-veiled" : ""}" data-veil><a href="${full}" target="_blank" rel="noopener" title="Open full size in a new tab (Enter or O)" data-zoom data-r><img src="${full}" alt=""></a></div>`;
   } else if (d.kind === "pdf" && d.media_url) {
     const page = S.openHit?.page;
     preview = `<a class="btn" target="_blank" rel="noopener" href="${escapeHtml(d.media_url)}${page ? `#page=${page}` : ""}" data-r>Open PDF${page ? ` at page ${page}` : ""}</a>`;
   } else {
-    preview = d.thumb_url ? `<img src="${escapeHtml(d.thumb_url)}" alt="">` : `<span class="label">No preview</span>`;
+    preview = d.thumb_url ? `<a href="${escapeHtml(d.thumb_url)}" target="_blank" rel="noopener" data-zoom data-r><img src="${escapeHtml(d.thumb_url)}" alt=""></a>` : `<span class="label">No preview</span>`;
   }
   const chips = [
     ...d.entities.map((e) => `<button class="chip" data-r data-scope="entity:${e.id}" data-label="${escapeHtml(e.name)}"><b>${escapeHtml(TYPE_GLYPH[e.type] || "")}</b>${escapeHtml(e.name)}</button>`),
@@ -1196,7 +1210,7 @@ function renderReader() {
   const transcript = (d.docs.transcript || []).map((t) =>
     `<button class="tline" data-r data-seek="${t.start_s}"><span>${fmtTime(t.start_s)}</span><span>${escapeHtml(t.text)}</span></button>`).join("");
   const frames = d.keyframes.length ? `<div class="frames">${d.keyframes.map((k) =>
-    `<button data-r data-seek="${k.t_s}"><img src="${escapeHtml(k.url)}" alt="" loading="lazy"><span>${fmtTime(k.t_s)}</span></button>`).join("")}</div>` : "";
+    `<button data-r data-seek="${k.t_s}" data-href="${escapeHtml(k.url)}"><img src="${escapeHtml(k.url)}" alt="" loading="lazy"><span>${fmtTime(k.t_s)}</span></button>`).join("")}</div>` : "";
   const similar = d.similar.length ? `<div class="sim">${d.similar.map((c) =>
     `<button data-r data-open="${c.media_id}">${thumbHtml(c)}<span class="t">${escapeHtml(c.title)}</span></button>`).join("")}</div>` : "";
 
@@ -1210,7 +1224,10 @@ function renderReader() {
     `<div class="meta"><span>${escapeHtml(d.kind.toUpperCase())}</span>${dateHtml(d)}<span>${escapeHtml(d.folder)}/</span>` +
     `${d.sensitivity != null ? `<span>sensitivity ${d.sensitivity.toFixed(2)}</span>` : ""}` +
     `${d.legacy_spicy != null ? `<span title="The 2024 tagger's guess; not used for veiling">old spicy ${d.legacy_spicy.toFixed(1)}</span>` : ""}${d.width ? `<span>${d.width}×${d.height}</span>` : ""}${badges({ ...d, hit: S.openHit })}</div>` +
+    (cap ? `<div class="meta"><span title="The image prompt version and model that wrote this caption">caption v${escapeHtml(cap.prompt_version ?? 1)} · ${escapeHtml(capDoc.model || "?")}${capDoc.created_at ? ` · ${escapeHtml(capDoc.created_at)} UTC` : ""}</span></div>` : "") +
     (cap?.summary ? `<p class="lede">${escapeHtml(cap.summary)}</p>` : "") +
+    section("Saved as", cap?.saved_as && cap.saved_as !== "unclear" ? `<p>${escapeHtml(cap.saved_as)}</p>` : "") +
+    section("Later context", cap?.later_context && !/^none known\.?$/i.test(cap.later_context) ? `<p>${escapeHtml(cap.later_context)}</p>` : "") +
     section("Source", sources) +
     (chips ? `<div class="chips">${chips}</div>` : "") +
     section("Description", cap ? `<p>${escapeHtml(cap.description)}</p>` : "") +
@@ -1226,6 +1243,9 @@ function renderReader() {
     section("Paths", `<ul class="paths">${d.paths.map((p) => `<li>${escapeHtml(p.rel_path)}${p.readable ? "" : " (unreadable)"}</li>`).join("")}</ul>`) +
     `</div>`;
   highlightReader();
+  // In a post, the reader cursor starts on the photo or video being shown.
+  const current = rowsOf("reader").findIndex((r) => r.classList.contains("is-current"));
+  if (current >= 0) S.cursor.reader = current;
   const v = $("#reader video");
   if (v && S.openHit?.start_s != null) v.addEventListener("loadedmetadata", () => { v.currentTime = S.openHit.start_s; }, { once: true });
   paintCursor("reader", false);
@@ -2021,9 +2041,11 @@ async function narrowToMainEntity() {
 }
 function activateReaderRow(row) {
   if (!row) return;
+  if (row.closest("[data-veil].is-veiled")) return toggleVeil();
   if (row.dataset.scope) return pushScope(row.dataset.scope, row.dataset.label);
   if (row.dataset.open) return openItem(Number(row.dataset.open));
   if (row.dataset.seek != null) return seek(Number(row.dataset.seek), true);
+  if (row.dataset.href) return window.open(row.dataset.href, "_blank", "noopener");
   if (row.tagName === "A") row.click();
 }
 function seek(t, absolute = false) {
@@ -2075,12 +2097,54 @@ function stepMember(delta) {
   openItem(next.media_id, null);
 }
 function openOriginal() {
+  const row = S.focus === "reader" ? rowsOf("reader")[S.cursor.reader] : null;
+  if (row?.dataset.open) return window.open(`/media/${row.dataset.open}/file`, "_blank", "noopener");
+  if (row?.dataset.href) return window.open(row.dataset.href, "_blank", "noopener");
   const d = S.item || currentCard();
   if (!d) return;
   const url = d.media_url || d.thumb_url;
   if (!url) return say("No file to open: the original is offline.");
   window.open(url, "_blank", "noopener");
 }
+
+/* ── Caption review ───────────────────────────────────────── */
+/* g c lists images captioned with the current prompt, newest first. While that scope is active the
+   progress line polls the server, and new captions stream into the list without moving the cursor. */
+const REVIEW_SCOPE = "caption:current";
+const REVIEW_POLL_MS = 15000;
+let reviewLastDoc = null, reviewNew = 0;
+function reviewing() { return S.mode === "search" && S.scopes.includes(REVIEW_SCOPE); }
+function startReview() {
+  S.q = ""; $("#q").value = "";
+  S.scopes = [REVIEW_SCOPE]; S.sort = "recent";
+  S.cursor.results = 0;
+  renderSort();
+  if (S.mode !== "search") setMode("search"); else navigate();
+  setFocus("results");
+  say("Caption review: newest captions from the current prompt first; new ones appear as they finish.");
+  pollReview();
+}
+function ago(utc) {
+  const s = Math.max(0, (Date.now() - Date.parse(utc.replace(" ", "T") + "Z")) / 1000);
+  return s < 90 ? `${Math.round(s)}s` : s < 5400 ? `${Math.round(s / 60)}m` : `${Math.round(s / 3600)}h`;
+}
+async function pollReview() {
+  const el = $("#review");
+  if (!reviewing()) { el.hidden = true; reviewLastDoc = null; reviewNew = 0; return; }
+  let p;
+  try { p = await (await fetch("/api/captions/progress")).json(); } catch { return; }
+  if (!reviewing()) return;
+  if (reviewLastDoc != null && p.last_doc !== reviewLastDoc) {
+    // Refresh in place on the first page; once more pages are loaded a refresh would drop them.
+    if (S.sort === "recent" && !S.q.trim() && S.hits.length <= 40) scheduleSearch(0);
+    else reviewNew += 1;
+  }
+  reviewLastDoc = p.last_doc;
+  el.hidden = false;
+  el.innerHTML = `<b>LIVE</b> · ${fmtN(p.done)} / ${fmtN(p.images)} at v${p.version} · ${p.per_min_10}/min` +
+    (p.last_at ? ` · last ${ago(p.last_at)} ago` : "") + (reviewNew ? ` · new captions, R refreshes` : "");
+}
+setInterval(() => { if (!document.hidden) pollReview(); }, REVIEW_POLL_MS);
 
 /* ── Keys ─────────────────────────────────────────────────── */
 function paintMode() {
@@ -2092,7 +2156,7 @@ function paintMode() {
 }
 const WHICH_KEY = {
   g: ["Go to", [["g", "top of the column"], ["s", "search"], ["t", "timeline"], ["r", "graph"], ["m", "map"], ["a", "ask"],
-                ["w", "wiki", "off"]]],
+                ["c", "caption review (live)"], ["w", "wiki", "off"]]],
   y: ["Copy", [["y", "citation for the item under the cursor"]]],
 };
 function showWhichKey(prefix) {
@@ -2157,6 +2221,7 @@ function onKey(e) {
     else if (k === "n" || k === "r") setMode("graph");
     else if (k === "m") setMode("map");
     else if (k === "a") setMode("ask");
+    else if (k === "c") startReview();
   });
   if (seq === "y") return done(() => { if (k === "y") copyCitation(); });
 
@@ -2168,6 +2233,7 @@ function onKey(e) {
   switch (k) {
     case "g": case "y": e.preventDefault(); S.pending = k; paintMode(); showWhichKey(k); return;
     case "S": return done(cycleSort);
+    case "R": return done(() => { reviewNew = 0; scheduleSearch(0); pollReview(); say("Refreshed."); });
     case "O": return done(openOriginal);
     case ",": return done(() => stepMember(-n));
     case ".": return done(() => stepMember(n));
@@ -2284,7 +2350,7 @@ $("#reader").addEventListener("click", (e) => {
   if (e.target.closest("[data-copy]")) { S.focus = "reader"; return copyCitation(); }
   if (e.target.closest("[data-veil].is-veiled")) { e.preventDefault(); return toggleVeil(); }
   const row = e.target.closest("[data-r]");
-  if (!row || row.tagName === "A") return;
+  if (!row || row.tagName === "A" || row.tagName === "VIDEO") return;  // links and video controls work natively
   S.cursor.reader = rowsOf("reader").indexOf(row);
   setFocus("reader");
   activateReaderRow(row);
@@ -2330,6 +2396,7 @@ function fromHash() {
   $("#q").value = S.q;
   renderScopes();
   renderModes();
+  pollReview();
   if (S.mode === "ask") {
     if (h.session && h.session !== S.ask.session) loadSession(h.session);
     renderAskMode();

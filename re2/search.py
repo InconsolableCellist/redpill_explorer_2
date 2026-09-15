@@ -17,7 +17,7 @@ from re2 import embed
 
 log = logging.getLogger(__name__)
 
-SCOPE_TYPES = ("text", "entity", "tag", "folder", "kind", "status", "date", "page", "media", "cluster")
+SCOPE_TYPES = ("text", "entity", "tag", "folder", "kind", "status", "date", "page", "media", "cluster", "caption")
 VALID_KINDS = {"image", "video", "pdf"}
 VALID_STATUSES = {"READY", "THUMBNAIL_ONLY", "SOURCE_OFFLINE"}
 MARK_START, MARK_END = "\x02", "\x03"
@@ -98,6 +98,15 @@ def _scope_ids(conn: sqlite3.Connection, kind: str, value: str) -> set[int]:
         # Clusters hold post primaries; include each post's photos and videos so scopes intersect cleanly.
         ids = q("SELECT media_id FROM cluster_member WHERE cluster_id=?", int(value))
         return set(expand_members(conn, list(ids)))
+    if kind == "caption":
+        # caption:current, images captioned with the current image prompt; caption:older, with an earlier one.
+        from re2.extract_images import PROMPT_VERSION
+
+        if value not in ("current", "older"):
+            raise ScopeError(f"bad caption scope {value!r}")
+        op = ">=" if value == "current" else "<"
+        return q("SELECT media_id FROM doc WHERE kind='caption' "
+                 f"AND coalesce(json_extract(json, '$.prompt_version'), 0) {op} ?", PROMPT_VERSION)
     if kind == "page":
         if not _has_table(conn, "wiki_member"):
             return set()
@@ -137,6 +146,10 @@ def scope_label(conn: sqlite3.Connection, scope: str) -> str:
         row = conn.execute("SELECT title FROM wiki_page WHERE slug=?", (value,)).fetchone()
     elif kind == "media":
         return f"#{value}"
+    elif kind == "caption":
+        from re2.extract_images import PROMPT_VERSION
+
+        return f"current prompt (v{PROMPT_VERSION})" if value == "current" else f"older than v{PROMPT_VERSION}"
     elif kind == "cluster" and _has_table(conn, "cluster"):
         row = conn.execute("SELECT label FROM cluster WHERE id=?", (int(value),)).fetchone()
     return row[0] if row else value
@@ -288,6 +301,21 @@ def expand_members(conn: sqlite3.Connection, media_ids: list[int]) -> list[int]:
 
 
 SORTS = ("relevance", "newest", "oldest", "recent")
+
+
+def caption_progress(conn: sqlite3.Connection) -> dict:
+    """How far captioning with the current image prompt has got, for watching a run live."""
+    from re2.extract_images import PROMPT_VERSION
+
+    row = conn.execute(
+        """SELECT count(*), max(created_at), max(id),
+                  sum(created_at >= datetime('now', '-10 minutes')) FROM doc
+           WHERE kind='caption' AND coalesce(json_extract(json, '$.prompt_version'), 0) >= ?""",
+        (PROMPT_VERSION,)).fetchone()
+    images = conn.execute(
+        "SELECT count(*) FROM media WHERE kind='image' AND status IN ('READY', 'THUMBNAIL_ONLY')").fetchone()[0]
+    return {"version": PROMPT_VERSION, "done": row[0], "images": images, "last_at": row[1],
+            "last_doc": row[2], "per_min_10": round((row[3] or 0) / 10, 1)}
 
 
 def sort_media(conn: sqlite3.Connection, media_ids: list[int], sort: str) -> list[int]:

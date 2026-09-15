@@ -152,3 +152,23 @@ def test_posts_fold_photos_into_the_screenshot(tmp_path):
     oldest = lines(client.get("/api/stream", params={"sort": "oldest"}))
     assert next(m for m in oldest if m["t"] == "items")["hits"]
     assert client.get("/api/stream", params={"sort": "sideways"}).status_code == 400
+
+
+def test_caption_review_scope_and_progress(env, tmp_path):
+    from re2 import extract_images
+
+    client, ids = env
+    assert client.get("/api/captions/progress").json()["done"] == 0
+    cfg = dataclasses.replace(config.load(), data_dir=tmp_path / "data")
+    conn = db.connect(cfg.db_path)
+    conn.execute("INSERT INTO doc(media_id, kind, text, json) VALUES (?, 'caption', 'x', ?)",
+                 (ids["ukraine/shot.png"], json.dumps({"prompt_version": extract_images.PROMPT_VERSION})))
+    conn.commit()
+    conn.close()
+    progress = client.get("/api/captions/progress").json()
+    assert progress["done"] == 1 and progress["version"] == extract_images.PROMPT_VERSION and progress["last_doc"]
+    msgs = lines(client.get("/api/stream", params=[("s", "caption:current"), ("sort", "recent")]))
+    assert [h["media_id"] for h in msgs[1]["hits"]] == [ids["ukraine/shot.png"]]
+    assert msgs[0]["scopes"][0]["label"].startswith("current prompt")
+    assert lines(client.get("/api/stream", params=[("s", "caption:older")]))[0]["n_in_scope"] == 0
+    assert client.get("/api/stream", params=[("s", "caption:bogus")]).status_code == 400

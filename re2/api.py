@@ -357,7 +357,7 @@ def create_app(cfg: config.Config | None = None) -> FastAPI:
                    WHERE me.media_id=? ORDER BY e.type, e.name""", (media_id,))]
             docs: dict[str, list] = {}
             for r in conn.execute(
-                    """SELECT id, kind, seq, start_s, end_s, page, text, json, model FROM doc
+                    """SELECT id, kind, seq, start_s, end_s, page, text, json, model, created_at FROM doc
                        WHERE media_id=? ORDER BY kind, seq""", (media_id,)):
                 d = dict(r)
                 d["json"] = json.loads(d["json"]) if d["json"] else None
@@ -439,6 +439,11 @@ def create_app(cfg: config.Config | None = None) -> FastAPI:
         if not row or not real.startswith(keyframes_root + os.sep) or not os.path.isfile(real):
             raise HTTPException(404, "not found")
         return FileResponse(real, media_type="image/jpeg")
+
+    @app.get("/api/captions/progress")
+    def captions_progress():
+        with closing(open_ro(cfg)) as conn:
+            return search.caption_progress(conn)
 
     @app.get("/api/status")
     def status():
