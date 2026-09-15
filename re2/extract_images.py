@@ -254,7 +254,7 @@ def run(conn: sqlite3.Connection, cfg, limit: int | None = None, include_thumbna
         images = vlm.prepare_images(job.path, cfg.vision_max_side, cfg.vision_max_tiles, dense=job.long_output)
         text = USER_TEXT + (LOW_RES_TEXT if job.low_res else "") + vlm.tiles_note(len(images))
         result = vlm.extract(client, cfg, images, vlm.IMAGE_SCHEMA, vlm.IMAGE_SYSTEM_PROMPT, text,
-                             max_tokens=max_tokens)
+                             max_tokens=max_tokens, sampling=vlm.LOOP_BREAKER if job.long_output else None)
         result["_tiles"] = len(images)
         return result
 

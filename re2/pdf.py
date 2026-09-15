@@ -196,7 +196,8 @@ def run_ocr(conn: sqlite3.Connection, cfg, limit: int | None = None, client_fact
         images = vlm.prepare_images(render_page(job.path, job.page), cfg.vision_max_side, cfg.vision_max_tiles,
                                     dense=job.long_output)
         text = f"Transcribe this document page (page {job.page} of {job.n_pages})." + vlm.tiles_note(len(images))
-        return vlm.extract(client, cfg, images, vlm.PAGE_SCHEMA, vlm.PAGE_SYSTEM_PROMPT, text, max_tokens=max_tokens)
+        return vlm.extract(client, cfg, images, vlm.PAGE_SCHEMA, vlm.PAGE_SYSTEM_PROMPT, text, max_tokens=max_tokens,
+                           sampling=vlm.LOOP_BREAKER if job.long_output else None)
 
     def on_result(job: PageJob, d: dict) -> None:
         payload = {k: v for k, v in d.items() if not k.startswith("_")}

@@ -26,8 +26,31 @@ VISION_TIMEOUT = 600.0
 RETRIES = 2
 RETRY_SLEEP = 10.0
 
-_STR = {"type": "string"}
-_STR_LIST = {"type": "array", "items": {"type": "string"}}
+# Length caps are enforced by llama.cpp's grammar while generating, so a field that
+# runs away is cut off and the model moves on. llama.cpp rejects caps of 2,000 or more
+# ("failed to parse grammar"), so transcribed text stays uncapped and loops there are
+# handled by DRY sampling on retry (see extract). Every property gets its own dict:
+# shared dicts would make one field's cap apply to all of them.
+MAX_GRAMMAR_LEN = 1999
+
+def _str(max_len: int | None) -> dict:
+    if max_len is None:
+        return {"type": "string"}
+    return {"type": "string", "maxLength": min(max_len, MAX_GRAMMAR_LEN)}
+
+
+def _list(max_items: int, item_len: int = 200) -> dict:
+    return {"type": "array", "items": _str(item_len), "maxItems": max_items}
+
+
+def _entities() -> dict:
+    return {
+        "type": "object",
+        "properties": {k: _list(30, 120) for k in ("people", "organizations", "places", "events", "platforms")},
+        "required": ["people", "organizations", "places", "events", "platforms"],
+        "additionalProperties": False,
+    }
+
 
 IMAGE_SCHEMA: dict = {
     "type": "object",
@@ -36,33 +59,22 @@ IMAGE_SCHEMA: dict = {
             "screenshot_social_post", "screenshot_article", "screenshot_chat", "screenshot_other",
             "meme", "photo", "video_still", "chart_or_infographic", "document",
             "cartoon_or_illustration", "other"]},
-        "description": _STR,
-        "ocr_text": _STR,
-        "subjects": _STR_LIST,
-        "actions": _STR,
-        "meaning": _STR,
-        "claims": _STR_LIST,
-        "intent": _STR,
-        "humor": _STR,
-        "entities": {
-            "type": "object",
-            "properties": {
-                "people": _STR_LIST,
-                "organizations": _STR_LIST,
-                "places": _STR_LIST,
-                "events": _STR_LIST,
-                "platforms": _STR_LIST,
-            },
-            "required": ["people", "organizations", "places", "events", "platforms"],
-            "additionalProperties": False,
-        },
-        "tags": _STR_LIST,
-        "date_hints": _STR_LIST,
-        "language": _STR,
+        "description": _str(1999),
+        "ocr_text": _str(None),
+        "subjects": _list(20),
+        "actions": _str(1000),
+        "meaning": _str(1000),
+        "claims": _list(15, 400),
+        "intent": _str(500),
+        "humor": _str(800),
+        "entities": _entities(),
+        "tags": _list(25, 60),
+        "date_hints": _list(10, 120),
+        "language": _str(20),
         "sensitivity": {"type": "number"},
         # Last on purpose: the model writes the headline after it has transcribed and interpreted the image.
-        "title": _STR,
-        "summary": _STR,
+        "title": _str(160),
+        "summary": _str(800),
     },
     "required": ["media_type", "description", "ocr_text", "subjects", "actions", "meaning", "claims",
                  "intent", "humor", "entities", "tags", "date_hints", "language", "sensitivity", "title", "summary"],
@@ -89,8 +101,8 @@ Fill every field:
 - date_hints: any dates, times, or datable references visible or implied.
 - language: primary language of the text, ISO 639-1 code, or "none".
 - sensitivity: 0.0 for benign, 0.3 for political but civil, 0.6 for slurs, hate or violence, 0.8 for graphic injury or explicit sexual content, 1.0 for the most extreme material. This is a retrieval filter, not a judgement.
-- title: a headline of at most 14 words stating the substance: who is shown or quoted and what is claimed, shown or happening, naming people, places and events (e.g. "Netanyahu pictured beside the official promising unredacted JFK and Epstein files"). Never start with the medium ("Screenshot of", "Tweet from", "Image showing").
-- summary: one to three sentences that lead with the most important content: the claim, event or implication and who makes it, then what the poster implies. The platform, account and engagement counts are secondary: mention them only after the substance, briefly, if at all."""
+- title: a headline of at most 14 words about the substance. Its subject is the person, group, event or thing the item is about, named; not the account that posted it and not the medium. Include identifiable people shown in the image. Bad: "Gareth Icke claims woman pictured released JFK files", "X post discusses Judas goats", "Screenshot of a tweet about crime". Good: "Netanyahu pictured beside the official promising unredacted JFK and Epstein files", "Judas goats lead livestock to slaughter; reply likens them to baited rat traps".
+- summary: one to three sentences. Lead with what is shown and claimed and what it implies, naming the people involved; then, briefly, who posted it. Platform names and engagement counts only if they matter. Never begin with the medium. Bad: "A screenshot of an X post by Gareth Icke claiming that a woman pictured with Netanyahu...". Good: "A woman pictured with Benjamin Netanyahu is said to control the release of the JFK and Epstein files; Gareth Icke sarcastically predicts a transparent, unredacted release, implying Israeli influence over what is withheld"."""
 
 _KEYFRAME_DROPPED = ("claims", "intent", "humor", "date_hints", "media_type", "title", "summary")
 
@@ -116,7 +128,7 @@ KEYFRAME_SYSTEM_PROMPT = "\n".join(
 # from the image plus the earlier extraction, which is much cheaper than a full re-read.
 RETITLE_SCHEMA: dict = {
     "type": "object",
-    "properties": {"title": _STR, "summary": _STR},
+    "properties": {"title": _str(160), "summary": _str(800)},
     "required": ["title", "summary"],
     "additionalProperties": False,
 }
@@ -126,18 +138,18 @@ You write headlines and summaries for items in a private research archive of pol
 
 Record content plainly, including offensive material, without softening, warnings or commentary.
 
-- title: a headline of at most 14 words stating the substance: who is shown or quoted and what is claimed, shown or happening, naming people, places and events (e.g. "Netanyahu pictured beside the official promising unredacted JFK and Epstein files"). Name well-known public figures you recognize. Never start with the medium ("Screenshot of", "Tweet from", "Image showing").
-- summary: one to three sentences that lead with the most important content: the claim, event or implication and who makes it, then what the poster implies. The platform, account and engagement counts are secondary: mention them only after the substance, briefly, if at all."""
+- title: a headline of at most 14 words about the substance. Its subject is the person, group, event or thing the item is about, named; not the account that posted it and not the medium. Include identifiable people shown in the image. Bad: "Gareth Icke claims woman pictured released JFK files", "X post discusses Judas goats", "Screenshot of a tweet about crime". Good: "Netanyahu pictured beside the official promising unredacted JFK and Epstein files", "Judas goats lead livestock to slaughter; reply likens them to baited rat traps".
+- summary: one to three sentences. Lead with what is shown and claimed and what it implies, naming the people involved; then, briefly, who posted it. Platform names and engagement counts only if they matter. Never begin with the medium. Bad: "A screenshot of an X post by Gareth Icke claiming that a woman pictured with Netanyahu...". Good: "A woman pictured with Benjamin Netanyahu is said to control the release of the JFK and Epstein files; Gareth Icke sarcastically predicts a transparent, unredacted release, implying Israeli influence over what is withheld"."""
 
 # Scanned document pages: mostly verbatim text, so a slimmer schema keeps output tokens down.
 PAGE_SCHEMA: dict = {
     "type": "object",
     "properties": {
-        "description": _STR,
-        "ocr_text": _STR,
-        "entities": copy.deepcopy(IMAGE_SCHEMA["properties"]["entities"]),
-        "tags": _STR_LIST,
-        "language": _STR,
+        "description": _str(600),
+        "ocr_text": _str(None),
+        "entities": _entities(),
+        "tags": _list(12, 60),
+        "language": _str(20),
     },
     "required": ["description", "ocr_text", "entities", "tags", "language"],
     "additionalProperties": False,
@@ -156,6 +168,13 @@ Fill every field:
 - language: ISO 639-1 code of the main language, or "none"."""
 
 THOUGHT_PREFIX = re.compile(r"^\s*<\|channel>thought.*?<channel\|>", re.DOTALL)
+
+
+# DRY sampling penalises extending text that repeats earlier text. Used only when
+# retrying items that ran out of tokens: on a 4chan thread the model otherwise loops
+# forever on post numbers (>>28931883 >>28931888 ...). It can blur genuinely repeated
+# text, so first attempts do without it.
+LOOP_BREAKER = {"dry_multiplier": 0.8, "dry_base": 1.75, "dry_allowed_length": 3, "dry_penalty_last_n": 4096}
 
 
 class VLMError(Exception):
@@ -247,7 +266,7 @@ def tiles_note(n: int) -> str:
 
 
 def extract(client: httpx.Client, cfg, images: bytes | list[bytes], schema: dict, system_prompt: str,
-            user_text: str, max_tokens: int | None = None) -> dict:
+            user_text: str, max_tokens: int | None = None, sampling: dict | None = None) -> dict:
     """One structured extraction over one image or its ordered slices.
 
     Returns the parsed dict plus '_usage' and '_elapsed_s'.
@@ -270,6 +289,7 @@ def extract(client: httpx.Client, cfg, images: bytes | list[bytes], schema: dict
         # Gemma 4 thinks by default and the reasoning eats max_tokens before any JSON appears.
         "chat_template_kwargs": {"enable_thinking": False},
         "reasoning_budget": 0,
+        **(sampling or {}),
     }
     url = f"{cfg.base_url}/chat/completions"
     started = time.monotonic()

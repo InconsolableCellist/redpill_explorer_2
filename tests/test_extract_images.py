@@ -55,6 +55,7 @@ def test_extract_images_pipeline(tmp_path, monkeypatch):
     # out of tokens, one at a time with the larger budget.
     budgets = [r["max_tokens"] for r in requests]
     assert budgets == [100] * 4 + [300] * 2
+    assert all("dry_multiplier" in r for r in requests[-2:]) and not any("dry_multiplier" in r for r in requests[:4])
     tall_request = next(r for r in requests[-2:] if sum(p["type"] == "image_url" for p in r["messages"][1]["content"]) > 1)
     assert tall_request["max_tokens"] == 300
     assert db.pending_failures(conn, "vlm_image") == set()

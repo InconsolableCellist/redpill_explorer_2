@@ -122,3 +122,12 @@ def test_length_error_keeps_raw_output():
     with pytest.raises(vlm.VLMLengthError) as info:
         vlm.extract(client, CFG, b"jpg", vlm.IMAGE_SCHEMA, "sys", "u")
     assert info.value.raw == '{"description": "cut'
+
+
+def test_schema_caps_are_independent():
+    props = vlm.IMAGE_SCHEMA["properties"]
+    assert props["title"]["maxLength"] == 160 and "maxLength" not in props["ocr_text"]
+    assert all(p.get("maxLength", 0) < 2000 for p in props.values())
+    assert props["title"] is not props["summary"]
+    assert vlm.KEYFRAME_SCHEMA["properties"]["description"] is not props["description"]
+    assert "title" not in vlm.KEYFRAME_SCHEMA["properties"]
