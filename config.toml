@@ -8,11 +8,11 @@ legacy_output_json = "/home/offipso/Downloads/redpills/output.json"
 
 [llm]
 base_url = "https://cube.tail99c274.ts.net:5000/v1"
-vision_model = "gemma-4-31b-heretic-ara-batch-parallel6-q8-8k-cube"
+vision_model = "gemma-4-31b-heretic-ara-q8-128k-cube"   # 4 slots sharing 128k; the 8k batch entry overflowed
 chat_model = "qwen38-27b-heretic-uncensored-q8-cube"
 vision_concurrency = "auto"   # or a number; "auto" reads the router's slots and context
-vision_max_tokens = 1600
-vision_max_tokens_tall = 5000   # one request at a time: prompt + tiles + 5000 fits the 8k context
+vision_max_tokens = 3000        # v2 captions often ran past 1,600 and were redone at the end
+vision_max_tokens_tall = 6000   # tall images and captions that still ran out, one request at a time
 vision_max_side = 1024
 vision_max_tiles = 6
 

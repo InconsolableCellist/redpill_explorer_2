@@ -159,7 +159,7 @@ def select_jobs(conn: sqlite3.Connection, cfg, limit: int | None, include_thumbn
             WHERE m.kind='image' AND m.status IN ({','.join('?' * len(statuses))})
               AND NOT EXISTS (SELECT 1 FROM doc d WHERE d.media_id=m.id AND d.kind='caption'
                               AND coalesce(json_extract(d.json, '$.prompt_version'), 0) >= ?)
-            ORDER BY redo, m.status='THUMBNAIL_ONLY', m.id""",
+            ORDER BY redo, m.status='THUMBNAIL_ONLY', item_date IS NULL, item_date DESC, m.id DESC""",
         (*statuses, PROMPT_VERSION),
     ).fetchall()
     jobs = []

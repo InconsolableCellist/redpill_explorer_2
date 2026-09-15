@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 from types import SimpleNamespace
 
 import httpx
@@ -114,3 +115,19 @@ def test_captions_from_older_prompt_are_redone_after_new_images(tmp_path):
     assert new_doc != old_doc  # a new doc id, so the embed step picks up the new text
     assert conn.execute("SELECT count(*) FROM doc_fts WHERE doc_fts MATCH 'old'").fetchone()[0] == 0
     assert [j.media_id for j in extract_images.select_jobs(conn, cfg, None, True)] == [ids["new.png"]]
+
+
+def test_newest_images_are_read_first(tmp_path):
+    root = tmp_path / "corpus"
+    root.mkdir()
+    for shade, name in enumerate(("2019.png", "2026.png", "undated.png", "2024.png")):
+        Image.new("RGB", (500, 400), (shade * 60, 0, 0)).save(root / name)
+    conn = db.connect(":memory:")
+    db.init_schema(conn)
+    cfg = SimpleNamespace(corpus_root=root)
+    scan.scan(conn, cfg)
+    ids = {Path(r[1]).name: r[0] for r in conn.execute("SELECT media_id, rel_path FROM media_path")}
+    for name, when in (("2019.png", "2019-03-01"), ("2026.png", "2026-09-14"), ("2024.png", "2024-11")):
+        conn.execute("INSERT INTO media_meta(media_id, item_date) VALUES (?, ?)", (ids[name], when))
+    order = [j.media_id for j in extract_images.select_jobs(conn, cfg, None, True)]
+    assert order == [ids["2026.png"], ids["2024.png"], ids["2019.png"], ids["undated.png"]]
