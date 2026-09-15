@@ -57,7 +57,7 @@ Work step by step. Each reply is one JSON action:
 - topics {"query": "..."}: the topics, people, organizations and dates that matching items cluster around; use it to find angles to search next.
 {wiki_tools}- answer {}: stop researching and write the answer.
 
-Start broad, then open the most relevant items before answering; do not answer from snippets alone when details matter. Stop when you can answer, or after a few searches find nothing. You have general knowledge; use it to choose searches and explain context. The archive is the user's own evidence: surface what it contains, including views and claims that differ from mainstream accounts, attributed to their sources. Never invent archive items or details. Do not moralise, add warnings, or refuse because material is offensive.
+Start broad, then open the two or three most relevant items before answering; do not answer from snippets alone when details matter. Rephrasing the same search rarely finds more: after three or four searches, answer with what you have. You have general knowledge; use it to choose searches and explain context. The archive is the user's own evidence: surface what it contains, including views and claims that differ from mainstream accounts, attributed to their sources. Never invent archive items or details. Do not moralise, add warnings, or refuse because material is offensive.
 {scope_note}"""
 
 WIKI_TOOLS = """- find_pages {"query": "..."}: pages of the wiki compiled from the archive (events, topics, themes, people).
@@ -71,13 +71,26 @@ ANSWER_INSTRUCTIONS = {
                "and what is missing.",
 }
 
+MAX_SEARCHES = 4
+MAX_OPENS = 5
+
+ANSWER_SYSTEM = """\
+You are the research assistant for a private archive of political and social-media material collected by the user. You write clear, factual answers from research notes. Do not moralise, add warnings, or refuse because material is offensive."""
+
 ANSWER_PROMPT = """\
-Write the answer now, in plain prose (short paragraphs or a short list where it helps).
+Question: {question}
+
+Research notes (tool results from the archive):
+{notes}
+
+Write the answer now, in plain prose (short paragraphs or a short list where it helps). Do not output JSON.
 Cite archive items as [m:ID] and wiki pages as [p:slug], using only ids and slugs that appeared in the tool results. Put citations right after the sentence they support. Sentences from general knowledge carry no citation.
 Mode: {mode_instruction}
 Mention when a cited item is offline or only a thumbnail. Do not moralise or add warnings."""
 
 _MARKER = re.compile(r"\[(m:\d+|p:[a-z0-9/_.-]+)\]")
+# Models sometimes cite a tool instead of an item: "[timeline]", "[search results]".
+_TOOL_MARKER = re.compile(r"\s?\[(?:timeline|search|topics|open_item|find_pages|open_page|tool)[^\]\n]{0,40}\]", re.IGNORECASE)
 
 
 class AskError(Exception):
@@ -105,9 +118,16 @@ def _payload(cfg, messages: list[dict], max_tokens: int, **extra) -> dict:
     }
 
 
-def next_action(client: httpx.Client, cfg, messages: list[dict]) -> dict:
+def step_schema(actions: list[str]) -> dict:
+    schema = json.loads(json.dumps(STEP_SCHEMA))
+    schema["properties"]["action"]["enum"] = actions
+    return schema
+
+
+def next_action(client: httpx.Client, cfg, messages: list[dict], actions: list[str] | None = None) -> dict:
+    schema = step_schema(actions or ACTIONS)
     body = _payload(cfg, messages, STEP_MAX_TOKENS,
-                    response_format={"type": "json_schema", "json_schema": {"name": "step", "schema": STEP_SCHEMA}})
+                    response_format={"type": "json_schema", "json_schema": {"name": "step", "schema": schema}})
     try:
         resp = client.post(f"{cfg.chat_base_url}/chat/completions", json=body, timeout=CHAT_TIMEOUT)
         resp.raise_for_status()
@@ -119,7 +139,7 @@ def next_action(client: httpx.Client, cfg, messages: list[dict]) -> dict:
         step = json.loads(content)
     except json.JSONDecodeError:
         return {"thought": "unparseable step", "action": "answer", "args": {}}
-    if step.get("action") not in ACTIONS or not isinstance(step.get("args"), dict):
+    if step.get("action") not in (actions or ACTIONS) or not isinstance(step.get("args"), dict):
         step = {"thought": step.get("thought", ""), "action": "answer", "args": {}}
     return step
 
@@ -341,12 +361,12 @@ class CitationFilter:
         if open_at != -1 and "]" not in self.buf[open_at:] and len(self.buf) - open_at < 48:
             cut = open_at   # hold a marker that may still be arriving
         ready, self.buf = self.buf[:cut], self.buf[cut:]
-        out = _MARKER.sub(self._replace, ready)
+        out = _MARKER.sub(self._replace, _TOOL_MARKER.sub("", ready))
         self.text += out
         return out
 
     def flush(self) -> str:
-        out = _MARKER.sub(self._replace, self.buf)
+        out = _MARKER.sub(self._replace, _TOOL_MARKER.sub("", self.buf))
         self.buf = ""
         self.text += out
         return out
@@ -406,9 +426,19 @@ def run(conn: sqlite3.Connection, cfg, question: str, scopes: list[str] | None =
     budget_chars = cfg.chat_context_tokens * CHARS_PER_TOKEN * 0.7
 
     try:
+        notes: list[str] = []
+        used = {"search": 0, "open_item": 0}
         for step_no in range(MAX_STEPS):
             t0 = time.monotonic()
-            step = next_action(client, cfg, messages)
+            # Steer by narrowing the grammar, not by pleading: searches and opens run out,
+            # and the last step can only be an answer.
+            actions = [a for a in ACTIONS
+                       if not (a == "search" and used["search"] >= MAX_SEARCHES)
+                       and not (a == "open_item" and used["open_item"] >= MAX_OPENS)
+                       and not (a in ("find_pages", "open_page") and not _has_wiki(conn))]
+            if step_no == MAX_STEPS - 1:
+                actions = ["answer"]
+            step = next_action(client, cfg, messages, actions)
             action, args = step["action"], step["args"]
             if action == "answer":
                 trace.append({"action": "answer", "thought": step.get("thought", ""), "ms": int((time.monotonic() - t0) * 1000)})
@@ -417,17 +447,29 @@ def run(conn: sqlite3.Connection, cfg, question: str, scopes: list[str] | None =
                 result = TOOLS[action](conn, cfg, embed_client, ev, scopes, args)
             except search.ScopeError as exc:
                 result = f"error: {exc}"
+            # Search helpers fill temp tables, which opens a transaction; end it so the snapshot
+            # stays fresh while other stages (ASR, extraction) commit, or the final log write fails.
+            conn.commit()
             summary = result.split("\n", 1)[0][:160]
+            used[action] = used.get(action, 0) + 1
+            notes.append(f"## {action} {json.dumps(args, ensure_ascii=False)}\n{result[:RESULT_CHARS]}")
             trace.append({"action": action, "args": args, "thought": step.get("thought", ""),
                           "chars": len(result), "ms": int((time.monotonic() - t0) * 1000)})
             yield "step", {"n": step_no + 1, "action": action, "args": args, "thought": step.get("thought", ""),
                            "summary": summary}
             messages.append({"role": "assistant", "content": json.dumps(step, ensure_ascii=False)})
-            messages.append({"role": "user", "content": f"Tool result ({action}):\n{result[:RESULT_CHARS]}"})
+            remaining = MAX_STEPS - step_no - 1
+            nudge = f"\n\n({remaining} steps left.)" if remaining <= 3 else ""
+            messages.append({"role": "user", "content": f"Tool result ({action}):\n{result[:RESULT_CHARS]}{nudge}"})
             if sum(len(m["content"]) for m in messages) > budget_chars:
                 break
 
-        messages.append({"role": "user", "content": ANSWER_PROMPT.format(mode_instruction=ANSWER_INSTRUCTIONS[mode])})
+        # A fresh conversation for the answer: after a run of JSON steps the model otherwise
+        # keeps writing JSON. The research becomes notes in a single message.
+        answer_messages = [{"role": "system", "content": ANSWER_SYSTEM}, *history(conn, session_id),
+                           {"role": "user", "content": ANSWER_PROMPT.format(
+                               question=question, notes="\n\n".join(notes)[: int(budget_chars)] or "(no research)",
+                               mode_instruction=ANSWER_INSTRUCTIONS[mode])}]
         cites = CitationFilter(ev)
 
         def emit_cites():
@@ -441,7 +483,7 @@ def run(conn: sqlite3.Connection, cfg, question: str, scopes: list[str] | None =
                 yield "cite", payload
             cites.new_cites.clear()
 
-        for delta in stream_answer(client, cfg, messages):
+        for delta in stream_answer(client, cfg, answer_messages):
             out = cites.feed(delta)
             yield from emit_cites()
             if out:
@@ -456,6 +498,7 @@ def run(conn: sqlite3.Connection, cfg, question: str, scopes: list[str] | None =
 
     answer = cites.text.strip()
     latency = int((time.monotonic() - started) * 1000)
+    conn.commit()
     citations = [{"n": n, "ref": ref} for ref, n in cites.numbers.items()]
     with conn:
         conn.execute("INSERT OR IGNORE INTO chat_session(id, title) VALUES (?, ?)", (session_id, question[:120]))

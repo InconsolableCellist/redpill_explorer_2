@@ -60,16 +60,26 @@ def test_agent_loop_cites_only_what_tools_returned(archive):
     assert [s["general"] for s in final["sentences"] if s["text"].strip()] == [False, False, True, True]
     # The open_item result reached the model, with the transcript timestamp.
     assert any("(0:35)" in m["content"] for m in seen[2]["messages"] if m["role"] == "user")
+    # The answer call is a fresh conversation with the research as notes, not a JSON transcript.
+    answer_call = seen[-1]
+    assert answer_call["stream"] and len(answer_call["messages"]) == 2
+    assert "Research notes" in answer_call["messages"][1]["content"] and "(0:35)" in answer_call["messages"][1]["content"]
     row = conn.execute("SELECT question, session_id, trace_json FROM chat_log").fetchone()
     assert row[0].startswith("What did Trudeau") and len(json.loads(row[2])) == 3
 
 
 def test_step_cap_and_unavailable_model(archive):
     conn, cfg = archive
-    looping = scripted_model(steps=[{"thought": "again", "action": "timeline", "args": {"query": "trudeau"}}] * 20,
-                             answer_chunks=["Nothing much."], seen=[])
+    seen = []
+    looping = scripted_model(steps=[{"thought": "again", "action": "search", "args": {"query": "trudeau"}}] * 4 +
+                             [{"thought": "again", "action": "timeline", "args": {"query": "trudeau"}}] * 3 +
+                             [{"thought": "done", "action": "answer", "args": {}}],
+                             answer_chunks=["Nothing much."], seen=seen)
     events = list(ask.run(conn, cfg, "When?", client=looping))
-    assert sum(1 for e in events if e[0] == "step") == ask.MAX_STEPS
+    assert sum(1 for e in events if e[0] == "step") == ask.MAX_STEPS - 1
+    enums = [c["response_format"]["json_schema"]["schema"]["properties"]["action"]["enum"] for c in seen if not c.get("stream")]
+    assert "search" in enums[3] and "search" not in enums[4]      # searches run out after four
+    assert enums[-1] == ["answer"]                                # the last step can only answer
 
     def down(request):
         raise httpx.ConnectError("no route")
@@ -83,6 +93,7 @@ def test_citation_filter_holds_split_markers():
     assert f.feed("A claim [m") == "A claim "
     assert f.feed(":5] and more") == "[1] and more"
     assert f.flush() == ""
+    assert f.feed("It peaked in September [timeline]. ") == "It peaked in September. "
 
 
 def test_ask_endpoint_streams_sse(archive, monkeypatch):
