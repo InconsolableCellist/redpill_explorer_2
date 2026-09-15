@@ -535,8 +535,20 @@ mark { background: var(--hot-w); color: var(--ink); padding: 0 1px; }
 .wrow__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .wrow__kind { font-family: var(--font-mono); font-size: 9.5px; color: var(--ink-3); margin-right: 5px; }
 .wrow__n { font-family: var(--font-mono); font-size: 10.5px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
-.wrow.is-unwritten .wrow__name { color: var(--ink-3); font-style: italic; }
-.wrow.is-stale .wrow__n::before { content: "● "; color: var(--hot); font-size: 8px; vertical-align: 1px; }
+.wrow.is-unwritten .wrow__name { color: var(--ink-3); }
+.wrow.is-context { opacity: .55; }
+.wrow__mark { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 6px; vertical-align: 1px; box-sizing: border-box; }
+.wrow__mark--written { background: var(--focus); }
+.wrow__mark--stale { background: linear-gradient(90deg, var(--hot) 50%, transparent 50%); border: 1px solid var(--hot); }
+.wrow__mark--unwritten { border: 1px solid var(--ink-3); }
+.wrow__done { color: var(--ink-3); }
+.wrow__done.has-some { color: var(--focus); }
+.wsummary { display: flex; flex-direction: column; gap: 2px; font-family: var(--font-mono); font-size: 10.5px; color: var(--ink-3); padding: 2px 6px 10px; border-bottom: 1px solid var(--rule-soft); margin-bottom: 8px; }
+.wsummary b { color: var(--ink); font-weight: 500; }
+.wlegend { display: flex; gap: 4px 10px; align-items: center; flex-wrap: wrap; margin-top: 2px; }
+.wlegend .wrow__mark { margin-right: 3px; }
+.wfilter { color: var(--blue); cursor: pointer; }
+.wfilter:hover { color: var(--ink); }
 .wrow:hover { color: var(--ink); background: color-mix(in srgb, var(--ink) 5%, transparent); }
 .wrow.is-current { border-left-color: var(--blue); color: var(--ink); background: var(--stock-card); }
 .wrow.is-cursor { border-left-color: var(--hot); color: var(--ink); background: var(--stock-card); }
@@ -837,7 +849,7 @@ mark { background: var(--hot-w); color: var(--ink); padding: 0 1px; }
           <kbd>g ,</kbd><span>Settings: which model servers Ask, captions, embeddings and speech-to-text use</span>
           <kbd>g a</kbd><span>Ask a question; the agent searches the archive and answers with numbered sources. <kbd>a</kbd> asks within your current scopes. In ask mode <kbd>/</kbd> focuses the question, <kbd>m</kbd> switches informed / archive-only, <kbd>j k</kbd> walk the citations, <kbd>Enter</kbd> opens one.</span>
           <kbd>g c</kbd><span>Caption review: images captioned with the current prompt, newest first, updating live while an extraction runs. <kbd>R</kbd> refreshes by hand.</span>
-          <kbd>g w</kbd><span>Wiki: pages compiled from the archive, overview › themes › topics › events, and people and places. On the left, <kbd>j k</kbd> walk the page tree and <kbd>Enter</kbd> opens a page; in the page, <kbd>j k</kbd> walk its links, citations, child pages and items, and <kbd>Enter</kbd> follows one (a citation opens the item in the reader). <kbd>&gt;</kbd> narrows search to the page's items. The line under the title says how many of the page's items its writer read and whether newer captions have made it stale.</span>
+          <kbd>g w</kbd><span>Wiki: pages compiled from the archive, overview › themes › topics › events, and people and places. On the left, each page is marked written (green), stale (half orange) or not yet (hollow), themes and topics show how many pages below them are written, and <kbd>W</kbd> shows all pages, only written or only unwritten ones (with their parents); <kbd>j k</kbd> walk the page tree and <kbd>Enter</kbd> opens a page; in the page, <kbd>j k</kbd> walk its links, citations, child pages and items, and <kbd>Enter</kbd> follows one (a citation opens the item in the reader). <kbd>&gt;</kbd> narrows search to the page's items. The line under the title says how many of the page's items its writer read and whether newer captions have made it stale.</span>
           <kbd>?</kbd><span>This panel</span>
         </div>
       </div>
@@ -937,7 +949,7 @@ const S = {
          seed: null, topic: null,              // argue: the Ask turn a new debate starts from; the claim
          exhaustive: store("askAll") ?? false }, // read every candidate item in batches instead of a sample
   settings: null,
-  wiki: { pages: null, bySlug: new Map(), slug: null, page: null, loadedAt: 0 },
+  wiki: { pages: null, bySlug: new Map(), slug: null, page: null, loadedAt: 0, filter: store("wikiFilter") || "all" },
 };
 
 /* ── URL hash ─────────────────────────────────────────────── */
@@ -2380,48 +2392,85 @@ async function renderWikiMode() {
 }
 /* Rows of the tree: the overview, every theme, the topics of the theme holding the open page, and the events of
    its topic; then people, places and organizations. Showing one branch keeps j and k short. */
+const WIKI_FILTERS = ["all", "written", "unwritten"];
+function wikiState(pg) { return !pg.written ? "unwritten" : pg.stale ? "stale" : "written"; }
 function wikiTreeRows() {
   const pages = S.wiki.pages || [];
-  const open = new Set();
-  for (let slug = S.wiki.slug, guard = 0; slug && guard < 8; guard++) { open.add(slug); slug = S.wiki.bySlug.get(slug)?.parent_slug; }
+  const filter = S.wiki.filter || "all";
   const kids = (slug, kind) => pages.filter((pg) => pg.parent_slug === slug && pg.kind === kind);
   const byCount = (a, b) => b.members - a.members || a.title.localeCompare(b.title);
+  // A filter shows matching pages wherever they are, with their parents as context, all expanded.
+  const match = (pg) => filter === "all" || (filter === "written" ? pg.written : !pg.written);
+  const open = new Set();
+  for (let slug = S.wiki.slug, guard = 0; slug && guard < 8; guard++) { open.add(slug); slug = S.wiki.bySlug.get(slug)?.parent_slug; }
+  const shown = (pg) => match(pg) || (filter !== "all" && pages.some((c) => c.parent_slug === pg.slug && shown(c)));
   const rows = [];
   const overview = S.wiki.bySlug.get("overview");
-  if (overview) rows.push([overview, 0]);
+  if (overview && shown(overview)) rows.push([overview, 0]);
   for (const theme of pages.filter((pg) => pg.kind === "theme").sort(byCount)) {
+    if (!shown(theme)) continue;
     rows.push([theme, 0]);
-    if (!open.has(theme.slug)) continue;
+    if (filter === "all" && !open.has(theme.slug)) continue;
     for (const topic of kids(theme.slug, "topic").sort(byCount)) {
+      if (!shown(topic)) continue;
       rows.push([topic, 1]);
-      if (open.has(topic.slug)) for (const ev of kids(topic.slug, "event")) rows.push([ev, 2]);
+      if (filter !== "all" || open.has(topic.slug)) for (const ev of kids(topic.slug, "event")) if (shown(ev)) rows.push([ev, 2]);
     }
   }
-  const known = new Set(rows.map(([pg]) => pg.slug));
-  const loose = pages.filter((pg) => ["topic", "event"].includes(pg.kind) && !known.has(pg.slug) && !S.wiki.bySlug.has(pg.parent_slug));
-  return { tree: rows, loose, entities: pages.filter((pg) => pg.kind === "entity").sort(byCount) };
+  const known = new Set(pages.filter((pg) => rows.some(([r]) => r.slug === pg.slug) || S.wiki.bySlug.has(pg.parent_slug)).map((pg) => pg.slug));
+  const loose = pages.filter((pg) => ["topic", "event"].includes(pg.kind) && !known.has(pg.slug) && shown(pg));
+  return { tree: rows, loose, entities: pages.filter((pg) => pg.kind === "entity" && shown(pg)).sort(byCount) };
+}
+/* Written pages under a page (its topics and their events, or a topic's events), for the tree's counts. */
+function wikiDescendants(pg) {
+  const pages = S.wiki.pages || [];
+  const out = [];
+  const walk = (slug) => { for (const c of pages) if (c.parent_slug === slug && c.kind !== "entity") { out.push(c); walk(c.slug); } };
+  walk(pg.slug);
+  return out;
 }
 function wikiRowHtml(pg, depth) {
-  const cls = [pg.slug === S.wiki.slug && "is-current", !pg.written && "is-unwritten", pg.stale && pg.written && "is-stale"].filter(Boolean).join(" ");
-  const tip = `${pg.kind}${pg.written ? "" : " · not written yet"}${pg.stale && pg.written ? " · stale" : ""} · ${pg.members} items`;
+  const state = wikiState(pg);
+  const context = S.wiki.filter && S.wiki.filter !== "all" && !(S.wiki.filter === "written" ? pg.written : !pg.written);
+  const cls = [pg.slug === S.wiki.slug && "is-current", !pg.written && "is-unwritten", state === "stale" && "is-stale", context && "is-context"].filter(Boolean).join(" ");
+  const below = pg.kind === "overview" || pg.kind === "entity" ? [] : wikiDescendants(pg);
+  const done = below.filter((c) => c.written).length;
+  const tip = `${pg.kind} · ${state === "unwritten" ? "not written yet" : state}${below.length ? ` · ${done} of ${below.length} pages below written` : ""} · ${pg.members} items`;
   return `<button class="wrow ${cls}" data-slug="${escapeHtml(pg.slug)}" style="--depth:${depth}" title="${escapeHtml(tip)}">` +
-    `<span class="wrow__name"><span class="wrow__kind">${escapeHtml(pg.kind[0].toUpperCase())}</span>${escapeHtml(pg.title)}</span>` +
-    `<span class="wrow__n">${pg.kind === "overview" ? "" : fmtN(pg.members)}</span></button>`;
+    `<span class="wrow__name"><span class="wrow__mark wrow__mark--${state}" aria-label="${state}"></span><span class="wrow__kind">${escapeHtml(pg.kind[0].toUpperCase())}</span>${escapeHtml(pg.title)}</span>` +
+    `<span class="wrow__n">${below.length ? `<span class="wrow__done${done ? " has-some" : ""}">${done}/${below.length}</span> ` : ""}${pg.kind === "overview" ? "" : fmtN(pg.members)}</span></button>`;
 }
 function renderWikiTree() {
   if (S.mode !== "wiki") return;
   const { tree, loose, entities } = wikiTreeRows();
-  const c = S.wiki.counts || {};
-  const written = Object.values(c).reduce((a, k) => a + k.written, 0), total = Object.values(c).reduce((a, k) => a + k.pages, 0);
-  const group = (title, rows, note = "") => rows.length ? `<div class="lens-group"><h3><span class="label">${escapeHtml(title)}</span><span class="label">${escapeHtml(note)}</span></h3>${rows.join("")}</div>` : "";
+  const pages = S.wiki.pages || [];
+  const written = pages.filter((pg) => pg.written).length;
+  // Topics partition the archive's items, so written topic pages say how much of it the wiki covers.
+  const topics = pages.filter((pg) => pg.kind === "topic");
+  const covered = topics.filter((pg) => pg.written).reduce((a, pg) => a + pg.members, 0);
+  const all = topics.reduce((a, pg) => a + pg.members, 0);
+  const filter = S.wiki.filter || "all";
+  const group = (title, rows, note = "") => rows.length ? `<div class="lens-group"><h3><span class="label">${escapeHtml(title)}</span>${note}</h3>${rows.join("")}</div>` : "";
+  const head = `<button class="wfilter label" data-wfilter title="W: show all pages, only written ones, or only unwritten ones">${filter === "all" ? "all" : filter} ▾</button>`;
   $("#lenses").innerHTML =
-    group("Wiki", tree.map(([pg, d]) => wikiRowHtml(pg, d)), `${fmtN(written)} of ${fmtN(total)} written`) +
+    `<div class="wsummary"><span><b>${fmtN(written)}</b> of ${fmtN(pages.length)} pages written</span>` +
+    `<span><b>${fmtN(covered)}</b> of ${fmtN(all)} items in written topics (${all ? Math.round(100 * covered / all) : 0}%)</span>` +
+    `<span class="wlegend"><i class="wrow__mark wrow__mark--written"></i>written <i class="wrow__mark wrow__mark--stale"></i>stale <i class="wrow__mark wrow__mark--unwritten"></i>not yet</span></div>` +
+    group("Wiki", tree.map(([pg, d]) => wikiRowHtml(pg, d)), head) +
     group("Earlier topics and events", loose.map((pg) => wikiRowHtml(pg, 0))) +
-    group("People, places, organizations", entities.map((pg) => wikiRowHtml(pg, 0)));
+    group("People, places, organizations", entities.map((pg) => wikiRowHtml(pg, 0))) +
+    (!tree.length && !loose.length && !entities.length ? `<div class="empty">No ${filter} pages.</div>` : "");
   $("#lenses").classList.remove("is-stale");
   const cur = rowsOf("lenses").findIndex((r) => r.dataset.slug === S.wiki.slug);
   if (cur >= 0 && S.focus !== "lenses") S.cursor.lenses = cur;
   paintCursor("lenses", S.focus === "lenses");
+}
+function cycleWikiFilter() {
+  S.wiki.filter = WIKI_FILTERS[(WIKI_FILTERS.indexOf(S.wiki.filter || "all") + 1) % WIKI_FILTERS.length];
+  store("wikiFilter", S.wiki.filter);
+  S.cursor.lenses = 0;
+  renderWikiTree();
+  say(S.wiki.filter === "all" ? "Showing every page." : `Showing ${S.wiki.filter} pages, with their parents.`);
 }
 let wikiReq = 0;
 async function openWikiPage(slug, { replace = false } = {}) {
@@ -3842,6 +3891,7 @@ function onKey(e) {
     case "a": return done(() => { setMode("ask"); setTimeout(() => $("#askInput").focus(), 0); });
     case "m": if (S.mode === "ask") return done(toggleAskMode); break;
     case "M": if (S.mode === "ask") return done(toggleAskKind); break;
+    case "W": if (S.mode === "wiki") return done(cycleWikiFilter); break;
     case "E": if (S.mode === "ask") return done(toggleReach); break;
     case "P": if (S.mode === "ask" && S.ask.kind === "argue") return done(cycleArgueRole); break;
     case "?": return done(() => toggleHelp());
@@ -3902,6 +3952,7 @@ $("#lenses").addEventListener("click", (e) => {
   pushScope(row.dataset.scope, row.dataset.label);
 });
 $("#lenses").addEventListener("click", (e) => {
+  if (e.target.closest("[data-wfilter]")) return cycleWikiFilter();
   const row = e.target.closest(".wrow");
   if (!row) return;
   S.cursor.lenses = rowsOf("lenses").indexOf(row);
