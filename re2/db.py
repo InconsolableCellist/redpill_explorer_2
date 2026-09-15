@@ -164,6 +164,11 @@ CREATE TABLE IF NOT EXISTS pdf_ocr_queue (          -- scanned PDF pages waiting
   page INTEGER NOT NULL,                            -- 1-based
   PRIMARY KEY (media_id, page)
 );
+CREATE TABLE IF NOT EXISTS selection (              -- items picked on the map, for sel:<id> scopes (search.py)
+  id TEXT PRIMARY KEY,                              -- a hash of the id list, so the same set reuses its row
+  media_ids TEXT NOT NULL,                          -- comma-separated item ids (post primaries)
+  created_at TEXT DEFAULT (datetime('now'))
+);
 """
 
 
