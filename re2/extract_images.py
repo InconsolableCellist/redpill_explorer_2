@@ -12,6 +12,7 @@ from pathlib import Path
 import httpx
 
 from re2 import db, runner, tags, vlm
+from re2 import entities as entities_mod
 from re2.config import REPO_ROOT
 
 log = logging.getLogger(__name__)
@@ -48,10 +49,11 @@ def store_entities(conn: sqlite3.Connection, media_id: int, entities: dict) -> N
     for key, etype in ENTITY_TYPES.items():
         for name in (entities or {}).get(key) or []:
             name = " ".join(str(name).split())
-            if not name:
+            if not name or entities_mod.is_placeholder(name):
                 continue
             conn.execute("INSERT OR IGNORE INTO entity(name, type) VALUES (?, ?)", (name, etype))
             entity_id = conn.execute("SELECT id FROM entity WHERE name=? AND type=?", (name, etype)).fetchone()[0]
+            entity_id = entities_mod.canonical_id(conn, entity_id)   # names merged earlier stay merged
             conn.execute("INSERT OR IGNORE INTO media_entity(media_id, entity_id) VALUES (?, ?)",
                          (media_id, entity_id))
 

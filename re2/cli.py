@@ -207,6 +207,16 @@ def cmd_recluster(cfg: config.Config, args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_merge_entities(cfg: config.Config, args: argparse.Namespace) -> int:
+    from re2 import entities
+
+    stats = entities.merge(db.open_db(cfg), dry_run=args.dry_run)
+    for line in stats.examples:
+        print(f"  {line}")
+    print(f"merge-entities{' (dry run)' if args.dry_run else ''}: {stats.summary()}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="re2")
     parser.add_argument("--config", help="path to config.toml")
@@ -261,6 +271,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("recluster", help="topics, themes and the 2D map from item vectors (local CPU)") \
         .set_defaults(func=cmd_recluster)
+
+    p = sub.add_parser("merge-entities", help="merge entity names that are obviously the same")
+    p.add_argument("--dry-run", action="store_true", help="print the merges without applying them")
+    p.set_defaults(func=cmd_merge_entities)
 
     sub.add_parser("dates", help="recompute item dates from sources, filenames, text and mtimes") \
         .set_defaults(func=cmd_dates)

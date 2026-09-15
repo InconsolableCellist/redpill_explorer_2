@@ -135,6 +135,10 @@ CREATE TABLE IF NOT EXISTS post_member (
   PRIMARY KEY (post_id, media_id)
 );
 CREATE INDEX IF NOT EXISTS ix_post_member_media ON post_member(media_id);
+CREATE TABLE IF NOT EXISTS entity_alias (            -- entities.py: a merged-away entity and the one it became
+  alias_id INTEGER PRIMARY KEY REFERENCES entity(id),
+  canonical_id INTEGER NOT NULL REFERENCES entity(id)
+);
 CREATE TABLE IF NOT EXISTS cluster (                 -- topics and themes (cluster.py); the latest run is kv.cluster_run
   id INTEGER PRIMARY KEY,
   level TEXT NOT NULL,                              -- theme | topic
