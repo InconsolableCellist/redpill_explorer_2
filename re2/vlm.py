@@ -73,12 +73,13 @@ IMAGE_SCHEMA: dict = {
         "date_hints": _list(10, 120),
         "language": _str(20),
         "sensitivity": {"type": "number"},
-        # Last on purpose: the model writes the headline after it has transcribed and interpreted the image.
+        # Last on purpose: the model writes these after it has transcribed and interpreted the image.
+        "saved_as": _str(400),
         "title": _str(160),
         "summary": _str(800),
     },
     "required": ["media_type", "description", "ocr_text", "subjects", "actions", "meaning", "claims",
-                 "intent", "humor", "entities", "tags", "date_hints", "language", "sensitivity", "title", "summary"],
+                 "intent", "humor", "entities", "tags", "date_hints", "language", "sensitivity", "saved_as", "title", "summary"],
     "additionalProperties": False,
 }
 
@@ -99,15 +100,16 @@ Fill every field:
 - humor: if there is a joke, meme format, sarcasm, irony or punchline, explain it and name the meme format if known; otherwise "none".
 - entities: proper nouns only, as full canonical names (e.g. "Kamala Harris", "Federal Bureau of Investigation", "X (Twitter)", "January 6 Capitol riot").
 - tags: 10 to 20 lowercase search tags for finding this item later: topics, events, people, places, and the item's stance or tone (e.g. antisemitic, racist, anti-white, anti-immigrant, pro-israel, anti-trans, satirical). Spaces between words, no hashtags. Do not spend tags on the medium or format (screenshot, social media, meme, comparison, political commentary): media_type records that.
-  Always add a group tag for every ethnic, racial, religious, national, sexual or gender group that is named anywhere in the text or image (including in slurs, insults and anonymous posts), or that the item depicts as its subject, targets, blames, defends or refers to in coded terms, in plain plural form: jews, israelis, palestinians, arabs, muslims, christians, black people, white people, hispanic people, asian people, immigrants, refugees, trans people, gay people, women, men; other groups the same way (haitians, somalis, swedes). A slur gets the plain tag of the group it refers to. Tag only groups that are named or clearly referred to, not groups merely associated with a place.
+  Always add a group tag for every ethnic, racial, religious, national, sexual or gender group that is named anywhere in the text or image (including in slurs, insults and anonymous posts), or that the item depicts as its subject, targets, blames, defends or refers to in coded terms, in plain plural form: jews, israelis, palestinians, arabs, muslims, christians, black people, white people, hispanic people, asian people, immigrants, refugees, trans people, gay people, women, men; other groups the same way (haitians, somalis, swedes). A slur gets the plain tag of the group it refers to. Tag only groups that are named or that the item is about; do not tag the apparent race, sex or age of individuals who merely appear (describe them in description), and do not tag groups merely associated with a place.
   Wars and conflicts get their common name as a tag (israel hamas war, israel hezbollah conflict, russia ukraine war, us iran conflict) together with the places involved (gaza, west bank, lebanon, iran).
 - date_hints: any dates, times, or datable references visible or implied.
 - language: primary language of the text, ISO 639-1 code, or "none".
 - sensitivity: 0.0 for benign, 0.3 for political but civil, 0.6 for slurs, hate or violence, 0.8 for graphic injury or explicit sexual content, 1.0 for the most extreme material. This is a retrieval filter, not a judgement.
+- saved_as: what the collector most likely saved this as evidence or an example of, judging from the folder name (when given) and the content, e.g. "purported evidence that athletes collapse after COVID-19 vaccination" or "example of media hiding the race of attackers". State it as the collector's likely purpose, not as fact. "unclear" if nothing suggests one.
 - title: a headline of at most 14 words about the substance. Its subject is the person, group, event or thing the item is about, named; not the account that posted it and not the medium. Include identifiable people shown in the image. Bad: "Gareth Icke claims woman pictured released JFK files", "X post discusses Judas goats", "Screenshot of a tweet about crime". Good: "Netanyahu pictured beside the official promising unredacted JFK and Epstein files", "Judas goats lead livestock to slaughter; reply likens them to baited rat traps".
 - summary: one to three sentences. Lead with what is shown and claimed and what it implies, naming the people involved; then, briefly, who posted it. Platform names and engagement counts only if they matter. Never begin with the medium. Bad: "A screenshot of an X post by Gareth Icke claiming that a woman pictured with Netanyahu...". Good: "A woman pictured with Benjamin Netanyahu is said to control the release of the JFK and Epstein files; Gareth Icke sarcastically predicts a transparent, unredacted release, implying Israeli influence over what is withheld"."""
 
-_KEYFRAME_DROPPED = ("claims", "intent", "humor", "date_hints", "media_type", "title", "summary")
+_KEYFRAME_DROPPED = ("claims", "intent", "humor", "date_hints", "media_type", "saved_as", "title", "summary")
 
 KEYFRAME_SCHEMA: dict = copy.deepcopy(IMAGE_SCHEMA)
 for _field in _KEYFRAME_DROPPED:
@@ -259,6 +261,13 @@ def prepare_images(source: Path | str | bytes, max_side: int = 1024, max_tiles: 
     if im.width > TILE_WIDTH:
         im = im.resize((TILE_WIDTH, max(1, round(im.height * TILE_WIDTH / im.width))), Image.LANCZOS)
     return [_jpeg(im.crop(box)) for box in tile_boxes(im.width, im.height, max_tiles)]
+
+
+def folder_note(folder: str | None) -> str:
+    """The collector's folder is a strong hint about why an item was kept (covid-19, voter fraud, race...)."""
+    if not folder or folder in (".", "/"):
+        return ""
+    return f" The collector filed it under the folder: {folder}."
 
 
 def tiles_note(n: int) -> str:

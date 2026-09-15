@@ -17,7 +17,7 @@ def sample_result():
         "actions": "a", "meaning": "m", "claims": [], "intent": "i", "humor": "none",
         "entities": {"people": [], "organizations": [], "places": [], "events": [], "platforms": []},
         "tags": ["t"], "date_hints": [], "language": "en", "sensitivity": 0.1,
-        "title": "Headline", "summary": "Lede first.",
+        "saved_as": "unclear", "title": "Headline", "summary": "Lede first.",
     }
 
 

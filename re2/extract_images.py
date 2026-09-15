@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import sqlite3
 import threading
 import time
@@ -41,6 +42,7 @@ def caption_text(d: dict) -> str:
         f"Meaning: {d.get('meaning', '')}\n"
         f"Claims: {'; '.join(d.get('claims') or [])}\n"
         f"Intent: {d.get('intent', '')}\n"
+        f"Saved as: {d.get('saved_as', '')}\n"
         f"Humor: {d.get('humor', '')}"
     )
 
@@ -106,6 +108,7 @@ class Job:
     path: Path
     low_res: bool
     long_output: bool = False  # tall image, or ran out of tokens before
+    folder: str | None = None
 
 
 @dataclass
@@ -161,7 +164,8 @@ def select_jobs(conn: sqlite3.Connection, cfg, limit: int | None, include_thumbn
         else:
             continue
         long_output = vlm.is_tall(r["width"], r["height"]) or r["id"] in ran_out
-        jobs.append(Job(r["id"], path, low_res, long_output))
+        folder = os.path.dirname(r["rel_path"]) if r["rel_path"] else None
+        jobs.append(Job(r["id"], path, low_res, long_output, folder))
         if limit is not None and len(jobs) >= limit:
             break
     return jobs
@@ -272,7 +276,7 @@ def run(conn: sqlite3.Connection, cfg, limit: int | None = None, include_thumbna
             with lock:
                 clients.append(client)
         images = vlm.prepare_images(job.path, cfg.vision_max_side, cfg.vision_max_tiles, dense=job.long_output)
-        text = USER_TEXT + (LOW_RES_TEXT if job.low_res else "") + vlm.tiles_note(len(images))
+        text = USER_TEXT + (LOW_RES_TEXT if job.low_res else "") + vlm.folder_note(job.folder) + vlm.tiles_note(len(images))
         result = vlm.extract(client, cfg, images, vlm.IMAGE_SCHEMA, vlm.IMAGE_SYSTEM_PROMPT, text,
                              max_tokens=max_tokens, sampling=vlm.LOOP_BREAKER if job.long_output else None)
         result["_tiles"] = len(images)
