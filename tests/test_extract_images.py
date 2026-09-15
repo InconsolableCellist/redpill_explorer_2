@@ -62,7 +62,9 @@ def test_extract_images_pipeline(tmp_path, monkeypatch):
     rows = conn.execute(
         "SELECT m.width, d.text, mm.low_res FROM doc d JOIN media m ON m.id=d.media_id "
         "JOIN media_meta mm ON mm.media_id=m.id WHERE d.kind='caption' ORDER BY m.width").fetchall()
-    assert [(r[0], r[1].split("\n")[0], r[2]) for r in rows] == [
+    # Caption text leads with the headline, then the description.
+    assert all(r[1].startswith("Headline\nLede first.\n\n") for r in rows)
+    assert [(r[0], r[1].split("\n\n")[1], r[2]) for r in rows] == [
         (300, "low", 1), (600, "full", 0), (700, "full", 0), (800, "full", 0)]
     assert conn.execute("SELECT count(*) FROM doc WHERE kind='ocr'").fetchone()[0] == 4
     assert [r[0] for r in conn.execute("SELECT name FROM tag")] == ["joe biden"]
@@ -89,3 +91,32 @@ def test_previous_length_failures_go_to_long_phase(tmp_path):
                       "VLMError: unparseable response (finish_reason=length, max_tokens=1600): x")
     jobs = {j.media_id: j.long_output for j in extract_images.select_jobs(conn, cfg, None, True)}
     assert jobs == {ids[0]: True, ids[1]: False}
+
+
+def test_retitle_adds_title_and_summary_to_old_captions(tmp_path):
+    root = tmp_path / "corpus"
+    root.mkdir()
+    Image.new("RGB", (500, 400)).save(root / "old.png")
+    conn = db.connect(":memory:")
+    db.init_schema(conn)
+    cfg = SimpleNamespace(corpus_root=root, base_url="http://vlm.test/v1", vision_model="gemma-test",
+                          vision_max_tokens=100, vision_max_side=1024, vision_concurrency=2, vision_max_tiles=6)
+    scan.scan(conn, cfg)
+    media_id = conn.execute("SELECT id FROM media").fetchone()[0]
+    old = sample_result()
+    del old["title"], old["summary"]
+    conn.execute("INSERT INTO doc(media_id, kind, text, json) VALUES (?, 'caption', ?, ?)",
+                 (media_id, extract_images.caption_text(old), json.dumps(old)))
+
+    def handler(request):
+        body = json.loads(request.content)
+        assert "Earlier catalogue entry" in body["messages"][1]["content"][0]["text"]
+        return httpx.Response(200, json={"choices": [{"message": {"content": json.dumps(
+            {"title": "Netanyahu beside official", "summary": "The claim first."})}}]})
+
+    done, finished = extract_images.retitle(
+        conn, cfg, client_factory=lambda: httpx.Client(transport=httpx.MockTransport(handler)))
+    assert (done, finished) == (1, True)
+    text, raw = conn.execute("SELECT text, json FROM doc WHERE kind='caption'").fetchone()
+    assert text.startswith("Netanyahu beside official\nThe claim first.") and json.loads(raw)["title"]
+    assert extract_images.retitle(conn, cfg)[0] == 0

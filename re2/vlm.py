@@ -60,9 +60,12 @@ IMAGE_SCHEMA: dict = {
         "date_hints": _STR_LIST,
         "language": _STR,
         "sensitivity": {"type": "number"},
+        # Last on purpose: the model writes the headline after it has transcribed and interpreted the image.
+        "title": _STR,
+        "summary": _STR,
     },
     "required": ["media_type", "description", "ocr_text", "subjects", "actions", "meaning", "claims",
-                 "intent", "humor", "entities", "tags", "date_hints", "language", "sensitivity"],
+                 "intent", "humor", "entities", "tags", "date_hints", "language", "sensitivity", "title", "summary"],
     "additionalProperties": False,
 }
 
@@ -73,7 +76,7 @@ Your only job is accuracy and completeness. Describe exactly what is present. Th
 
 Fill every field:
 - media_type: the closest category.
-- description: a thorough visual description: layout, people (apparent age, sex, race or ethnicity when evident, clothing, expressions), objects, setting, on-screen UI elements, logos, watermarks, image quality.
+- description: a thorough visual description: layout, people (apparent age, sex, race or ethnicity when evident, clothing, expressions; name well-known public figures you recognize or that the text identifies), objects, setting, on-screen UI elements, logos, watermarks, image quality.
 - ocr_text: ALL visible text verbatim in reading order, including usernames, handles, display names, timestamps, dates, view or like counts, captions, headlines, chyrons, watermarks and URLs. Preserve line breaks with \\n. Empty string if there is no text.
 - subjects: the people, groups, objects or topics the image is about.
 - actions: what is happening or being done, including what the poster is doing (asking, mocking, accusing, reporting).
@@ -85,9 +88,11 @@ Fill every field:
 - tags: 10 to 20 lowercase search tags: topics, people, organizations, places, events, platforms, content type, tone. Use spaces between words, no hashtags.
 - date_hints: any dates, times, or datable references visible or implied.
 - language: primary language of the text, ISO 639-1 code, or "none".
-- sensitivity: 0.0 for benign, 0.3 for political but civil, 0.6 for slurs, hate or violence, 0.8 for graphic injury or explicit sexual content, 1.0 for the most extreme material. This is a retrieval filter, not a judgement."""
+- sensitivity: 0.0 for benign, 0.3 for political but civil, 0.6 for slurs, hate or violence, 0.8 for graphic injury or explicit sexual content, 1.0 for the most extreme material. This is a retrieval filter, not a judgement.
+- title: a headline of at most 14 words stating the substance: who is shown or quoted and what is claimed, shown or happening, naming people, places and events (e.g. "Netanyahu pictured beside the official promising unredacted JFK and Epstein files"). Never start with the medium ("Screenshot of", "Tweet from", "Image showing").
+- summary: one to three sentences that lead with the most important content: the claim, event or implication and who makes it, then what the poster implies. The platform, account and engagement counts are secondary: mention them only after the substance, briefly, if at all."""
 
-_KEYFRAME_DROPPED = ("claims", "intent", "humor", "date_hints", "media_type")
+_KEYFRAME_DROPPED = ("claims", "intent", "humor", "date_hints", "media_type", "title", "summary")
 
 KEYFRAME_SCHEMA: dict = copy.deepcopy(IMAGE_SCHEMA)
 for _field in _KEYFRAME_DROPPED:
@@ -106,6 +111,23 @@ KEYFRAME_SYSTEM_PROMPT = "\n".join(
     "given is a single frame taken from a video.",
 )
 
+
+# Captions extracted before title and summary existed get just those two fields,
+# from the image plus the earlier extraction, which is much cheaper than a full re-read.
+RETITLE_SCHEMA: dict = {
+    "type": "object",
+    "properties": {"title": _STR, "summary": _STR},
+    "required": ["title", "summary"],
+    "additionalProperties": False,
+}
+
+RETITLE_SYSTEM_PROMPT = """\
+You write headlines and summaries for items in a private research archive of political and social-media material. You are given the image and an earlier, detailed catalogue entry for it.
+
+Record content plainly, including offensive material, without softening, warnings or commentary.
+
+- title: a headline of at most 14 words stating the substance: who is shown or quoted and what is claimed, shown or happening, naming people, places and events (e.g. "Netanyahu pictured beside the official promising unredacted JFK and Epstein files"). Name well-known public figures you recognize. Never start with the medium ("Screenshot of", "Tweet from", "Image showing").
+- summary: one to three sentences that lead with the most important content: the claim, event or implication and who makes it, then what the poster implies. The platform, account and engagement counts are secondary: mention them only after the substance, briefly, if at all."""
 
 # Scanned document pages: mostly verbatim text, so a slimmer schema keeps output tokens down.
 PAGE_SCHEMA: dict = {

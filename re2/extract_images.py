@@ -30,7 +30,10 @@ ENTITY_TYPES = {
 
 
 def caption_text(d: dict) -> str:
+    # Headline first: snippets, embeddings and the wiki all read the start of the doc most.
+    lede = "\n".join(x for x in (d.get("title"), d.get("summary")) if x)
     return (
+        (f"{lede}\n\n" if lede else "") +
         f"{d['description']}\n\n"
         f"Subjects: {', '.join(d.get('subjects') or [])}\n"
         f"Actions: {d.get('actions', '')}\n"
@@ -110,6 +113,7 @@ class ExtractStats:
     failed: int = 0
     tiled: int = 0
     retried_long: int = 0
+    retitled: int = 0
     completion_tokens: int = 0
     prompt_tokens: int = 0
     interrupted: bool = False
@@ -123,7 +127,7 @@ class ExtractStats:
         avg_out = self.completion_tokens / self.done if self.done else 0
         avg_in = self.prompt_tokens / self.done if self.done else 0
         return (f"selected={self.selected} done={self.done} failed={self.failed} tiled={self.tiled} "
-                f"retried_long={self.retried_long} "
+                f"retried_long={self.retried_long} retitled={self.retitled} "
                 f"rate={self.rate_per_min():.1f}/min avg_prompt_tokens={avg_in:.0f} "
                 f"avg_completion_tokens={avg_out:.0f}" + (" INTERRUPTED" if self.interrupted else ""))
 
@@ -161,10 +165,82 @@ def select_jobs(conn: sqlite3.Connection, cfg, limit: int | None, include_thumbn
     return jobs
 
 
+def _image_path(conn: sqlite3.Connection, cfg, media_id: int) -> Path | None:
+    row = conn.execute(
+        """SELECT (SELECT p.rel_path FROM media_path p WHERE p.media_id=m.id AND p.readable=1 ORDER BY p.id LIMIT 1),
+                  m.thumb_path FROM media m WHERE m.id=?""", (media_id,)).fetchone()
+    if row and row[0]:
+        return Path(cfg.corpus_root) / row[0]
+    if row and row[1]:
+        return REPO_ROOT / row[1]
+    return None
+
+
+RETITLE_STAGE = "vlm_retitle"
+
+
+def retitle(conn: sqlite3.Connection, cfg, client_factory=httpx.Client, limit: int | None = None) -> tuple[int, bool]:
+    """Add title and summary to captions extracted before those fields existed. Returns (done, finished)."""
+    skip = db.pending_failures(conn, RETITLE_STAGE)
+    rows = [(r[0], json.loads(r[1])) for r in conn.execute(
+        """SELECT media_id, json FROM doc WHERE kind='caption' AND json IS NOT NULL
+             AND json_extract(json, '$.title') IS NULL ORDER BY media_id""") if r[0] not in skip]
+    rows = [(media_id, caption, _image_path(conn, cfg, media_id)) for media_id, caption in rows]
+    if limit is not None:
+        rows = rows[:limit]
+    if not rows:
+        return 0, True
+    log.info("adding titles and summaries to %d earlier captions", len(rows))
+    local = threading.local()
+    clients: list[httpx.Client] = []
+    lock = threading.Lock()
+    done = 0
+
+    def work(row):
+        media_id, caption, path = row
+        client = getattr(local, "client", None)
+        if client is None:
+            client = local.client = client_factory()
+            with lock:
+                clients.append(client)
+        if path is None:
+            raise FileNotFoundError(f"no image for media {media_id}")
+        images = vlm.prepare_images(path, cfg.vision_max_side, cfg.vision_max_tiles)
+        text = ("Earlier catalogue entry:\n" + json.dumps(caption, ensure_ascii=False)[:6000] +
+                "\n\nWrite the title and summary for this image." + vlm.tiles_note(len(images)))
+        return vlm.extract(client, cfg, images, vlm.RETITLE_SCHEMA, vlm.RETITLE_SYSTEM_PROMPT, text, max_tokens=400)
+
+    def on_result(row, result):
+        nonlocal done
+        media_id, caption, _ = row
+        caption.update(title=result["title"], summary=result["summary"])
+        with conn:
+            conn.execute("UPDATE doc SET json=?, text=? WHERE media_id=? AND kind='caption'",
+                         (json.dumps(caption, ensure_ascii=False), caption_text(caption), media_id))
+            db.clear_failure(conn, RETITLE_STAGE, media_id)
+        done += 1
+
+    def on_error(row, exc):
+        log.warning("retitle %s failed: %s", row[0], exc)
+        with conn:
+            db.upsert_failure(conn, RETITLE_STAGE, row[0], None, f"{type(exc).__name__}: {exc}"[:2000])
+
+    try:
+        finished = runner.run_jobs(rows, work, on_result, on_error, cfg.vision_concurrency,
+                                   total=len(rows), desc="retitle")
+    finally:
+        for client in clients:
+            client.close()
+    return done, finished
+
+
 def run(conn: sqlite3.Connection, cfg, limit: int | None = None, include_thumbnail_only: bool = True,
         client_factory=httpx.Client) -> ExtractStats:
+    retitled, finished = retitle(conn, cfg, client_factory)
+    if not finished:
+        return ExtractStats(interrupted=True, started=time.monotonic())
     jobs = select_jobs(conn, cfg, limit, include_thumbnail_only)
-    stats = ExtractStats(selected=len(jobs), started=time.monotonic())
+    stats = ExtractStats(selected=len(jobs), started=time.monotonic(), retitled=retitled)
     local = threading.local()
     clients: list[httpx.Client] = []
     lock = threading.Lock()
