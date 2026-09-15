@@ -37,3 +37,12 @@ port = 4001
 base_url = "https://cube.tail99c274.ts.net:5000/v1"
 model = "qwen38-27b-heretic-uncensored-q8-cube"
 context_tokens = 32000
+
+# [wiki]
+# The text model that writes item digests and wiki pages (digests.sh, wiki_build.sh). Without this
+# section it uses the [chat] settings above (including a [chat] in config.local.toml). A model with a
+# larger context reads more items per request. context_tokens is what one request may use.
+# base_url = "https://cube.tail99c274.ts.net:5000/v1"
+# model = "qwen38-27b-heretic-uncensored-q8-cube"
+# context_tokens = 32000
+# concurrency = 1

@@ -169,6 +169,83 @@ CREATE TABLE IF NOT EXISTS selection (              -- items picked on the map, 
   media_ids TEXT NOT NULL,                          -- comma-separated item ids (post primaries)
   created_at TEXT DEFAULT (datetime('now'))
 );
+
+CREATE TABLE IF NOT EXISTS item_digest (             -- digest.py: a short title and summary per item
+  media_id INTEGER PRIMARY KEY REFERENCES media(id),
+  title TEXT NOT NULL,                              -- <= 12 words
+  summary TEXT NOT NULL,                            -- 1 to 3 sentences
+  item_date TEXT,
+  date_source TEXT NOT NULL,                        -- as media_meta.date_source, or 'none'
+  digest_json TEXT,                                 -- {"event_hint": ...}
+  source TEXT NOT NULL,                             -- caption (copied from a current caption) | model
+  input_hash TEXT NOT NULL,                         -- what it was made from; a change makes it due again
+  model TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+-- The wiki (wiki.py). cluster_id and entity_id carry no foreign keys: recluster deletes old runs.
+CREATE TABLE IF NOT EXISTS wiki_page (
+  id INTEGER PRIMARY KEY,
+  slug TEXT NOT NULL UNIQUE,                        -- event/2024-11-trudeau-..., topic/..., theme/..., entity/..., overview
+  kind TEXT NOT NULL,                               -- event | topic | theme | entity | overview
+  title TEXT NOT NULL,
+  summary TEXT NOT NULL DEFAULT '',                 -- one or two sentences, shown in lists
+  body_md TEXT NOT NULL DEFAULT '',                 -- Markdown with [m:ID] citations and [p:slug] links; '' until written
+  date_start TEXT, date_end TEXT,
+  cluster_id INTEGER,
+  entity_id INTEGER,
+  parent_slug TEXT,
+  named INTEGER NOT NULL DEFAULT 0,                 -- 1 once the model has titled it (topics and themes start as keywords)
+  member_hash TEXT NOT NULL DEFAULT '',             -- members and what was read of them, when written
+  stale INTEGER NOT NULL DEFAULT 1,
+  model TEXT,
+  members_read INTEGER,                             -- coverage when written: items the model read, directly or
+  members_total INTEGER,                            --   through child pages that read them, of all members then
+  members_cited INTEGER,
+  build_json TEXT,                                  -- batches, reduce passes, child pages read, seconds
+  events_split_at TEXT,                             -- topics: when their items were grouped into events
+  built_at TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS ix_wiki_page_parent ON wiki_page(parent_slug);
+CREATE TABLE IF NOT EXISTS wiki_member (             -- items a page is about (post primaries, like clusters)
+  page_id INTEGER NOT NULL REFERENCES wiki_page(id),
+  media_id INTEGER NOT NULL REFERENCES media(id),
+  origin TEXT NOT NULL DEFAULT 'cluster',           -- cluster | split | attached | entity
+  read_hash TEXT,                                   -- the item's record as the page's writer read it; NULL = not read
+  PRIMARY KEY (page_id, media_id)
+);
+CREATE INDEX IF NOT EXISTS ix_wiki_member_media ON wiki_member(media_id);
+CREATE TABLE IF NOT EXISTS wiki_citation (           -- items a page's text cites
+  page_id INTEGER NOT NULL REFERENCES wiki_page(id),
+  media_id INTEGER NOT NULL REFERENCES media(id),
+  n INTEGER NOT NULL,
+  PRIMARY KEY (page_id, media_id)
+);
+CREATE TABLE IF NOT EXISTS wiki_link (
+  from_page INTEGER NOT NULL REFERENCES wiki_page(id),
+  to_page INTEGER NOT NULL REFERENCES wiki_page(id),
+  PRIMARY KEY (from_page, to_page)
+);
+CREATE TABLE IF NOT EXISTS wiki_note (               -- map-step notes, so an interrupted build resumes without rereading
+  hash TEXT PRIMARY KEY,                            -- of the batch's prompt
+  page_id INTEGER NOT NULL,
+  notes TEXT NOT NULL,
+  model TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS ix_wiki_note_page ON wiki_note(page_id);
+CREATE VIRTUAL TABLE IF NOT EXISTS wiki_fts USING fts5(
+  title, summary, body_md, content='wiki_page', content_rowid='id', tokenize='unicode61 remove_diacritics 2'
+);
+CREATE TRIGGER IF NOT EXISTS wiki_page_ai AFTER INSERT ON wiki_page BEGIN
+  INSERT INTO wiki_fts(rowid, title, summary, body_md) VALUES (new.id, new.title, new.summary, new.body_md);
+END;
+CREATE TRIGGER IF NOT EXISTS wiki_page_ad AFTER DELETE ON wiki_page BEGIN
+  INSERT INTO wiki_fts(wiki_fts, rowid, title, summary, body_md) VALUES ('delete', old.id, old.title, old.summary, old.body_md);
+END;
+CREATE TRIGGER IF NOT EXISTS wiki_page_au AFTER UPDATE OF title, summary, body_md ON wiki_page BEGIN
+  INSERT INTO wiki_fts(wiki_fts, rowid, title, summary, body_md) VALUES ('delete', old.id, old.title, old.summary, old.body_md);
+  INSERT INTO wiki_fts(rowid, title, summary, body_md) VALUES (new.id, new.title, new.summary, new.body_md);
+END;
 """
 
 
