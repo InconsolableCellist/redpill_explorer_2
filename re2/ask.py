@@ -767,8 +767,11 @@ class Run:
                 return
 
     def summary(self) -> dict:
+        # A debate logs each speaker's turn as it finishes; a returning viewer resumes at the current speaker.
+        turn_start = max((i for i, (name, _) in enumerate(self.events) if name == "speaker"), default=0)
         return {"run_id": self.id, "session_id": self.session_id, "question": self.question,
-                "context": self.context, "started": self.started, "done": self.finished is not None}
+                "context": self.context, "started": self.started, "done": self.finished is not None,
+                "turn_start": turn_start}
 
 
 RUNS: dict[str, Run] = {}

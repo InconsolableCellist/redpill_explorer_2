@@ -466,6 +466,17 @@ mark { background: var(--hot-w); color: var(--ink); padding: 0 1px; }
 .composer textarea:focus { border-color: var(--blue); }
 .composer__side { display: flex; gap: 5px; align-items: stretch; }
 .ask__err { color: var(--hot); font-family: var(--font-mono); font-size: 11.5px; }
+.debate__topic { font-family: var(--font-display); font-size: 21px; font-weight: 600; line-height: 1.25; padding: 2px 2px 0; }
+.debate__topic .label { display: block; margin-bottom: 2px; }
+.turn__who { font-family: var(--font-mono); font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-2); margin-bottom: 8px; }
+.turn--steelman { border-left: 3px solid var(--blue); margin-right: 32px; }
+.turn--steelman .turn__who { color: var(--blue); }
+.turn--skeptic { border-left: 3px solid var(--ink-2); margin-left: 32px; }
+.turn--moderator { border-style: dashed; margin: 0 64px; padding-block: 8px 10px; }
+.turn--you .turn__who::after { content: " · you"; color: var(--ink-3); }
+.answer p.stand { border-top: 1px solid var(--rule-soft); padding-top: 7px; font-weight: 600; }
+.turn__argue { margin-top: 10px; }
+@media (max-width: 700px) { .turn--steelman, .turn--skeptic, .turn--moderator { margin-inline: 0; } }
 .turn__stopped { font-family: var(--font-mono); font-size: 10.5px; color: var(--hot); letter-spacing: .08em; text-transform: uppercase; }
 .turn__ctx { font-family: var(--font-mono); font-size: 10.5px; color: var(--ink-3); margin: -4px 0 8px; }
 .composer__ctx { flex: 1 1 100%; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
@@ -677,6 +688,8 @@ mark { background: var(--hot-w); color: var(--ink); padding: 0 1px; }
           <div class="composer__side">
             <button class="btn" type="submit" id="askSend">Ask</button>
             <button class="btn" type="button" id="askMode" title="m: informed uses general knowledge too; archive answers only from the archive">informed</button>
+            <button class="btn" type="button" id="askKind" title="M: Ask answers a question; Argue has a steelman and a skeptic debate a claim">ask</button>
+            <button class="btn" type="button" id="argueRole" hidden title="P: watch both sides, or play the steelman or the skeptic yourself">watch</button>
             <button class="btn" type="button" id="askNew" title="Start a new conversation">new</button>
           </div>
           <div class="composer__tune">
@@ -749,6 +762,7 @@ mark { background: var(--hot-w); color: var(--ink); padding: 0 1px; }
           <kbd>g t</kbd><span>Timeline. With the chart focused, <kbd>h l</kbd> move by month, <kbd>H L</kbd> by year, <kbd>v</kbd> marks a range (or drag across the bars), <kbd>&gt;</kbd> narrows to it. Scroll or <kbd>+ -</kbd> to zoom; shift-scroll, shift-drag or middle-drag to pan; <kbd>Z</kbd> or double-click shows every month.</span>
           <kbd>g r</kbd><span>Graph (<kbd>g n</kbd> too): entities that appear together, tags that appear together, or tags related in meaning — <kbd>T</kbd> cycles. With the chart focused, <kbd>h l</kbd> step through nodes, <kbd>+ -</kbd> zoom, <kbd>0</kbd> resets, <kbd>&gt;</kbd> narrows to the cursor node (orange). Clicking a node moves the cursor and lists its items without narrowing; double-click narrows. Scroll to zoom, drag to pan, double-click empty space to reset.</span>
           <kbd>g m</kbd><span>Map of the whole archive by meaning; your scope lights up. With the chart focused, <kbd>h l</kbd> step through topics (<kbd>T</kbd> for themes), <kbd>z</kbd> zooms to one, <kbd>+ -</kbd> zoom, <kbd>0</kbd> resets, <kbd>space</kbd> picks the cursor topic (orange), <kbd>&gt;</kbd> narrows to the picked topics and netted dots (or the cursor topic), <kbd>Esc</kbd> clears them, <kbd>f</kbd> finds a tag or entity (arrows preview it, <kbd>Enter</kbd> narrows). Scroll to zoom, drag to pan, click a dot to open it, shift-click (or ctrl-click) a dot or label to pick its topic, shift-drag to net the dots inside. Close in, dots show their titles.</span>
+          <kbd>M</kbd><span>In Ask: switch to Argue, where a steelman makes the strongest case for a claim and a skeptic tests it, each researching and citing the archive; each turn ends with where that side stands. <kbd>P</kbd> watches both sides or lets you play the steelman or the skeptic. While watching, Enter runs the next round and anything typed goes to both as a moderator's note. A finished Ask answer's <b>argue this</b> starts a debate from it.</span>
           <kbd>D</kbd><span>Discuss the item under the cursor: a new Ask conversation with its full record attached, and related items (near in time or meaning) if <b>+ related</b> is on. Depth sets how much is read; period and topics narrow it.</span>
           <kbd>d d</kbd><span>On a conversation in Ask's left column: delete it</span>
           <kbd>g ,</kbd><span>Settings: which model servers Ask, captions, embeddings and speech-to-text use</span>
@@ -843,7 +857,10 @@ const S = {
         titles: new Map(), sugg: [], suggI: 0, net: null, boxes: [] },
   ask: { session: null, turns: [], mode: store("askMode") || "informed", sessions: [],
          live: new Map(),   // run id -> turn, for turns still running on the server
-         attach: [], related: store("askRelated") ?? true, depth: store("askDepth") ?? 35, topics: null, picked: new Set() },
+         attach: [], related: store("askRelated") ?? true, depth: store("askDepth") ?? 35, topics: null, picked: new Set(),
+         kind: "ask",                          // this conversation: ask | argue
+         role: store("argueRole") ?? null,     // argue: null watches both sides; steelman | skeptic is the user's side
+         seed: null, topic: null },            // argue: the Ask turn a new debate starts from; the claim
   settings: null,
 };
 
@@ -1783,7 +1800,7 @@ async function loadSessions() {
   $("#lenses").innerHTML = `<div class="lens-group"><h3><span class="label">Conversations</span></h3>` +
     (S.ask.sessions.length ? S.ask.sessions.map((x) =>
       `<button class="session${x.id === S.ask.session ? " is-current" : ""}" data-session="${escapeHtml(x.id)}">${escapeHtml(x.title || "(untitled)")}` +
-      `<small>${x.running ? `<span class="live">● running</span> · ` : ""}${escapeHtml((x.created_at || "").slice(0, 16))} · ${x.turns} turn${x.turns === 1 ? "" : "s"}</small>` +
+      `<small>${x.running ? `<span class="live">● running</span> · ` : ""}${x.kind === "argue" ? "argue · " : ""}${escapeHtml((x.created_at || "").slice(0, 16))} · ${x.turns} turn${x.turns === 1 ? "" : "s"}</small>` +
       `<span class="del" data-del="${escapeHtml(x.id)}" title="Delete this conversation (d d)">×</span></button>`).join("")
       : `<div class="empty">No conversations yet.</div>`) + `</div>`;
   $("#lenses").classList.remove("is-stale");
@@ -1794,8 +1811,10 @@ async function loadSession(id) {
   if (!resp.ok) return say("Could not load that conversation.");
   const data = await resp.json();
   S.ask.session = id;
+  S.ask.kind = data.kind || "ask"; S.ask.topic = data.title; S.ask.seed = null;
   S.ask.turns = data.turns.map((t) => ({
     question: t.question, scopes: [], context: t.context, stopped: (t.steps || []).some((x) => x.action === "stopped"),
+    speaker: S.ask.kind === "argue" ? t.mode : null, by: t.context?.by || "ai",
     steps: (t.steps || []).filter((x) => !["answer", "stopped", "fill"].includes(x.action)).map((x) => ({ action: x.action, args: x.args, summary: "" })),
     text: t.answer || "", sentences: t.sentences, cites: Object.fromEntries((t.citations || []).map((c) => [c.n, c])), done: true, session: id,
   }));
@@ -1811,7 +1830,7 @@ async function loadSession(id) {
   loadSessions();
 }
 function newConversation() {
-  S.ask.session = null; S.ask.turns = []; S.ask.attach = [];
+  S.ask.session = null; S.ask.turns = []; S.ask.attach = []; S.ask.seed = null; S.ask.topic = null;
   writeHash(true); renderAskCtx(); renderAskLog(); loadSessions(); fetchPlan();
 }
 async function deleteSession(id) {
@@ -1853,11 +1872,13 @@ async function fillAttachCards() {
 }
 function renderAskCtx() {
   const el = $("#askCtx");
-  el.hidden = !S.ask.attach.length;
+  const seed = S.ask.kind === "argue" && S.ask.seed && !S.ask.turns.length;
+  el.hidden = !S.ask.attach.length && !seed;
   el.innerHTML = S.ask.attach.map((a) =>
     `<button type="button" class="attach" data-unattach="${a.media_id}" title="About #${a.media_id}. Click to detach.">` +
     `<i${a.thumb_url ? ` style="background-image:url('${escapeHtml(a.thumb_url)}')"` : ""}></i><span>${escapeHtml(a.title || "#" + a.media_id)}</span></button>`).join("") +
-    (S.ask.attach.length ? `<button type="button" class="btn" id="askRelated" aria-pressed="${S.ask.related}" title="Also gather items near in time or meaning">+ related</button>` : "");
+    (S.ask.attach.length ? `<button type="button" class="btn" id="askRelated" aria-pressed="${S.ask.related}" title="Also gather items near in time or meaning">+ related</button>` : "") +
+    (seed ? `<button type="button" class="attach" data-unseed title="The debate starts from this Ask answer. Click to drop it."><i></i><span>from Ask: ${escapeHtml(S.ask.seed.question)}</span></button>` : "");
 }
 
 /* Depth and scope estimate, from the server's view of the chat model. */
@@ -1970,18 +1991,21 @@ function dimGeneral(html, final) {
 function answerHtml(turn) {
   const chip = (html) => html.replace(/\[(\d+)\]/g, (m, n) => turn.cites[n] ? `<button class="cite" data-n="${n}" title="${escapeHtml(citeTitle(turn.cites[n]))}">${n}</button>` : "");
   const render = (text) => chip(inlineMd(escapeHtml(text)));
-  const blocks = turn.text.replace(/\r/g, "").split(/\n\s*\n/);
+  const text = turn.speaker ? turn.text.replace(/\s*(Where I stand:)/, "\n\n$1") : turn.text;
+  const dim = turn.done && !turn.speaker;
+  const blocks = text.replace(/\r/g, "").split(/\n\s*\n/);
   return blocks.map((block) => {
     const lines = block.split("\n").filter((l) => l.trim());
     if (!lines.length) return "";
     if (lines.every((l) => /^\s*([-*•]|\d+[.)])\s+/.test(l))) {
       const ordered = /^\s*\d/.test(lines[0]);
-      const items = lines.map((l) => `<li>${dimGeneral(render(l.replace(/^\s*([-*•]|\d+[.)])\s+/, "")), turn.done)}</li>`).join("");
+      const items = lines.map((l) => `<li>${dimGeneral(render(l.replace(/^\s*([-*•]|\d+[.)])\s+/, "")), dim)}</li>`).join("");
       return ordered ? `<ol>${items}</ol>` : `<ul>${items}</ul>`;
     }
     const heading = /^\s*#{1,4}\s+(.*)$/.exec(lines[0]);
     if (heading && lines.length === 1) return `<p><strong>${render(heading[1])}</strong></p>`;
-    return `<p>${dimGeneral(render(lines.join(" ")), turn.done)}</p>`;
+    if (/^Where I stand:/.test(lines[0])) return `<p class="stand">${render(lines.join(" "))}</p>`;
+    return `<p>${dimGeneral(render(lines.join(" ")), dim)}</p>`;
   }).join("");
 }
 function citeTitle(c) {
@@ -2001,23 +2025,46 @@ function sourcesHtml(turn) {
       `<span>${escapeHtml(citeTitle(c))} · ${escapeHtml(card.kind || "")}${status}${t}</span></button>`;
   }).join("")}</div>`;
 }
+function askBusy() {
+  // A run stays in S.ask.live until its stream ends, including the gaps between debate speakers.
+  return [...S.ask.live.values()].some((t) => t.session && t.session === S.ask.session) || S.ask.turns.some((t) => !t.done);
+}
 function renderAskLog() {
   const log = $("#askLog");
+  const argue = S.ask.kind === "argue";
   const scopeLine = (turn) => turn.scopes?.length ? `<div class="turn__scope">within ${turn.scopes.map((x) => escapeHtml(S.labels[x] || x)).join(" › ")}</div>` : "";
   const ctxLine = (turn) => turn.context?.items?.length ? `<div class="turn__ctx">about ${turn.context.items.map((m) => `#${m}`).join(", ")}${turn.context.related ? " and related items" : ""}</div>` : "";
-  log.innerHTML = S.ask.turns.length ? S.ask.turns.map((turn, i) =>
-    `<article class="turn" data-turn="${i}"><div class="turn__q">${escapeHtml(turn.question)}</div>` + ctxLine(turn) + scopeLine(turn) +
-    `<div class="steps">${turn.steps.map((st, j) => stepLine(st, !turn.done && !turn.text && j === turn.steps.length - 1)).join("")}` +
-    `${!turn.done && !turn.text ? `<div class="is-live">${turn.steps.length ? "thinking" : "starting"}</div>` : ""}</div>` +
+  const head = (turn) => turn.speaker
+    ? `<div class="turn__who">${escapeHtml(turn.question || turn.speaker)}</div>`
+    : `<div class="turn__q">${escapeHtml(turn.question)}</div>` + ctxLine(turn) + scopeLine(turn);
+  const topic = argue && (S.ask.topic || S.ask.turns.length) ? `<div class="debate__topic"><span class="label">claim under debate</span>${escapeHtml(S.ask.topic || "")}</div>` : "";
+  log.innerHTML = S.ask.turns.length ? topic + S.ask.turns.map((turn, i) =>
+    `<article class="turn${turn.speaker ? ` turn--${turn.speaker}` : ""}${turn.by === "user" ? " turn--you" : ""}" data-turn="${i}">` + head(turn) +
+    (turn.by === "user" ? "" : `<div class="steps">${turn.steps.map((st, j) => stepLine(st, !turn.done && !turn.text && j === turn.steps.length - 1)).join("")}` +
+      `${!turn.done && !turn.text ? `<div class="is-live">${turn.steps.length ? "thinking" : "starting"}</div>` : ""}</div>`) +
     `<div class="answer">${answerHtml(turn)}</div>` +
     (turn.stopped ? `<div class="turn__stopped">stopped</div>` : "") +
     (turn.error ? `<div class="ask__err">${escapeHtml(turn.error)}</div>` : "") +
-    sourcesHtml(turn) + `</article>`).join("") :
-    `<div class="empty">Ask a question about the archive. The agent searches, reads the items it finds, and answers with numbered sources you can open.` +
+    sourcesHtml(turn) +
+    (!argue && turn.done && turn.text && !turn.error ? `<button class="btn turn__argue" data-argue="${i}" title="Start a debate from this answer">argue this</button>` : "") +
+    `</article>`).join("") :
+    argue ? `<div class="empty">Argue: a steelman makes the strongest case for a claim and a skeptic tests it, each researching the archive and citing items.` +
+      `<br>Write the claim and press Enter to watch, or press P to play a side yourself.${S.scopes.length ? "<br>Both sides look only within your current scopes." : ""}</div>`
+    : `<div class="empty">Ask a question about the archive. The agent searches, reads the items it finds, and answers with numbered sources you can open.` +
     `${S.scopes.length ? "<br>It will look only within your current scopes." : ""}${S.ask.attach.length ? "<br>The attached item goes along in full." : ""}</div>`;
-  const live = S.ask.turns.some((t) => !t.done);
-  $("#askSend").textContent = live ? "Stop" : "Ask";
-  $("#askSend").title = live ? "Stop this answer" : "Send (Enter)";
+  renderComposer();
+}
+function renderComposer() {
+  const argue = S.ask.kind === "argue", started = argue && S.ask.turns.length > 0, role = S.ask.role;
+  $("#askKind").textContent = argue ? "argue" : "ask";
+  $("#argueRole").hidden = !argue;
+  $("#argueRole").textContent = role ? `you: ${role}` : "watch";
+  const busy = askBusy();
+  $("#askSend").textContent = busy ? "Stop" : !argue ? "Ask" : !started ? "Argue" : role ? "Reply" : "Next round";
+  $("#askSend").title = busy ? "Stop this answer" : "Send (Enter)";
+  $("#askInput").placeholder = !argue ? "Ask about the archive…  (Enter sends, Shift-Enter new line, Esc leaves)"
+    : !started ? (role === "steelman" ? "The claim, then your opening case for it…" : "A claim to debate, e.g. “Canada's missiles were used inside Russia”…")
+    : role ? `Your turn as the ${role}…` : "Optional note to both sides as moderator; Enter runs the next round…";
 }
 function openCitation(el) {
   const turn = S.ask.turns[Number(el.closest(".turn")?.dataset.turn)];
@@ -2028,10 +2075,11 @@ function openCitation(el) {
 }
 /* A turn runs on the server whether or not anyone watches; these follow its event stream. */
 async function sendQuestion() {
+  if (S.ask.kind === "argue") return sendArgue();
   const input = $("#askInput");
   const question = input.value.trim();
   if (!question) return;
-  if (S.ask.turns.some((t) => !t.done)) return say("Still answering: press Stop first, or start a new conversation.");
+  if (askBusy()) return say("Still answering: press Stop first, or start a new conversation.");
   input.value = "";
   const items = S.ask.attach.map((a) => a.media_id);
   const turn = { question, scopes: [...S.scopes], steps: [], text: "", cites: {}, done: false, session: S.ask.session,
@@ -2039,24 +2087,46 @@ async function sendQuestion() {
   S.ask.turns.push(turn);
   renderAskLog();
   $("#askLog .turn:last-child")?.scrollIntoView({ block: "start" });
+  await streamTurns("/api/ask", { question, scopes: S.scopes, mode: S.ask.mode, session_id: S.ask.session,
+                                  items, related: S.ask.related, depth: S.ask.depth / 100 }, turn);
+}
+async function sendArgue() {
+  const input = $("#askInput");
+  const text = input.value.trim(), role = S.ask.role, started = S.ask.turns.length > 0;
+  if (askBusy()) return say("Still arguing: press Stop first, or start a new conversation.");
+  if (!started && !text && !S.ask.seed) return say("Write the claim to debate.");
+  if (started && role && !text) return say(`Write your turn as the ${role}.`);
+  const topic = started ? null : role === "steelman" ? (S.ask.seed?.question || text.split("\n")[0].slice(0, 200)) : (text || S.ask.seed.question);
+  const userText = started || role === "steelman" ? text : "";
+  if (!started) S.ask.topic = topic;
+  input.value = "";
+  // The first speaker's turn; the stream announces each speaker and further turns are added as they start.
+  const turn = { question: "", speaker: null, steps: [], text: "", cites: {}, done: false, session: S.ask.session, scopes: [...S.scopes] };
+  S.ask.turns.push(turn);
+  renderAskLog();
+  $("#askLog .turn:last-child")?.scrollIntoView({ block: "start" });
+  await streamTurns("/api/argue", { session_id: started ? S.ask.session : null, topic, user_role: role, user_text: userText,
+                                    seed: started ? null : S.ask.seed, scopes: S.scopes, mode: S.ask.mode,
+                                    items: started ? [] : S.ask.attach.map((a) => a.media_id), related: S.ask.related,
+                                    depth: S.ask.depth / 100 }, turn);
+  S.ask.seed = null;
+}
+async function streamTurns(url, body, turn) {
+  let last = turn;
   try {
-    const resp = await fetch("/api/ask", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ question, scopes: S.scopes, mode: S.ask.mode, session_id: S.ask.session,
-                             items, related: S.ask.related, depth: S.ask.depth / 100 }),
-    });
+    const resp = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     if (!resp.ok) throw new Error((await resp.json().catch(() => ({}))).detail || resp.status);
-    await followTurn(resp, turn);
+    last = await followTurn(resp, turn);
   } catch (err) {
-    turn.error = `Ask failed: ${err.message}`;
+    last.error = `${url.endsWith("argue") ? "Argue" : "Ask"} failed: ${err.message}`;
   }
-  finishTurn(turn);
+  finishTurn(last);
 }
 async function followTurn(resp, turn) {
   const reader = resp.body.getReader(), dec = new TextDecoder();
-  let buf = "", pending = 0;
-  const shown = () => S.mode === "ask" && S.ask.turns.includes(turn);
-  const repaint = () => { if (shown() && !pending) pending = requestAnimationFrame(() => { pending = 0; renderAskLog(); }); };
+  let buf = "", pending = 0, run = turn.run;
+  const shown = (t) => S.mode === "ask" && S.ask.turns.includes(t);
+  const repaint = () => { if (!pending) pending = requestAnimationFrame(() => { pending = 0; if (S.mode === "ask") renderAskLog(); }); };
   for (;;) {
     const { value, done } = await reader.read();
     if (done) break;
@@ -2069,33 +2139,70 @@ async function followTurn(resp, turn) {
       if (!name || !data) continue;
       const d = JSON.parse(data);
       if (name === "start") {
-        turn.run = d.run_id; turn.session = d.session_id;
+        run = turn.run = d.run_id; turn.session = d.session_id;
         S.ask.live.set(d.run_id, turn);
-        if (S.ask.turns.includes(turn) && S.ask.session !== d.session_id) { S.ask.session = d.session_id; if (S.mode === "ask") writeHash(true); }
+        if (shown(turn) && S.ask.session !== d.session_id) { S.ask.session = d.session_id; if (S.mode === "ask") writeHash(true); }
         loadSessions();
+      }
+      else if (name === "speaker") {
+        // A debate's next speaker: reuse the placeholder turn if nothing has arrived in it yet.
+        if (turn.speaker || turn.text || turn.steps.length) {
+          const next = { question: "", steps: [], text: "", cites: {}, done: false, session: turn.session, run, scopes: turn.scopes };
+          turn.done = true;
+          if (shown(turn)) S.ask.turns.push(next);
+          turn = next;
+          S.ask.live.set(run, turn);
+        }
+        Object.assign(turn, { speaker: d.role, by: d.by, question: d.label });
       }
       else if (name === "step") turn.steps.push(d);
       else if (name === "token") turn.text += d.text;
       else if (name === "cite") turn.cites[d.n] = d;
       else if (name === "stopped") turn.stopped = true;
       else if (name === "final") { turn.text = d.text; turn.sentences = d.sentences; }
-      else if (name === "done") { turn.done = true; if (shown()) say(d.stopped ? "Stopped." : `Answered in ${Math.round(d.ms / 1000)} s after ${d.steps} steps.`); }
+      else if (name === "done") { turn.done = true; if (shown(turn) && !turn.speaker) say(d.stopped ? "Stopped." : `Answered in ${Math.round(d.ms / 1000)} s after ${d.steps} steps.`); }
       else if (name === "error") { turn.error = d.msg; turn.done = true; }
       repaint();
     }
   }
+  return turn;
 }
 function finishTurn(turn) {
   turn.done = true;
   if (turn.run) S.ask.live.delete(turn.run);
-  if (S.mode === "ask" && S.ask.turns.includes(turn)) renderAskLog();
+  if (S.mode === "ask") renderAskLog();
   loadSessions();
 }
 async function stopTurn() {
-  const turn = S.ask.turns.find((t) => !t.done);
-  if (!turn?.run) return;
+  const run = [...S.ask.live.entries()].find(([, t]) => t.session === S.ask.session)?.[0] || S.ask.turns.find((t) => !t.done)?.run;
+  if (!run) return;
   say("Stopping…");
-  await fetch(`/api/ask/run/${turn.run}/stop`, { method: "POST" });
+  await fetch(`/api/ask/run/${run}/stop`, { method: "POST" });
+}
+function toggleAskKind() {
+  const kind = S.ask.kind === "argue" ? "ask" : "argue";
+  if (S.ask.turns.length || S.ask.session) newConversation();
+  S.ask.kind = kind;
+  renderAskCtx(); renderAskLog();
+  say(kind === "argue" ? "Argue: a steelman and a skeptic debate a claim. P picks watch or a side." : "Ask: questions about the archive.");
+}
+function cycleArgueRole() {
+  S.ask.role = { null: "steelman", steelman: "skeptic", skeptic: null }[String(S.ask.role)];
+  store("argueRole", S.ask.role);
+  renderComposer();
+  say(S.ask.role ? `You play the ${S.ask.role}; the AI plays the other side.` : "Watching: the AI plays both sides.");
+}
+function argueFromTurn(i) {
+  const t = S.ask.turns[i];
+  if (!t) return;
+  // Keep the answer's citations as [m:ID] so both sides can open and cite the same items.
+  const answer = t.text.replace(/\[(\d+)\]/g, (m, n) => t.cites[n]?.ref ? `[${t.cites[n].ref}]` : "");
+  newConversation();
+  Object.assign(S.ask, { kind: "argue", seed: { question: t.question, answer } });
+  $("#askInput").value = t.question;
+  renderAskCtx(); renderAskLog();
+  $("#askInput").focus();
+  say(`Argue from that answer. ${S.ask.role ? `You play the ${S.ask.role} (P changes).` : "Watching both sides (P to play one)."} Enter starts.`);
 }
 /* After a reload, or for turns started in another tab: watch the server's running turns again. */
 async function attachServerRuns() {
@@ -2103,12 +2210,12 @@ async function attachServerRuns() {
   if (!resp.ok) return;
   for (const r of (await resp.json()).runs) {
     if (S.ask.live.has(r.run_id)) continue;
-    const turn = { question: r.question, scopes: r.context.scopes || [], steps: [], text: "", cites: {}, done: false,
+    const turn = { question: r.context.kind === "argue" ? "" : r.question, scopes: r.context.scopes || [], steps: [], text: "", cites: {}, done: false,
                    session: r.session_id, run: r.run_id, context: r.context };
     S.ask.live.set(r.run_id, turn);
     if (S.ask.session === r.session_id && !S.ask.turns.includes(turn)) { S.ask.turns.push(turn); renderAskLog(); }
-    fetch(`/api/ask/run/${r.run_id}/events`).then((ev) => ev.ok ? followTurn(ev, turn) : null)
-      .catch((err) => { turn.error = String(err); }).finally(() => finishTurn(turn));
+    fetch(`/api/ask/run/${r.run_id}/events?start=${r.turn_start || 0}`).then((ev) => ev.ok ? followTurn(ev, turn) : turn)
+      .catch((err) => { turn.error = String(err); return turn; }).then((last) => finishTurn(last || turn));
   }
 }
 
@@ -3264,6 +3371,8 @@ function onKey(e) {
     case "/": return done(() => { if (S.mode === "ask") $("#askInput").focus(); else { $("#q").focus(); $("#q").select(); } });
     case "a": return done(() => { setMode("ask"); setTimeout(() => $("#askInput").focus(), 0); });
     case "m": if (S.mode === "ask") return done(toggleAskMode); break;
+    case "M": if (S.mode === "ask") return done(toggleAskKind); break;
+    case "P": if (S.mode === "ask" && S.ask.kind === "argue") return done(cycleArgueRole); break;
     case "?": return done(() => toggleHelp());
     case "n": return done(() => nextMark(1));
     case "N": return done(() => nextMark(-1));
@@ -3351,10 +3460,14 @@ $("#reader").addEventListener("keydown", (e) => {
   else if (e.key === "Escape") { e.preventDefault(); closeRecaption(); }
 });
 $("#moreBtn").addEventListener("click", loadMore);
-$("#composer").addEventListener("submit", (e) => { e.preventDefault(); if (S.ask.turns.some((t) => !t.done)) stopTurn(); else sendQuestion(); });
+$("#composer").addEventListener("submit", (e) => { e.preventDefault(); if (askBusy()) stopTurn(); else sendQuestion(); });
 $("#askMode").addEventListener("click", toggleAskMode);
 $("#askNew").addEventListener("click", () => { newConversation(); $("#askInput").focus(); });
+$("#askKind").addEventListener("click", toggleAskKind);
+$("#argueRole").addEventListener("click", cycleArgueRole);
 $("#askLog").addEventListener("click", (e) => {
+  const argueBtn = e.target.closest("[data-argue]");
+  if (argueBtn) return argueFromTurn(Number(argueBtn.dataset.argue));
   const el = e.target.closest(".cite, .source");
   if (!el) return;
   S.cursor.results = rowsOf("results").indexOf(el);
@@ -3388,6 +3501,7 @@ $("#askCtx").addEventListener("click", (e) => {
     S.ask.related = !S.ask.related; store("askRelated", S.ask.related);
     say(S.ask.related ? "Related items (near in time or meaning) come along." : "Only the attached item goes along.");
   }
+  if (e.target.closest("[data-unseed]")) { S.ask.seed = null; say("The debate will start from the claim alone."); }
   const un = e.target.closest("[data-unattach]");
   if (un) { S.ask.attach = S.ask.attach.filter((a) => a.media_id !== Number(un.dataset.unattach)); say("Detached."); }
   renderAskCtx(); fetchPlan();

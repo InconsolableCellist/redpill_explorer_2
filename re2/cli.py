@@ -138,8 +138,9 @@ def cmd_serve(cfg: config.Config, args: argparse.Namespace) -> int:
     from re2 import api
 
     db.open_db(cfg).close()  # create or migrate the schema before read-only connections open it
+    # Ask streams stay open while a tab watches a run, so don't wait on them at shutdown; runs don't survive it anyway.
     uvicorn.run(api.create_app(cfg), host=args.host or cfg.server_host, port=args.port or cfg.server_port,
-                log_level="info")
+                log_level="info", timeout_graceful_shutdown=3)
     return 0
 
 
