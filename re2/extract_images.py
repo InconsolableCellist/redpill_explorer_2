@@ -267,6 +267,9 @@ def recaption(conn: sqlite3.Connection, cfg, media_id: int, note: str, client_fa
             save_raw(cfg, media_id, exc)
             raise
     store_image_result(conn, cfg, media_id, result, job.low_res)
+    from re2 import dates
+
+    dates.run(conn, media_ids=[media_id])   # the owner's context may date the picture better than its file name
     return result
 
 

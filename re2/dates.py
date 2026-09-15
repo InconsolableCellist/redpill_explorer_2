@@ -1,6 +1,7 @@
 """Best-guess dates for items, from sources, filenames, on-image text and mtimes.
 
 Rules run in order and the first that yields a plausible date wins:
+owner (date hints from a caption the archive's owner gave context for) >
 source (archive_metadata.json) > filename > content (date hints, OCR,
 captions) > mtime. Dates are strings: YYYY-MM-DD, or YYYY-MM when the day is
 unknown.
@@ -14,7 +15,7 @@ import logging
 import os
 import re
 import sqlite3
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
 
 log = logging.getLogger(__name__)
@@ -140,6 +141,7 @@ class ItemFacts:
     filenames: list[str]
     mtimes_ns: list[int]
     texts: list[str]
+    owner_texts: list[str] = field(default_factory=list)   # date hints of a caption made with the owner's context
 
 
 def _plausible(d: date, latest: date) -> bool:
@@ -150,6 +152,12 @@ def item_date(facts: ItemFacts, today: date | None = None) -> tuple[str | None, 
     today = today or date.today()
     newest_mtime = max((_from_epoch(ns / 1e9) for ns in facts.mtimes_ns), default=None, key=lambda d: d or date.min)
     latest = min(today, newest_mtime + MTIME_SLACK) if newest_mtime else today
+
+    # The owner said what the picture is ("toppled on 10 June 2020"); that beats a file's timestamp.
+    owned = [(d, has_day) for text in facts.owner_texts for d, has_day in content_dates(text) if _plausible(d, latest)]
+    if owned:
+        d, has_day = max(owned, key=lambda x: (x[0], x[1]))
+        return (d.isoformat() if has_day else d.strftime("%Y-%m")), "owner"
 
     source = sorted(s[:10] for s in facts.source_dates if s and re.match(r"^\d{4}-\d{2}-\d{2}", s))
     if source:
@@ -172,11 +180,12 @@ def item_date(facts: ItemFacts, today: date | None = None) -> tuple[str | None, 
     return None, "none"
 
 
-def gather(conn: sqlite3.Connection) -> list[ItemFacts]:
+def gather(conn: sqlite3.Connection, media_ids: list[int] | None = None) -> list[ItemFacts]:
+    only = f" AND id IN ({','.join(str(int(m)) for m in media_ids)})" if media_ids else ""
     facts: dict[int, ItemFacts] = {
         r[0]: ItemFacts(r[0], [], [], [], [])
         for r in conn.execute("SELECT id FROM media WHERE kind IN ('image', 'video', 'pdf') "
-                              "AND status NOT IN ('EXCLUDED', 'UNSUPPORTED')")}
+                              f"AND status NOT IN ('EXCLUDED', 'UNSUPPORTED'){only}")}
     for media_id, d in conn.execute("SELECT media_id, date FROM source WHERE date IS NOT NULL"):
         if media_id in facts:
             facts[media_id].source_dates.append(d)
@@ -190,19 +199,20 @@ def gather(conn: sqlite3.Connection) -> list[ItemFacts]:
         if media_id not in facts:
             continue
         if kind == "caption" and raw_json:
-            hints = json.loads(raw_json).get("date_hints") or []
-            facts[media_id].texts.extend(str(h) for h in hints)
+            caption = json.loads(raw_json)
+            hints = [str(h) for h in caption.get("date_hints") or []]
+            (facts[media_id].owner_texts if caption.get("user_context") else facts[media_id].texts).extend(hints)
         else:
             facts[media_id].texts.append(text)
     return list(facts.values())
 
 
-def run(conn: sqlite3.Connection, today: date | None = None) -> dict[str, int]:
-    """Recompute every item's date; writes only rows that changed."""
+def run(conn: sqlite3.Connection, today: date | None = None, media_ids: list[int] | None = None) -> dict[str, int]:
+    """Recompute every item's date (or just media_ids'); writes only rows that changed."""
     current = {r[0]: (r[1], r[2]) for r in conn.execute("SELECT media_id, item_date, date_source FROM media_meta")}
     counts: dict[str, int] = {}
     changes = []
-    for facts in gather(conn):
+    for facts in gather(conn, media_ids):
         d, src = item_date(facts, today)
         counts[src] = counts.get(src, 0) + 1
         if current.get(facts.media_id) != (d, src):

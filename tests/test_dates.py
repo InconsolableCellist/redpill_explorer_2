@@ -53,6 +53,9 @@ def test_rule_order_and_plausibility():
     assert dates.item_date(facts(texts=["sometime in March 2019"]), TODAY) == ("2019-03", "content")
     assert dates.item_date(facts(), TODAY) == ("2026-09-01", "mtime")
     assert dates.item_date(facts(mtimes_ns=[]), TODAY) == (None, "none")
+    # Dates from a caption the owner gave context for beat the file name's timestamp.
+    assert dates.item_date(facts(filenames=["1614469164913.jpg"], owner_texts=["2020-06-10"]), TODAY) == \
+        ("2020-06-10", "owner")
     # A filename date later than the file's mtime (+2 days) is impossible.
     assert dates.item_date(facts(filenames=["20300826_123336.jpg"]), TODAY) == ("2026-09-01", "mtime")
 

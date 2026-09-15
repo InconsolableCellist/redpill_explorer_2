@@ -181,7 +181,7 @@ def connect(path: Path | str) -> sqlite3.Connection:
 # Columns added after a table was first created: (table, column, type).
 ADDED_COLUMNS = [
     ("media_meta", "item_date", "TEXT"),      # dates.py: YYYY-MM-DD or YYYY-MM
-    ("media_meta", "date_source", "TEXT"),    # source | filename | content | mtime | none
+    ("media_meta", "date_source", "TEXT"),    # owner | source | filename | content | mtime | none
     ("chat_log", "session_id", "TEXT"),       # ask.py
     ("chat_log", "mode", "TEXT"),             # informed | archive
     ("chat_log", "trace_json", "TEXT"),       # the agent's steps: action, args, result size, timing
