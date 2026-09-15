@@ -71,6 +71,16 @@ def renormalize(conn: sqlite3.Connection, dry_run: bool = False) -> tuple[int, i
                 plan.append((name, canonical, n))
         return sorted(plan, key=lambda p: -p[2])
     changed = moved = 0
+    has_relations = conn.execute("SELECT 1 FROM sqlite_master WHERE name='tag_relation'").fetchone() is not None
+
+    def drop_tag(tag_id_: int) -> None:
+        # Relatedness rows reference the tag, so they go first (foreign keys are enforced).
+        if has_relations:
+            conn.execute("DELETE FROM tag_relation WHERE a=? OR b=?", (tag_id_, tag_id_))
+            conn.execute("DELETE FROM tag_relation_done WHERE tag_id=?", (tag_id_,))
+        conn.execute("DELETE FROM media_tag WHERE tag_id=?", (tag_id_,))
+        conn.execute("DELETE FROM tag WHERE id=?", (tag_id_,))
+
     with conn:
         for tag_id_, name in conn.execute("SELECT id, name FROM tag").fetchall():
             canonical = normalize(name)
@@ -78,8 +88,7 @@ def renormalize(conn: sqlite3.Connection, dry_run: bool = False) -> tuple[int, i
                 continue
             changed += 1
             if not canonical:
-                conn.execute("DELETE FROM media_tag WHERE tag_id=?", (tag_id_,))
-                conn.execute("DELETE FROM tag WHERE id=?", (tag_id_,))
+                drop_tag(tag_id_)
                 continue
             target = conn.execute("SELECT id FROM tag WHERE name=?", (canonical,)).fetchone()
             if target is None:
@@ -93,10 +102,5 @@ def renormalize(conn: sqlite3.Connection, dry_run: bool = False) -> tuple[int, i
                        ON CONFLICT(media_id, tag_id, origin) DO UPDATE SET weight=max(weight, excluded.weight)""",
                     (media_id, target[0], weight, origin))
                 moved += 1
-            conn.execute("DELETE FROM media_tag WHERE tag_id=?", (tag_id_,))
-            conn.execute("DELETE FROM tag WHERE id=?", (tag_id_,))
-        # Relatedness rows of merged-away tags point at nothing now.
-        if conn.execute("SELECT 1 FROM sqlite_master WHERE name='tag_relation'").fetchone():
-            conn.execute("DELETE FROM tag_relation WHERE a NOT IN (SELECT id FROM tag) OR b NOT IN (SELECT id FROM tag)")
-            conn.execute("DELETE FROM tag_relation_done WHERE tag_id NOT IN (SELECT id FROM tag)")
+            drop_tag(tag_id_)
     return changed, moved

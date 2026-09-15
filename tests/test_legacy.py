@@ -104,8 +104,15 @@ def test_renormalize_merges_synonyms():
         INSERT INTO media_tag(media_id, tag_id, weight, origin) VALUES
           (1, 1, 0.5, 'legacy'), (1, 2, 0.9, 'legacy'), (2, 2, 1.0, 'vlm'), (2, 3, 1.0, 'vlm'), (2, 4, 1.0, 'vlm');
     """)
+    from re2 import relations
+    relations.ensure_tables(conn)
+    conn.execute("INSERT INTO tag_relation(a, b, semantic_ab) VALUES (1, 2, 1.0)")   # a merged-away tag has scores
+    conn.execute("INSERT INTO tag_relation_done(tag_id) VALUES (2)")
+    assert {p[:2] for p in tags.renormalize(conn, dry_run=True)} == {
+        ("jewish", "jews"), ("African American", "black people"), ("x", "")}
     changed, _ = tags.renormalize(conn)
     assert changed == 3
+    assert conn.execute("SELECT count(*) FROM tag_relation").fetchone()[0] == 0
     rows = {tuple(r) for r in conn.execute(
         "SELECT mt.media_id, t.name, mt.weight, mt.origin FROM media_tag mt JOIN tag t ON t.id=mt.tag_id")}
     assert rows == {(1, "jews", 0.9, "legacy"), (2, "jews", 1.0, "vlm"), (2, "black people", 1.0, "vlm")}
