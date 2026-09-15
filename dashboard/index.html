@@ -525,6 +525,59 @@ mark { background: var(--hot-w); color: var(--ink); padding: 0 1px; }
 .session.is-current { border-left-color: var(--blue); color: var(--ink); background: var(--stock-card); }
 .session.is-cursor { border-left-color: var(--hot); }
 
+/* ── Wiki ────────────────────────────────────────────────── */
+/* The page tree lives in the lenses column: themes, then the open page's topic and its events. */
+.wrow {
+  position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; width: 100%;
+  padding: 4px 6px 5px calc(6px + var(--depth, 0) * 13px); font-size: 12.5px; color: var(--ink-2);
+  border-left: 2px solid transparent; text-align: left;
+}
+.wrow__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wrow__kind { font-family: var(--font-mono); font-size: 9.5px; color: var(--ink-3); margin-right: 5px; }
+.wrow__n { font-family: var(--font-mono); font-size: 10.5px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+.wrow.is-unwritten .wrow__name { color: var(--ink-3); font-style: italic; }
+.wrow.is-stale .wrow__n::before { content: "● "; color: var(--hot); font-size: 8px; vertical-align: 1px; }
+.wrow:hover { color: var(--ink); background: color-mix(in srgb, var(--ink) 5%, transparent); }
+.wrow.is-current { border-left-color: var(--blue); color: var(--ink); background: var(--stock-card); }
+.wrow.is-cursor { border-left-color: var(--hot); color: var(--ink); background: var(--stock-card); }
+.wiki { max-width: 780px; display: flex; flex-direction: column; gap: 12px; padding-bottom: 20px; }
+.wiki__crumbs { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: baseline; font-family: var(--font-mono); font-size: 10.5px; color: var(--ink-3); }
+.wiki__crumbs a { color: var(--ink-2); text-decoration: none; }
+.wiki__crumbs a:hover { color: var(--hot); }
+.wiki__title { font-family: var(--font-display); font-size: 31px; font-weight: 600; line-height: 1.12; letter-spacing: -.015em; }
+.wiki__cov { font-family: var(--font-mono); font-size: 10.5px; color: var(--ink-3); display: flex; flex-wrap: wrap; gap: 2px 10px; }
+.wiki__cov .is-full { color: var(--focus); }
+.wiki__cov .is-stale { color: var(--hot); }
+.wiki__body { font-family: var(--font-display); font-size: 17px; line-height: 1.62; color: var(--ink); max-width: 68ch; }
+.wiki__body > * + * { margin-top: .7em; }
+.wiki__body h2 { font-size: 22px; font-weight: 600; line-height: 1.2; margin-top: 1.2em; padding-bottom: 3px; border-bottom: 1px solid var(--rule-soft); }
+.wiki__body h3 { font-size: 18px; font-weight: 600; margin-top: 1em; }
+.wiki__body ul, .wiki__body ol { padding-left: 24px; }
+.wiki__body li + li { margin-top: .3em; }
+.wiki__body blockquote { border-left: 2px solid var(--blue); padding-left: 12px; color: var(--ink-2); }
+.wiki__body code { font-family: var(--font-mono); font-size: .8em; }
+.wiki__body .cite { font-family: var(--font-mono); font-size: 10px; text-decoration: none; }
+.wikilink { color: var(--blue); text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 2px; }
+.wikilink:hover { color: var(--hot); }
+.wikilink.is-cursor { outline: 2px solid var(--hot); outline-offset: 1px; color: var(--hot); }
+.wiki__empty { font-family: var(--font-display); font-size: 16px; line-height: 1.55; color: var(--ink-2); max-width: 64ch; }
+.wiki__empty code { font-family: var(--font-mono); font-size: 12.5px; }
+.wiki h3.label { margin-top: 10px; display: flex; justify-content: space-between; gap: 10px; }
+.wkids { display: flex; flex-direction: column; gap: 6px; }
+.wchild { display: flex; flex-direction: column; gap: 3px; text-align: left; padding: 8px 11px; background: var(--stock-card); border: 1px solid var(--rule-soft); border-left: 3px solid var(--blue); box-shadow: var(--shadow); }
+.wchild.is-unwritten { border-left-color: var(--rule); }
+.wchild b { font-family: var(--font-display); font-size: 16px; font-weight: 600; line-height: 1.25; color: var(--ink); }
+.wchild span { font-size: 13px; line-height: 1.45; color: var(--ink-2); }
+.wchild:hover { border-color: var(--rule); }
+.wchild.is-cursor, .wmember.is-cursor { border-color: var(--hot); box-shadow: 0 0 0 2px var(--hot), var(--shadow-lift); }
+.wmembers { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 6px; }
+.wmember { display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 8px; align-items: center; text-align: left; padding: 4px; background: var(--stock-card); border: 1px solid var(--rule-soft); }
+.wmember .thumb { width: 44px; height: 44px; }
+.wmember span { font-size: 12px; line-height: 1.3; color: var(--ink-2); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.wmember small { display: block; font-family: var(--font-mono); font-size: 9.5px; color: var(--ink-3); }
+.wmember.is-cited { border-left: 3px solid var(--blue); }
+.wlinks { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 13px; }
+
 /* ── Map ─────────────────────────────────────────────────── */
 .mp { background: var(--stock-card); border: 1px solid var(--rule-soft); box-shadow: var(--shadow); padding: 8px 10px 6px; margin-bottom: 12px; }
 .mp canvas { width: 100%; height: min(64vh, 660px); display: block; cursor: crosshair; touch-action: none; }
@@ -676,7 +729,7 @@ mark { background: var(--hot-w); color: var(--ink); padding: 0 1px; }
       <nav class="modes" aria-label="Modes">
         <button class="btn mode-btn" data-mode="search" title="Search (g s)">Search<span class="hint">gs</span></button>
         <button class="btn mode-btn" data-mode="timeline" title="Timeline (g t)">Timeline<span class="hint">gt</span></button>
-        <button class="btn mode-btn" data-mode="wiki" disabled title="Wiki (g w) — once the wiki is compiled">Wiki<span class="hint">gw</span></button>
+        <button class="btn mode-btn" data-mode="wiki" title="Wiki (g w): pages compiled from the archive">Wiki<span class="hint">gw</span></button>
         <button class="btn mode-btn" data-mode="graph" title="Graph (g r)">Graph<span class="hint">gr</span></button>
         <button class="btn mode-btn" data-mode="map" title="Map (g m)">Map<span class="hint">gm</span></button>
         <button class="btn mode-btn" data-mode="ask" title="Ask (g a, or a to ask within the current scopes)">Ask<span class="hint">ga</span></button>
@@ -717,6 +770,7 @@ mark { background: var(--hot-w); color: var(--ink); padding: 0 1px; }
           <div class="topic-pick" id="topicPick" hidden></div>
         </form>
       </div>
+      <div id="wiki" class="wiki" hidden></div>
       <div id="settings" class="settings" hidden></div>
       <div class="results__head"><span class="label" id="resultsLabel"></span><span class="review" id="review" hidden></span><span><button class="sort-btn" id="sortBtn" title="Change sort (S)">sort <b id="sortName">relevance</b></button> <span class="label tnum" id="resultsCount"></span></span></div>
       <div class="list" id="list"></div>
@@ -783,7 +837,7 @@ mark { background: var(--hot-w); color: var(--ink); padding: 0 1px; }
           <kbd>g ,</kbd><span>Settings: which model servers Ask, captions, embeddings and speech-to-text use</span>
           <kbd>g a</kbd><span>Ask a question; the agent searches the archive and answers with numbered sources. <kbd>a</kbd> asks within your current scopes. In ask mode <kbd>/</kbd> focuses the question, <kbd>m</kbd> switches informed / archive-only, <kbd>j k</kbd> walk the citations, <kbd>Enter</kbd> opens one.</span>
           <kbd>g c</kbd><span>Caption review: images captioned with the current prompt, newest first, updating live while an extraction runs. <kbd>R</kbd> refreshes by hand.</span>
-          <kbd>g w</kbd><span>Wiki — once it is compiled</span>
+          <kbd>g w</kbd><span>Wiki: pages compiled from the archive, overview › themes › topics › events, and people and places. On the left, <kbd>j k</kbd> walk the page tree and <kbd>Enter</kbd> opens a page; in the page, <kbd>j k</kbd> walk its links, citations, child pages and items, and <kbd>Enter</kbd> follows one (a citation opens the item in the reader). <kbd>&gt;</kbd> narrows search to the page's items. The line under the title says how many of the page's items its writer read and whether newer captions have made it stale.</span>
           <kbd>?</kbd><span>This panel</span>
         </div>
       </div>
@@ -795,6 +849,7 @@ mark { background: var(--hot-w); color: var(--ink); padding: 0 1px; }
       <nav class="phone-modes">
         <button class="btn" data-mode="search">Search</button>
         <button class="btn" data-mode="timeline">Time</button>
+        <button class="btn" data-mode="wiki">Wiki</button>
         <button class="btn" data-mode="graph">Graph</button>
         <button class="btn" data-mode="map">Map</button>
         <button class="btn" data-mode="ask">Ask</button>
@@ -882,6 +937,7 @@ const S = {
          seed: null, topic: null,              // argue: the Ask turn a new debate starts from; the claim
          exhaustive: store("askAll") ?? false }, // read every candidate item in batches instead of a sample
   settings: null,
+  wiki: { pages: null, bySlug: new Map(), slug: null, page: null, loadedAt: 0 },
 };
 
 /* ── URL hash ─────────────────────────────────────────────── */
@@ -892,7 +948,8 @@ function writeHash(replace = false) {
   if (S.sort !== "relevance") p.set("sort", S.sort);
   if (S.mode === "ask" && S.ask.session) p.set("session", S.ask.session);
   if (S.open != null) p.set("open", S.open);
-  const hash = `#/${S.mode}${p.toString() ? "?" + p : ""}`;
+  const path = S.mode === "wiki" && S.wiki.slug ? `wiki/${S.wiki.slug}` : S.mode;
+  const hash = `#/${path}${p.toString() ? "?" + p : ""}`;
   if (location.hash === hash) return;
   if (replace) history.replaceState(null, "", hash);
   else history.pushState(null, "", hash);
@@ -905,10 +962,10 @@ function readHash() {
   let mode = parts[0] || "search";
   let open = p.get("open");
   if (mode === "item") { mode = "search"; open = parts[1]; }
-  if (!["search", "timeline", "graph", "map", "ask", "settings"].includes(mode)) mode = "search";
+  if (!["search", "timeline", "graph", "map", "ask", "settings", "wiki"].includes(mode)) mode = "search";
   const sort = SORTS.includes(p.get("sort")) ? p.get("sort") : "relevance";
   return { mode, q: p.get("q") || "", scopes: p.getAll("s"), sort, open: open ? Number(open) : null,
-           session: p.get("session") };
+           session: p.get("session"), slug: mode === "wiki" ? parts.slice(1).join("/") || null : null };
 }
 
 /* ── Streaming search ─────────────────────────────────────── */
@@ -999,7 +1056,12 @@ function onMessage(m) {
       for (const s of m.scopes) S.labels[s.s] = s.label;
       renderScopes(m.n_in_scope);
       break;
+    case "pages":
+      S.pageHits = m.hits || []; renderLenses();
+      break;
     case "items":
+      S.pageHits = [];
+      // falls through
     case "lexical":
     case "fused":
       S.hits = m.hits; S.more = m.more;
@@ -1074,6 +1136,7 @@ function navigate(replace = false) {
   pollReview();
   if (S.mode === "ask") return renderAskMode();
   if (S.mode === "settings") return renderSettings();
+  if (S.mode === "wiki") return renderWikiMode();
   scheduleSearch(0);
 }
 
@@ -1088,16 +1151,21 @@ function lensRow(scope, name, n, max, opts = {}) {
     : opts.lift != null
     ? `<span class="lens__lift" title="${fmtN(n)} results · ${opts.lift}× the archive rate">×${opts.lift >= 10 ? Math.round(opts.lift) : opts.lift.toFixed(1)}</span>`
     : `<span class="lens__n">${fmtN(n)}</span>`;
-  return `<button class="lens" data-scope="${escapeHtml(scope)}" data-label="${escapeHtml(name)}" style="--w:${w.toFixed(3)}">` +
+  return `<button class="lens" data-scope="${escapeHtml(scope)}" data-label="${escapeHtml(name)}"${opts.page ? ` data-page="${escapeHtml(opts.page)}" title="Enter opens the page · > narrows to its items"` : ""} style="--w:${w.toFixed(3)}">` +
     `<span class="lens__name">${opts.glyph ? `<span class="lens__type">${escapeHtml(opts.glyph)}</span>` : ""}${escapeHtml(name)}</span>` +
     `${right}<span class="lens__bar"></span></button>`;
 }
 
 function renderLenses() {
+  if (S.mode === "wiki") return;   // the page tree has the column; a search still streaming must not replace it
   const L = S.lenses;
   const el = $("#lenses");
   if (!L) { el.innerHTML = ""; return; }
   const groups = [];
+  if (S.pageHits?.length) {
+    // Enter opens the page; > narrows to its items like any lens.
+    groups.push(["Wiki pages", S.pageHits.map((pg) => lensRow(`page:${pg.slug}`, pg.title, pg.members, 0, { glyph: pg.kind[0].toUpperCase(), page: pg.slug }))]);
+  }
   const active = new Set(S.scopes);
   if (S.related?.data?.length) {
     const rel = S.related.data.filter((r) => !active.has(`tag:${r.id}`));
@@ -1230,8 +1298,8 @@ function renderResults() {
 
 /* ── Cursor ───────────────────────────────────────────────── */
 function rowsOf(col) {
-  if (col === "lenses") return S.mode === "ask" ? $$(".session", $("#lenses")) : $$(".lens", $("#lenses"));
-  if (col === "results") return S.mode === "ask" ? $$("#askLog .cite, #askLog .source") : $$(".hit", $("#list"));
+  if (col === "lenses") return S.mode === "ask" ? $$(".session", $("#lenses")) : S.mode === "wiki" ? $$(".wrow", $("#lenses")) : $$(".lens", $("#lenses"));
+  if (col === "results") return S.mode === "ask" ? $$("#askLog .cite, #askLog .source") : S.mode === "wiki" ? wikiRows() : $$(".hit", $("#list"));
   return $$("[data-r]", $("#reader"));
 }
 function chartPanel() {
@@ -1311,7 +1379,7 @@ function move(delta) {
   if (!rows.length) return paintCursor(col);
   if (col === "reader") return readerMove(delta);
   const next = S.cursor[col] + delta;
-  if (col === "results" && next >= rows.length && S.more) {
+  if (col === "results" && next >= rows.length && S.more && S.mode !== "wiki") {
     loadMore().then(() => { S.cursor.results = next; paintCursor("results"); });
     return;
   }
@@ -1425,6 +1493,8 @@ function renderReader() {
     section(cap ? "Earlier caption" : "Caption", legacy ? `<p>${escapeHtml(legacy)}</p>` : "") +
     section("Transcript", transcript) +
     section("Keyframes", frames) +
+    section("In the wiki", d.pages?.length ? `<div class="chips">${d.pages.map((pg) =>
+      `<button class="chip" data-r data-page="${escapeHtml(pg.slug)}" title="${escapeHtml(pg.summary || "")}${pg.written ? "" : " (not written yet)"}"><b>${escapeHtml(pg.kind)}</b>${escapeHtml(pg.title)}${pg.cited ? " ·" : ""}</button>`).join("")}</div>` : "") +
     section("Similar", similar) +
     section("Paths", `<ul class="paths">${d.paths.map((p) => `<li>${escapeHtml(p.rel_path)}${p.readable ? "" : " (unreadable)"}</li>`).join("")}</ul>`) +
     `</div>`;
@@ -2276,10 +2346,160 @@ async function attachServerRuns() {
   }
 }
 
+/* ── Wiki ─────────────────────────────────────────────────── */
+/* Pages are compiled offline (wiki_build.sh); this reads them. The lenses column holds the page tree and the
+   results column the page. Page bodies are HTML rendered on the server by markdown-it with raw HTML escaped,
+   so they go in as they come; everything else is escaped here. */
+const WIKI_KINDS = { overview: "overview", theme: "theme", topic: "topic", event: "event", entity: "entity" };
+const WIKI_CHILDREN = { overview: "Themes", theme: "Topics in this theme", topic: "Events in this topic" };
+
+async function loadWikiPages(force = false) {
+  // The tree is small (a few hundred rows) and changes only when a build runs: refetch at most once a minute.
+  if (!force && S.wiki.pages && Date.now() - S.wiki.loadedAt < 60000) return;
+  const resp = await fetch("/api/wiki/pages");
+  if (!resp.ok) return;
+  const data = await resp.json();
+  S.wiki.pages = data.pages;
+  S.wiki.counts = data.counts;
+  S.wiki.bySlug = new Map(data.pages.map((pg) => [pg.slug, pg]));
+  S.wiki.loadedAt = Date.now();
+}
+async function renderWikiMode() {
+  await loadWikiPages();
+  if (S.mode !== "wiki") return;
+  if (!S.wiki.pages?.length) {
+    $("#lenses").innerHTML = `<div class="lens-group"><h3><span class="label">Wiki</span></h3><div class="empty">No pages yet.</div></div>`;
+    $("#wiki").innerHTML = `<div class="wiki__title">Wiki</div><p class="wiki__empty">The wiki has not been compiled yet. ` +
+      `Run <code>scripts/digests.sh</code> for item titles and summaries, then <code>scripts/wiki_build.sh</code> to group topics into events and write the pages. ` +
+      `Both use the Wiki writer model in Settings (<kbd>g ,</kbd>) and can be stopped and resumed.</p>`;
+    return;
+  }
+  const slug = S.wiki.slug && S.wiki.bySlug.has(S.wiki.slug) ? S.wiki.slug : "overview";
+  if (S.wiki.page?.slug === slug) { renderWikiTree(); renderWikiPage(); return; }
+  openWikiPage(slug, { replace: true });
+}
+/* Rows of the tree: the overview, every theme, the topics of the theme holding the open page, and the events of
+   its topic; then people, places and organizations. Showing one branch keeps j and k short. */
+function wikiTreeRows() {
+  const pages = S.wiki.pages || [];
+  const open = new Set();
+  for (let slug = S.wiki.slug, guard = 0; slug && guard < 8; guard++) { open.add(slug); slug = S.wiki.bySlug.get(slug)?.parent_slug; }
+  const kids = (slug, kind) => pages.filter((pg) => pg.parent_slug === slug && pg.kind === kind);
+  const byCount = (a, b) => b.members - a.members || a.title.localeCompare(b.title);
+  const rows = [];
+  const overview = S.wiki.bySlug.get("overview");
+  if (overview) rows.push([overview, 0]);
+  for (const theme of pages.filter((pg) => pg.kind === "theme").sort(byCount)) {
+    rows.push([theme, 0]);
+    if (!open.has(theme.slug)) continue;
+    for (const topic of kids(theme.slug, "topic").sort(byCount)) {
+      rows.push([topic, 1]);
+      if (open.has(topic.slug)) for (const ev of kids(topic.slug, "event")) rows.push([ev, 2]);
+    }
+  }
+  const known = new Set(rows.map(([pg]) => pg.slug));
+  const loose = pages.filter((pg) => ["topic", "event"].includes(pg.kind) && !known.has(pg.slug) && !S.wiki.bySlug.has(pg.parent_slug));
+  return { tree: rows, loose, entities: pages.filter((pg) => pg.kind === "entity").sort(byCount) };
+}
+function wikiRowHtml(pg, depth) {
+  const cls = [pg.slug === S.wiki.slug && "is-current", !pg.written && "is-unwritten", pg.stale && pg.written && "is-stale"].filter(Boolean).join(" ");
+  const tip = `${pg.kind}${pg.written ? "" : " · not written yet"}${pg.stale && pg.written ? " · stale" : ""} · ${pg.members} items`;
+  return `<button class="wrow ${cls}" data-slug="${escapeHtml(pg.slug)}" style="--depth:${depth}" title="${escapeHtml(tip)}">` +
+    `<span class="wrow__name"><span class="wrow__kind">${escapeHtml(pg.kind[0].toUpperCase())}</span>${escapeHtml(pg.title)}</span>` +
+    `<span class="wrow__n">${pg.kind === "overview" ? "" : fmtN(pg.members)}</span></button>`;
+}
+function renderWikiTree() {
+  if (S.mode !== "wiki") return;
+  const { tree, loose, entities } = wikiTreeRows();
+  const c = S.wiki.counts || {};
+  const written = Object.values(c).reduce((a, k) => a + k.written, 0), total = Object.values(c).reduce((a, k) => a + k.pages, 0);
+  const group = (title, rows, note = "") => rows.length ? `<div class="lens-group"><h3><span class="label">${escapeHtml(title)}</span><span class="label">${escapeHtml(note)}</span></h3>${rows.join("")}</div>` : "";
+  $("#lenses").innerHTML =
+    group("Wiki", tree.map(([pg, d]) => wikiRowHtml(pg, d)), `${fmtN(written)} of ${fmtN(total)} written`) +
+    group("Earlier topics and events", loose.map((pg) => wikiRowHtml(pg, 0))) +
+    group("People, places, organizations", entities.map((pg) => wikiRowHtml(pg, 0)));
+  $("#lenses").classList.remove("is-stale");
+  const cur = rowsOf("lenses").findIndex((r) => r.dataset.slug === S.wiki.slug);
+  if (cur >= 0 && S.focus !== "lenses") S.cursor.lenses = cur;
+  paintCursor("lenses", S.focus === "lenses");
+}
+let wikiReq = 0;
+async function openWikiPage(slug, { replace = false } = {}) {
+  if (!slug) return;
+  if (S.mode !== "wiki") { S.mode = "wiki"; renderModes(); renderScopes(); }
+  S.wiki.slug = slug;
+  writeHash(replace);
+  await loadWikiPages();
+  const my = ++wikiReq;
+  renderWikiTree();
+  const resp = await fetch(`/api/wiki/page/${slug.split("/").map(encodeURIComponent).join("/")}`);
+  if (my !== wikiReq || S.mode !== "wiki") return;
+  if (!resp.ok) { $("#wiki").innerHTML = `<div class="empty">No page ${escapeHtml(slug)}.</div>`; return; }
+  S.wiki.page = await resp.json();
+  S.cursor.results = 0;
+  renderWikiPage();
+  if (S.focus === "results") window.scrollTo({ top: 0 });
+}
+function wikiCoverage(pg) {
+  const bits = [];
+  if (!pg.written) return `<div class="wiki__cov"><span class="is-stale">not written yet</span><span>${fmtN(pg.members)} items</span></div>`;
+  const total = pg.members_total_built ?? pg.members;
+  if (pg.kind === "overview") bits.push(`<span>written from ${fmtN(pg.build?.child_pages_read ?? pg.links.length)} theme pages covering ${fmtN(pg.members_read)} of ${fmtN(total)} items</span>`);
+  else bits.push(`<span class="${pg.members_read >= total ? "is-full" : ""}" title="Items the writer read, directly or through the child pages it read">written from ${fmtN(pg.members_read)} of ${fmtN(total)} items</span>`);
+  if (pg.members_cited != null) bits.push(`<span>${fmtN(pg.members_cited)} cited</span>`);
+  if (pg.members !== total && pg.kind !== "overview") bits.push(`<span>${fmtN(pg.members)} items now</span>`);
+  if (pg.members_changed) bits.push(`<span title="Items added, or whose caption or digest changed, since this page was written">${fmtN(pg.members_changed)} new or changed since</span>`);
+  bits.push(`<span>built ${escapeHtml((pg.built_at || "").slice(0, 10))}</span>`);
+  if (pg.model) bits.push(`<span>${escapeHtml(pg.model)}</span>`);
+  if (pg.stale) bits.push(`<span class="is-stale" title="The next wiki_build.sh rewrites it">stale</span>`);
+  return `<div class="wiki__cov">${bits.join("<span>·</span>")}</div>`;
+}
+function renderWikiPage() {
+  const pg = S.wiki.page;
+  if (!pg || S.mode !== "wiki") return;
+  const crumbs = pg.breadcrumbs.map((c) => `<a href="#/wiki/${escapeHtml(c.slug)}" class="wikilink" data-slug="${escapeHtml(c.slug)}">${escapeHtml(c.title)}</a><span>›</span>`).join("");
+  const kids = pg.children.length ? section(WIKI_CHILDREN[pg.kind] || "Pages", `<div class="wkids">${pg.children.map((c) =>
+    `<button class="wchild${c.written ? "" : " is-unwritten"}" data-slug="${escapeHtml(c.slug)}"><b>${escapeHtml(c.title)}</b>` +
+    `<span class="meta">${escapeHtml(c.kind.toUpperCase())}${c.date_start ? `<span>${escapeHtml(c.date_start)}${c.date_end && c.date_end !== c.date_start ? ` – ${escapeHtml(c.date_end)}` : ""}</span>` : ""}<span>${fmtN(c.members)} items</span>${c.written ? "" : "<span>not written yet</span>"}${c.stale && c.written ? "<span>stale</span>" : ""}</span>` +
+    `${c.summary ? `<span>${escapeHtml(c.summary)}</span>` : ""}</button>`).join("")}</div>`) : "";
+  const cited = new Set(pg.cited.map((c) => c.media_id));
+  const members = pg.member_cards.length ? `<section><h3 class="label"><span>Items · ${fmtN(pg.members)}</span><span>&gt; lists all of them in search</span></h3><div class="wmembers">${pg.member_cards.map((c) =>
+    `<button class="wmember${cited.has(c.media_id) ? " is-cited" : ""}" data-open="${c.media_id}" title="${escapeHtml(c.title)}${cited.has(c.media_id) ? " · cited on this page" : ""}">${thumbHtml(c)}<span>${escapeHtml(c.title)}<small>${escapeHtml(c.kind)} · ${escapeHtml(c.date || "undated")}</small></span></button>`).join("")}</div>` +
+    (pg.members_more ? `<p class="meta" style="margin-top:6px">and ${fmtN(pg.members_more)} more</p>` : "") + `</section>` : "";
+  const linkList = (list) => list.map((l) => `<a href="#/wiki/${escapeHtml(l.slug)}" class="wikilink" data-slug="${escapeHtml(l.slug)}">${escapeHtml(l.title)}</a>`).join("");
+  const body = pg.has_body ? `<div class="wiki__body">${pg.html}</div>`
+    : `<p class="wiki__empty">${pg.summary ? `${escapeHtml(pg.summary)}<br><br>` : ""}This page has not been written yet; <code>scripts/wiki_build.sh</code> writes it${pg.kind === "topic" ? " after its events" : ""}.</p>`;
+  $("#wiki").innerHTML =
+    (crumbs ? `<div class="wiki__crumbs">${crumbs}</div>` : "") +
+    `<div><span class="label">${escapeHtml(WIKI_KINDS[pg.kind] || pg.kind)}${pg.date_start ? ` · ${escapeHtml(pg.date_start)}${pg.date_end && pg.date_end !== pg.date_start ? ` – ${escapeHtml(pg.date_end)}` : ""}` : ""}</span>` +
+    `<div class="wiki__title">${escapeHtml(pg.title)}</div></div>` +
+    wikiCoverage(pg) + body + kids +
+    (pg.backlinks.length ? section("Linked from", `<div class="wlinks">${linkList(pg.backlinks)}</div>`) : "") +
+    members;
+  paintCursor("results", false);
+}
+function wikiRows() { return $$("#wiki .wikilink, #wiki .cite, #wiki .wchild, #wiki .wmember"); }
+function activateWikiRow(row) {
+  if (!row) return;
+  if (row.dataset.media || row.dataset.open) return openItem(Number(row.dataset.media || row.dataset.open));
+  if (row.dataset.slug) return openWikiPage(row.dataset.slug);
+}
+function narrowToWikiPage() {
+  // > on a tree row narrows to that page; anywhere in the page, to the page itself.
+  const row = S.focus === "lenses" ? rowsOf("lenses")[S.cursor.lenses] : null;
+  const pg = row ? S.wiki.bySlug.get(row.dataset.slug) : S.wiki.page;
+  if (!pg) return;
+  if (pg.kind === "overview") return say("The overview has no items of its own; narrow to a theme, topic or event.");
+  S.mode = "search";
+  pushScope(`page:${pg.slug}`, pg.title);
+}
+
 /* ── Settings ─────────────────────────────────────────────── */
 const SERVICES = [
   ["chat", "Chat", "Ask's research agent and answers. Takes effect on the next question.",
     [["base_url", "Server URL", "url"], ["model", "Model", "model"], ["context_tokens", "Context tokens", "int"]]],
+  ["wiki", "Wiki writer", "Item digests and wiki pages. digests.sh and wiki_build.sh read it when next started; until saved here it follows Chat. A bigger context reads more items per request.",
+    [["base_url", "Server URL", "url"], ["model", "Model", "model"], ["context_tokens", "Context tokens", "int"], ["concurrency", "Requests at once", "int"]]],
   ["vision", "Vision", "Image captions, tags and entities, and PDF OCR. extract_images.sh and pdf_ocr.sh read it when next started.",
     [["base_url", "Server URL", "url"], ["vision_model", "Model", "model"], ["vision_concurrency", "Requests at once (0 fits the server)", "int"]]],
   ["embed", "Embeddings", "Meaning search, similar items and embed.sh. A new URL works at once; a different model needs embed.sh --rebuild.",
@@ -3306,7 +3526,7 @@ function grCycleKind() {
 
 /* ── Modes ────────────────────────────────────────────────── */
 function setMode(mode) {
-  if (!["search", "timeline", "graph", "map", "ask", "settings"].includes(mode)) return say(`${mode[0].toUpperCase() + mode.slice(1)} arrives in a later phase.`);
+  if (!["search", "timeline", "graph", "map", "ask", "settings", "wiki"].includes(mode)) return say(`${mode[0].toUpperCase() + mode.slice(1)} arrives in a later phase.`);
   S.mode = mode;
   S.onChart = true;
   navigate();
@@ -3318,12 +3538,13 @@ function renderModes() {
   $("#graph").hidden = S.mode !== "graph";
   $("#map").hidden = S.mode !== "map";
   paintCursor("results", false);
-  const asking = S.mode === "ask", setting = S.mode === "settings";
+  const asking = S.mode === "ask", setting = S.mode === "settings", reading = S.mode === "wiki";
   $("#ask").hidden = !asking;
   $("#settings").hidden = !setting;
-  $(".results__head").hidden = asking || setting;
-  $("#list").hidden = asking || setting;
-  if (asking || setting) $("#moreBtn").hidden = true;
+  $("#wiki").hidden = !reading;
+  $(".results__head").hidden = asking || setting || reading;
+  $("#list").hidden = asking || setting || reading;
+  if (asking || setting || reading) $("#moreBtn").hidden = true;
 }
 
 /* ── Actions ──────────────────────────────────────────────── */
@@ -3365,6 +3586,7 @@ function activateReaderRow(row) {
   if (!row) return;
   if (row.closest("[data-veil].is-veiled")) return toggleVeil();
   if (row.dataset.scope) return pushScope(row.dataset.scope, row.dataset.label);
+  if (row.dataset.page) return openWikiPage(row.dataset.page);
   if (row.dataset.open) return openItem(Number(row.dataset.open));
   if (row.dataset.seek != null) return seek(Number(row.dataset.seek), true);
   if (row.dataset.href) return window.open(row.dataset.href, "_blank", "noopener");
@@ -3479,7 +3701,7 @@ function paintMode() {
 }
 const WHICH_KEY = {
   g: ["Go to", [["g", "top of the column"], ["s", "search"], ["t", "timeline"], ["r", "graph"], ["m", "map"], ["a", "ask"],
-                ["c", "caption review (live)"], [",", "settings"], ["w", "wiki", "off"]]],
+                ["c", "caption review (live)"], [",", "settings"], ["w", "wiki"]]],
   y: ["Copy", [["y", "citation for the item under the cursor"]]],
 };
 function showWhichKey(prefix) {
@@ -3600,10 +3822,12 @@ function onKey(e) {
     });
     case "G": return done(() => {
       if (S.focus === "results") S.onChart = false;
-      if (S.focus === "results" && S.more) return loadMore().then(() => { S.cursor.results = S.hits.length - 1; paintCursor("results"); });
+      if (S.focus === "results" && S.more && S.mode !== "wiki") return loadMore().then(() => { S.cursor.results = S.hits.length - 1; paintCursor("results"); });
       S.cursor[S.focus] = rowsOf(S.focus).length - 1; paintCursor(S.focus);
     });
     case "Enter": case "o": return done(() => {
+      if (S.mode === "wiki" && S.focus !== "reader") return activateWikiRow(rowsOf(S.focus)[S.cursor[S.focus]]);
+      if (S.focus === "lenses" && rowsOf("lenses")[S.cursor.lenses]?.dataset.page) return openWikiPage(rowsOf("lenses")[S.cursor.lenses].dataset.page);
       if (S.mode === "ask" && S.focus === "lenses") { const row = rowsOf("lenses")[S.cursor.lenses]; if (row) loadSession(row.dataset.session); return; }
       if (S.mode === "ask" && S.focus === "results") { const row = rowsOf("results")[S.cursor.results]; if (row) openCitation(row); return; }
       if (S.focus === "lenses" || (S.focus === "results" && onChart())) return narrowHere();
@@ -3611,7 +3835,7 @@ function onKey(e) {
       const card = S.hits[S.cursor.results];
       if (card) openCard(card);
     });
-    case ">": return done(narrowHere);
+    case ">": return done(() => S.mode === "wiki" && S.focus !== "reader" ? narrowToWikiPage() : narrowHere());
     case "<": return done(() => popScope());
     case "*": return done(narrowToMainEntity);
     case "/": return done(() => { if (S.mode === "ask") $("#askInput").focus(); else { $("#q").focus(); $("#q").select(); } });
@@ -3674,7 +3898,23 @@ $("#lenses").addEventListener("click", (e) => {
   const row = e.target.closest(".lens");
   if (!row) return;
   S.cursor.lenses = rowsOf("lenses").indexOf(row);
+  if (row.dataset.page) return openWikiPage(row.dataset.page);
   pushScope(row.dataset.scope, row.dataset.label);
+});
+$("#lenses").addEventListener("click", (e) => {
+  const row = e.target.closest(".wrow");
+  if (!row) return;
+  S.cursor.lenses = rowsOf("lenses").indexOf(row);
+  setFocus("lenses");
+  activateWikiRow(row);
+});
+$("#wiki").addEventListener("click", (e) => {
+  const row = e.target.closest(".cite, .wikilink, .wchild, .wmember");
+  if (!row) return;
+  e.preventDefault();
+  S.cursor.results = rowsOf("results").indexOf(row);
+  setFocus("results");
+  activateWikiRow(row);
 });
 $("#list").addEventListener("click", (e) => {
   const hit = e.target.closest(".hit");
@@ -3803,6 +4043,9 @@ function fromHash() {
     renderAskMode();
   } else if (S.mode === "settings") {
     renderSettings();
+  } else if (S.mode === "wiki") {
+    if (h.slug) S.wiki.slug = h.slug;
+    renderWikiMode();
   } else {
     scheduleSearch(0);
   }
