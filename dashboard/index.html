@@ -410,6 +410,44 @@ mark { background: var(--hot-w); color: var(--ink); padding: 0 1px; }
 .src a { color: var(--blue); overflow-wrap: anywhere; font-size: 13px; }
 .src a:hover { color: var(--hot); }
 
+/* ── Ask ─────────────────────────────────────────────────── */
+.ask { display: flex; flex-direction: column; gap: 14px; }
+.ask__log { display: flex; flex-direction: column; gap: 18px; }
+.turn { background: var(--stock-card); border: 1px solid var(--rule-soft); box-shadow: var(--shadow); padding: 14px 16px 16px; }
+.turn__q { font-family: var(--font-display); font-size: 19px; font-weight: 600; line-height: 1.25; margin-bottom: 8px; }
+.turn__scope { font-family: var(--font-mono); font-size: 10.5px; color: var(--ink-3); margin: -4px 0 8px; }
+.steps { font-family: var(--font-mono); font-size: 11px; color: var(--ink-3); display: flex; flex-direction: column; gap: 2px; margin-bottom: 10px; }
+.steps b { color: var(--blue); font-weight: 500; letter-spacing: .08em; text-transform: uppercase; font-size: 10px; margin-right: 6px; }
+.steps .is-live::after { content: "▍"; color: var(--hot); animation: blink 1s steps(1) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+.answer { font-size: 14.5px; line-height: 1.62; color: var(--ink); max-width: 76ch; }
+.answer p + p, .answer p + ol, .answer p + ul, .answer ol + p, .answer ul + p { margin-top: 9px; }
+.answer ol, .answer ul { padding-left: 22px; margin-top: 6px; }
+.answer li + li { margin-top: 4px; }
+.answer .gk { color: var(--ink-2); }
+.answer .gk:hover::after { content: " general knowledge"; font-family: var(--font-mono); font-size: 9.5px; color: var(--ink-3); letter-spacing: .06em; }
+.cite {
+  font-family: var(--font-mono); font-size: 10px; line-height: 1;
+  padding: 2px 4px; margin: 0 1px; vertical-align: 1px;
+  border: 1px solid var(--blue); color: var(--blue); background: var(--blue-w);
+}
+.cite:hover, .cite.is-cursor { background: var(--hot); border-color: var(--hot); color: var(--on-ink); }
+.sources { margin-top: 12px; border-top: 1px solid var(--rule-soft); padding-top: 8px; display: flex; flex-direction: column; gap: 4px; }
+.source { display: grid; grid-template-columns: 28px 40px minmax(0, 1fr); gap: 8px; align-items: center; text-align: left; padding: 3px 4px; }
+.source:hover, .source.is-cursor { background: color-mix(in srgb, var(--hot) 12%, transparent); }
+.source .n { font-family: var(--font-mono); font-size: 10.5px; color: var(--blue); }
+.source i { width: 40px; height: 30px; background: var(--stock-well) center/cover no-repeat; display: block; }
+.source span { font-size: 12.5px; color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.composer { position: sticky; bottom: 44px; background: var(--stock-bar); border: 1px solid var(--rule); box-shadow: var(--shadow-lift); padding: 8px; display: flex; flex-wrap: wrap; gap: 8px; align-items: stretch; }
+.composer textarea { flex: 1 1 320px; min-height: 40px; height: 40px; max-height: 30vh; resize: vertical; border: 1px solid var(--rule); background: var(--stock-card); padding: 9px 10px; font-size: 14px; line-height: 1.4; outline: none; }
+.composer textarea:focus { border-color: var(--blue); }
+.composer__side { display: flex; gap: 5px; align-items: stretch; }
+.ask__err { color: var(--hot); font-family: var(--font-mono); font-size: 11.5px; }
+.session { width: 100%; text-align: left; padding: 5px 6px; font-size: 12.5px; color: var(--ink-2); border-left: 2px solid transparent; }
+.session small { display: block; font-family: var(--font-mono); font-size: 10px; color: var(--ink-3); }
+.session.is-current { border-left-color: var(--blue); color: var(--ink); background: var(--stock-card); }
+.session.is-cursor { border-left-color: var(--hot); }
+
 /* ── Map ─────────────────────────────────────────────────── */
 .mp { background: var(--stock-card); border: 1px solid var(--rule-soft); box-shadow: var(--shadow); padding: 8px 10px 6px; margin-bottom: 12px; }
 .mp canvas { width: 100%; height: min(64vh, 660px); display: block; cursor: crosshair; touch-action: none; }
@@ -529,7 +567,7 @@ mark { background: var(--hot-w); color: var(--ink); padding: 0 1px; }
         <button class="btn mode-btn" data-mode="wiki" disabled title="Wiki (gw) — arrives with Phase 6">Wiki</button>
         <button class="btn mode-btn" data-mode="graph" title="Graph (gn)">Graph</button>
         <button class="btn mode-btn" data-mode="map" title="Map (gm)">Map</button>
-        <button class="btn mode-btn" data-mode="ask" disabled title="Ask (ga) — arrives with Phase 7">Ask</button>
+        <button class="btn mode-btn" data-mode="ask" title="Ask (ga, or a to ask about the current scope)">Ask</button>
         <button class="btn" id="themeBtn" title="Theme">◐</button>
         <button class="btn" id="helpBtn" aria-expanded="false" aria-controls="panel" title="Keys (?)">?</button>
       </nav>
@@ -542,6 +580,17 @@ mark { background: var(--hot-w); color: var(--ink); padding: 0 1px; }
       <div id="timeline" hidden></div>
       <div id="graph" hidden></div>
       <div id="map" hidden></div>
+      <div id="ask" class="ask" hidden>
+        <div class="ask__log" id="askLog"></div>
+        <form class="composer" id="composer">
+          <textarea id="askInput" rows="2" placeholder="Ask about the archive…  (Enter sends, Shift-Enter new line, Esc leaves)" aria-label="Question"></textarea>
+          <div class="composer__side">
+            <button class="btn" type="submit" id="askSend">Ask</button>
+            <button class="btn" type="button" id="askMode" title="m: informed uses general knowledge too; archive answers only from the archive">informed</button>
+            <button class="btn" type="button" id="askNew" title="Start a new conversation">new</button>
+          </div>
+        </form>
+      </div>
       <div class="results__head"><span class="label" id="resultsLabel">Recent</span><span><button class="sort-btn" id="sortBtn" title="Change sort (S)">sort <b id="sortName">relevance</b></button> <span class="label tnum" id="resultsCount"></span></span></div>
       <div class="list" id="list"></div>
       <button class="btn more-btn" id="moreBtn" hidden>Load more</button>
@@ -598,7 +647,8 @@ mark { background: var(--hot-w); color: var(--ink); padding: 0 1px; }
           <kbd>g t</kbd><span>Timeline. There <kbd>h l</kbd> move by month, <kbd>H L</kbd> by year, <kbd>v</kbd> marks a range, <kbd>&gt;</kbd> narrows to it</span>
           <kbd>g n</kbd><span>Graph of who and what appear together. <kbd>h l</kbd> step through nodes, <kbd>&gt;</kbd> narrows to one, <kbd>T</kbd> switches entities / tags. Click a node; double-click narrows.</span>
           <kbd>g m</kbd><span>Map of the whole archive by meaning; your scope lights up. <kbd>h l</kbd> step through topics (<kbd>T</kbd> for themes), <kbd>z</kbd> zooms to one, <kbd>+ -</kbd> zoom, <kbd>0</kbd> resets, <kbd>&gt;</kbd> narrows. Scroll to zoom, drag to pan, click a dot to open it.</span>
-          <kbd>g w</kbd><span>Wiki · <kbd>g a</kbd> ask — as they are built</span>
+          <kbd>g a</kbd><span>Ask a question; the agent searches the archive and answers with numbered sources. <kbd>a</kbd> asks within your current scopes. In ask mode <kbd>/</kbd> focuses the question, <kbd>m</kbd> switches informed / archive-only, <kbd>j k</kbd> walk the citations, <kbd>Enter</kbd> opens one.</span>
+          <kbd>g w</kbd><span>Wiki — once it is compiled</span>
           <kbd>?</kbd><span>This panel</span>
         </div>
       </div>
@@ -612,6 +662,7 @@ mark { background: var(--hot-w); color: var(--ink); padding: 0 1px; }
         <button class="btn" data-mode="timeline">Time</button>
         <button class="btn" data-mode="graph">Graph</button>
         <button class="btn" data-mode="map">Map</button>
+        <button class="btn" data-mode="ask">Ask</button>
       </nav>
     </div>
   </footer>
@@ -678,6 +729,7 @@ const S = {
   tl: { data: null, cursor: -1, mark: null },
   gr: { data: null, kind: store("graphKind") || "entity", cursor: 0, order: [], pos: null, hover: -1 },
   mp: { data: null, level: "topic", order: [], cursor: 0, scope: null, view: { s: 1, x: 0, y: 0 }, hover: -1 },
+  ask: { session: null, turns: [], busy: false, mode: store("askMode") || "informed", ctl: null, sessions: [] },
 };
 
 /* ── URL hash ─────────────────────────────────────────────── */
@@ -686,6 +738,7 @@ function writeHash(replace = false) {
   if (S.q) p.set("q", S.q);
   for (const s of S.scopes) p.append("s", s);
   if (S.sort !== "relevance") p.set("sort", S.sort);
+  if (S.mode === "ask" && S.ask.session) p.set("session", S.ask.session);
   if (S.open != null) p.set("open", S.open);
   const hash = `#/${S.mode}${p.toString() ? "?" + p : ""}`;
   if (location.hash === hash) return;
@@ -700,9 +753,10 @@ function readHash() {
   let mode = parts[0] || "search";
   let open = p.get("open");
   if (mode === "item") { mode = "search"; open = parts[1]; }
-  if (!["search", "timeline", "graph", "map"].includes(mode)) mode = "search";
+  if (!["search", "timeline", "graph", "map", "ask"].includes(mode)) mode = "search";
   const sort = SORTS.includes(p.get("sort")) ? p.get("sort") : "relevance";
-  return { mode, q: p.get("q") || "", scopes: p.getAll("s"), sort, open: open ? Number(open) : null };
+  return { mode, q: p.get("q") || "", scopes: p.getAll("s"), sort, open: open ? Number(open) : null,
+           session: p.get("session") };
 }
 
 /* ── Streaming search ─────────────────────────────────────── */
@@ -862,6 +916,7 @@ function navigate(replace = false) {
   writeHash(replace);
   renderScopes();
   renderModes();
+  if (S.mode === "ask") return renderAskMode();
   scheduleSearch(0);
 }
 
@@ -1011,8 +1066,8 @@ function renderResults() {
 
 /* ── Cursor ───────────────────────────────────────────────── */
 function rowsOf(col) {
-  if (col === "lenses") return $$(".lens", $("#lenses"));
-  if (col === "results") return $$(".hit", $("#list"));
+  if (col === "lenses") return S.mode === "ask" ? $$(".session", $("#lenses")) : $$(".lens", $("#lenses"));
+  if (col === "results") return S.mode === "ask" ? $$("#askLog .cite, #askLog .source") : $$(".hit", $("#list"));
   return $$("[data-r]", $("#reader"));
 }
 function paintCursor(col, scroll = true) {
@@ -1304,6 +1359,165 @@ function tlNarrow() {
   }
   S.tl.mark = null;
   pushScope(scope, scope.slice(5));
+}
+
+/* ── Ask ──────────────────────────────────────────────────── */
+function renderAskMode() {
+  $("#askMode").textContent = S.ask.mode;
+  renderAskLog();
+  loadSessions();
+}
+async function loadSessions() {
+  const resp = await fetch("/api/ask/sessions");
+  if (!resp.ok) return;
+  S.ask.sessions = (await resp.json()).sessions;
+  if (S.mode !== "ask") return;
+  $("#lenses").innerHTML = `<div class="lens-group"><h3><span class="label">Conversations</span></h3>` +
+    (S.ask.sessions.length ? S.ask.sessions.map((x) =>
+      `<button class="session${x.id === S.ask.session ? " is-current" : ""}" data-session="${escapeHtml(x.id)}">${escapeHtml(x.title || "(untitled)")}` +
+      `<small>${escapeHtml((x.created_at || "").slice(0, 16))} · ${x.turns} turn${x.turns === 1 ? "" : "s"}</small></button>`).join("")
+      : `<div class="empty">No conversations yet.</div>`) + `</div>`;
+  $("#lenses").classList.remove("is-stale");
+  paintCursor("lenses", false);
+}
+async function loadSession(id) {
+  const resp = await fetch(`/api/ask/session/${encodeURIComponent(id)}`);
+  if (!resp.ok) return say("Could not load that conversation.");
+  const data = await resp.json();
+  S.ask.session = id;
+  S.ask.turns = data.turns.map((t) => ({
+    question: t.question, scopes: [], steps: (t.steps || []).filter((x) => x.action !== "answer").map((x) => ({ action: x.action, args: x.args, summary: "" })),
+    text: t.answer || "", sentences: t.sentences, cites: Object.fromEntries((t.citations || []).map((c) => [c.n, c])), done: true,
+  }));
+  writeHash(true);
+  renderAskLog();
+  loadSessions();
+}
+function toggleAskMode() {
+  S.ask.mode = S.ask.mode === "informed" ? "archive" : "informed";
+  store("askMode", S.ask.mode);
+  $("#askMode").textContent = S.ask.mode;
+  say(S.ask.mode === "informed" ? "Informed: general knowledge plus the archive." : "Archive-only: answers come only from the archive.");
+}
+function stepLine(st, live) {
+  const args = st.args || {};
+  const detail = args.query ?? args.id ?? args.slug ?? "";
+  return `<div class="${live ? "is-live" : ""}"><b>${escapeHtml(st.action.replace("_", " "))}</b>${escapeHtml(String(detail))}` +
+    `${st.summary ? ` → ${escapeHtml(st.summary)}` : ""}</div>`;
+}
+/* Answer text is escaped first; then a little Markdown (headings, **bold**, *italic*, lists) and
+   [n] citation chips are applied. Once final, sentences without a citation are dimmed as general knowledge. */
+function inlineMd(html) {
+  return html.replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>").replace(/(^|[\s(])\*([^*\n]+)\*(?=[\s).,;:!?]|$)/g, "$1<em>$2</em>");
+}
+function dimGeneral(html, final) {
+  if (!final) return html;
+  // Split on sentence ends that are not inside a tag; a sentence with no chip is general knowledge.
+  const parts = html.split(/(?<=[.!?]["”’)]?)\s+(?=[A-Z0-9"“(<])/);
+  return parts.map((snt) => /class="cite"/.test(snt) || !snt.replace(/<[^>]+>/g, "").trim() ? snt : `<span class="gk">${snt}</span>`).join(" ");
+}
+function answerHtml(turn) {
+  const chip = (html) => html.replace(/\[(\d+)\]/g, (m, n) => turn.cites[n] ? `<button class="cite" data-n="${n}" title="${escapeHtml(citeTitle(turn.cites[n]))}">${n}</button>` : "");
+  const render = (text) => chip(inlineMd(escapeHtml(text)));
+  const blocks = turn.text.replace(/\r/g, "").split(/\n\s*\n/);
+  return blocks.map((block) => {
+    const lines = block.split("\n").filter((l) => l.trim());
+    if (!lines.length) return "";
+    if (lines.every((l) => /^\s*([-*•]|\d+[.)])\s+/.test(l))) {
+      const ordered = /^\s*\d/.test(lines[0]);
+      const items = lines.map((l) => `<li>${dimGeneral(render(l.replace(/^\s*([-*•]|\d+[.)])\s+/, "")), turn.done)}</li>`).join("");
+      return ordered ? `<ol>${items}</ol>` : `<ul>${items}</ul>`;
+    }
+    const heading = /^\s*#{1,4}\s+(.*)$/.exec(lines[0]);
+    if (heading && lines.length === 1) return `<p><strong>${render(heading[1])}</strong></p>`;
+    return `<p>${dimGeneral(render(lines.join(" ")), turn.done)}</p>`;
+  }).join("");
+}
+function citeTitle(c) {
+  if (c.card) return `${c.card.title} — ${c.card.date || "undated"}`;
+  if (c.page) return c.page.title;
+  return c.ref;
+}
+function sourcesHtml(turn) {
+  const list = Object.values(turn.cites).sort((a, b) => a.n - b.n);
+  if (!list.length) return "";
+  return `<div class="sources">${list.map((c) => {
+    const card = c.card || {};
+    const thumb = card.thumb_url ? ` style="background-image:url('${escapeHtml(card.thumb_url)}')"` : "";
+    const status = card.status === "SOURCE_OFFLINE" ? " · offline" : card.status === "THUMBNAIL_ONLY" ? " · thumbnail only" : "";
+    const t = card.hit?.start_s != null ? ` · ${fmtTime(card.hit.start_s)}` : "";
+    return `<button class="source" data-n="${c.n}"><span class="n">[${c.n}]</span><i${thumb}></i>` +
+      `<span>${escapeHtml(citeTitle(c))} · ${escapeHtml(card.kind || "")}${status}${t}</span></button>`;
+  }).join("")}</div>`;
+}
+function renderAskLog() {
+  const log = $("#askLog");
+  log.innerHTML = S.ask.turns.length ? S.ask.turns.map((turn, i) =>
+    `<article class="turn" data-turn="${i}"><div class="turn__q">${escapeHtml(turn.question)}</div>` +
+    (turn.scopes?.length ? `<div class="turn__scope">within ${turn.scopes.map((x) => escapeHtml(S.labels[x] || x)).join(" › ")}</div>` : "") +
+    `<div class="steps">${turn.steps.map((st, j) => stepLine(st, !turn.done && !turn.text && j === turn.steps.length - 1)).join("")}` +
+    `${!turn.done && !turn.text ? `<div class="is-live">${turn.steps.length ? "thinking" : "starting"}</div>` : ""}</div>` +
+    `<div class="answer">${answerHtml(turn)}</div>` +
+    (turn.error ? `<div class="ask__err">${escapeHtml(turn.error)}</div>` : "") +
+    sourcesHtml(turn) + `</article>`).join("") :
+    `<div class="empty">Ask a question about the archive. The agent searches, reads the items it finds, and answers with numbered sources you can open.${S.scopes.length ? "<br>It will look only within your current scopes." : ""}</div>`;
+  $("#askSend").disabled = S.ask.busy;
+  $("#askSend").textContent = S.ask.busy ? "…" : "Ask";
+}
+function openCitation(el) {
+  const turn = S.ask.turns[Number(el.closest(".turn")?.dataset.turn)];
+  const c = turn?.cites[el.dataset.n];
+  if (!c) return;
+  if (c.card) openItem(c.card.hit?.member_id ?? c.card.media_id, c.card.hit || null);
+  else if (c.page) say(`Wiki page ${c.page.slug}: wiki mode arrives once the wiki is compiled.`);
+}
+async function sendQuestion() {
+  const input = $("#askInput");
+  const question = input.value.trim();
+  if (!question || S.ask.busy) return;
+  input.value = "";
+  const turn = { question, scopes: [...S.scopes], steps: [], text: "", cites: {}, done: false };
+  S.ask.turns.push(turn);
+  S.ask.busy = true;
+  renderAskLog();
+  $("#askLog .turn:last-child")?.scrollIntoView({ block: "start" });
+  S.ask.ctl = new AbortController();
+  try {
+    const resp = await fetch("/api/ask", {
+      method: "POST", headers: { "Content-Type": "application/json" }, signal: S.ask.ctl.signal,
+      body: JSON.stringify({ question, scopes: S.scopes, mode: S.ask.mode, session_id: S.ask.session }),
+    });
+    if (!resp.ok) throw new Error((await resp.json().catch(() => ({}))).detail || resp.status);
+    const reader = resp.body.getReader(), dec = new TextDecoder();
+    let buf = "", pending = 0;
+    const repaint = () => { if (!pending) pending = requestAnimationFrame(() => { pending = 0; renderAskLog(); }); };
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      let sep;
+      while ((sep = buf.indexOf("\n\n")) >= 0) {
+        const block = buf.slice(0, sep); buf = buf.slice(sep + 2);
+        const name = /^event: (.*)$/m.exec(block)?.[1];
+        const data = /^data: (.*)$/m.exec(block)?.[1];
+        if (!name || !data) continue;
+        const d = JSON.parse(data);
+        if (name === "step") turn.steps.push(d);
+        else if (name === "token") turn.text += d.text;
+        else if (name === "cite") turn.cites[d.n] = d;
+        else if (name === "final") { turn.text = d.text; turn.sentences = d.sentences; }
+        else if (name === "done") { turn.done = true; S.ask.session = d.session_id; writeHash(true); say(`Answered in ${Math.round(d.ms / 1000)} s after ${d.steps} steps.`); }
+        else if (name === "error") { turn.error = d.msg; turn.done = true; }
+        repaint();
+      }
+    }
+  } catch (err) {
+    if (err.name !== "AbortError") { turn.error = `Ask failed: ${err.message}`; }
+  }
+  turn.done = true;
+  S.ask.busy = false;
+  renderAskLog();
+  loadSessions();
 }
 
 /* ── Map ──────────────────────────────────────────────────── */
@@ -1728,7 +1942,7 @@ function grNarrow() {
 
 /* ── Modes ────────────────────────────────────────────────── */
 function setMode(mode) {
-  if (!["search", "timeline", "graph", "map"].includes(mode)) return say(`${mode[0].toUpperCase() + mode.slice(1)} arrives in a later phase.`);
+  if (!["search", "timeline", "graph", "map", "ask"].includes(mode)) return say(`${mode[0].toUpperCase() + mode.slice(1)} arrives in a later phase.`);
   S.mode = mode;
   navigate();
 }
@@ -1738,6 +1952,11 @@ function renderModes() {
   tl.hidden = S.mode !== "timeline";
   $("#graph").hidden = S.mode !== "graph";
   $("#map").hidden = S.mode !== "map";
+  const asking = S.mode === "ask";
+  $("#ask").hidden = !asking;
+  $(".results__head").hidden = asking;
+  $("#list").hidden = asking;
+  if (asking) $("#moreBtn").hidden = true;
 }
 
 /* ── Actions ──────────────────────────────────────────────── */
@@ -1839,9 +2058,9 @@ function openOriginal() {
 
 /* ── Keys ─────────────────────────────────────────────────── */
 function paintMode() {
-  const insert = document.activeElement === $("#q");
+  const insert = document.activeElement === $("#q") || document.activeElement === $("#askInput");
   const tag = $("#modeTag");
-  tag.textContent = insert ? "SEARCH" : "NORMAL";
+  tag.textContent = document.activeElement === $("#askInput") ? "ASK" : insert ? "SEARCH" : "NORMAL";
   tag.classList.toggle("is-insert", insert);
   $("#modeBuf").textContent = S.count + S.pending;
 }
@@ -1850,6 +2069,11 @@ function clearPending() { S.count = ""; S.pending = ""; paintMode(); }
 function onKey(e) {
   const t = e.target;
   if (t === $("#q")) return omniKey(e);
+  if (t === $("#askInput")) {
+    if (e.key === "Escape") { e.preventDefault(); t.blur(); paintMode(); }
+    else if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendQuestion(); }
+    return;
+  }
   if (t instanceof Element && t.matches("input, textarea, select")) return;
 
   const k = e.key;
@@ -1932,6 +2156,8 @@ function onKey(e) {
       S.cursor[S.focus] = rowsOf(S.focus).length - 1; paintCursor(S.focus);
     });
     case "Enter": case "o": return done(() => {
+      if (S.mode === "ask" && S.focus === "lenses") { const row = rowsOf("lenses")[S.cursor.lenses]; if (row) loadSession(row.dataset.session); return; }
+      if (S.mode === "ask" && S.focus === "results") { const row = rowsOf("results")[S.cursor.results]; if (row) openCitation(row); return; }
       if (S.focus === "lenses") return narrowHere();
       if (S.focus === "reader") return activateReaderRow(rowsOf("reader")[S.cursor.reader]);
       const card = S.hits[S.cursor.results];
@@ -1940,7 +2166,9 @@ function onKey(e) {
     case ">": return done(narrowHere);
     case "<": return done(() => popScope());
     case "*": return done(narrowToMainEntity);
-    case "/": return done(() => { $("#q").focus(); $("#q").select(); });
+    case "/": return done(() => { if (S.mode === "ask") $("#askInput").focus(); else { $("#q").focus(); $("#q").select(); } });
+    case "a": return done(() => { setMode("ask"); setTimeout(() => $("#askInput").focus(), 0); });
+    case "m": if (S.mode === "ask") return done(toggleAskMode); break;
     case "?": return done(() => toggleHelp());
     case "n": return done(() => nextMark(1));
     case "N": return done(() => nextMark(-1));
@@ -1985,6 +2213,8 @@ document.addEventListener("keydown", onKey);
 $("#q").addEventListener("input", (e) => { S.q = e.target.value; renderSort(); writeHash(true); scheduleSearch(); });
 $("#q").addEventListener("focus", paintMode);
 $("#q").addEventListener("blur", paintMode);
+$("#askInput").addEventListener("focus", paintMode);
+$("#askInput").addEventListener("blur", paintMode);
 $("#scopes").addEventListener("click", (e) => {
   const chip = e.target.closest(".scope-chip");
   if (chip) { e.preventDefault(); popScope(Number(chip.dataset.i)); }
@@ -2015,6 +2245,20 @@ $("#reader").addEventListener("click", (e) => {
   activateReaderRow(row);
 });
 $("#moreBtn").addEventListener("click", loadMore);
+$("#composer").addEventListener("submit", (e) => { e.preventDefault(); sendQuestion(); });
+$("#askMode").addEventListener("click", toggleAskMode);
+$("#askNew").addEventListener("click", () => { S.ask.session = null; S.ask.turns = []; writeHash(true); renderAskLog(); loadSessions(); $("#askInput").focus(); });
+$("#askLog").addEventListener("click", (e) => {
+  const el = e.target.closest(".cite, .source");
+  if (!el) return;
+  S.cursor.results = rowsOf("results").indexOf(el);
+  setFocus("results");
+  openCitation(el);
+});
+$("#lenses").addEventListener("click", (e) => {
+  const row = e.target.closest(".session");
+  if (row) loadSession(row.dataset.session);
+});
 $("#sortBtn").addEventListener("click", cycleSort);
 $$("[data-mode]").forEach((b) => b.addEventListener("click", () => setMode(b.dataset.mode)));
 $("#helpBtn").addEventListener("click", () => toggleHelp());
@@ -2041,7 +2285,12 @@ function fromHash() {
   $("#q").value = S.q;
   renderScopes();
   renderModes();
-  scheduleSearch(0);
+  if (S.mode === "ask") {
+    if (h.session && h.session !== S.ask.session) loadSession(h.session);
+    renderAskMode();
+  } else {
+    scheduleSearch(0);
+  }
   if (openChanged) { if (h.open != null) openItem(h.open); else closeReader(); }
 }
 
