@@ -121,7 +121,9 @@ def _scope_ids(conn: sqlite3.Connection, kind: str, value: str) -> set[int]:
     if kind == "page":
         if not _has_table(conn, "wiki_member"):
             return set()
-        return q("SELECT wm.media_id FROM wiki_member wm JOIN wiki_page p ON p.id=wm.page_id WHERE p.slug=?", value)
+        # Pages hold post primaries, like clusters; include each post's photos and videos.
+        ids = q("SELECT wm.media_id FROM wiki_member wm JOIN wiki_page p ON p.id=wm.page_id WHERE p.slug=?", value)
+        return set(expand_members(conn, list(ids)))
     if kind == "media":
         media_id = int(value)
         ids = {media_id}

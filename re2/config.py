@@ -41,6 +41,11 @@ class Config:
     chat_base_url: str
     chat_context_tokens: int
 
+    wiki_base_url: str          # the text model that writes digests and wiki pages; defaults to [chat]
+    wiki_model: str
+    wiki_context_tokens: int    # what one request may use
+    wiki_concurrency: int
+
     @property
     def db_path(self) -> Path:
         return self.data_dir / "re2.sqlite"
@@ -72,6 +77,10 @@ def load(path: Path | str | None = None) -> Config:
             raw = _merge(raw, tomllib.load(f))
     p, llm, emb, asr, srv = raw["paths"], raw["llm"], raw["embed"], raw["asr"], raw["server"]
     chat = raw.get("chat", {})
+    wiki = raw.get("wiki", {})
+    chat_base_url = chat.get("base_url", llm["base_url"]).rstrip("/")
+    chat_model = chat.get("model", llm["chat_model"])
+    chat_context_tokens = int(chat.get("context_tokens", 32000))
     return Config(
         corpus_root=_resolve(p["corpus_root"]),
         data_dir=_resolve(p["data_dir"]),
@@ -95,9 +104,13 @@ def load(path: Path | str | None = None) -> Config:
         asr_compute_type=asr["compute_type"],
         server_host=srv["host"],
         server_port=int(srv["port"]),
-        chat_base_url=chat.get("base_url", llm["base_url"]).rstrip("/"),
-        chat_model=chat.get("model", llm["chat_model"]),
-        chat_context_tokens=int(chat.get("context_tokens", 32000)),
+        chat_base_url=chat_base_url,
+        chat_model=chat_model,
+        chat_context_tokens=chat_context_tokens,
+        wiki_base_url=wiki.get("base_url", chat_base_url).rstrip("/"),
+        wiki_model=wiki.get("model", chat_model),
+        wiki_context_tokens=int(wiki.get("context_tokens", chat_context_tokens)),
+        wiki_concurrency=max(1, int(wiki.get("concurrency", 1))),
     )
 
 
@@ -106,12 +119,14 @@ def load(path: Path | str | None = None) -> Config:
 SERVICE_FIELDS = {
     "chat": [("chat", "base_url", "chat_base_url"), ("chat", "model", "chat_model"),
              ("chat", "context_tokens", "chat_context_tokens")],
+    "wiki": [("wiki", "base_url", "wiki_base_url"), ("wiki", "model", "wiki_model"),
+             ("wiki", "context_tokens", "wiki_context_tokens"), ("wiki", "concurrency", "wiki_concurrency")],
     "vision": [("llm", "base_url", "base_url"), ("llm", "vision_model", "vision_model"),
                ("llm", "vision_concurrency", "vision_concurrency")],
     "embed": [("embed", "url", "embed_url"), ("embed", "model", "embed_model")],
     "asr": [("asr", "model", "asr_model"), ("asr", "device", "asr_device"), ("asr", "compute_type", "asr_compute_type")],
 }
-INT_KEYS = {"context_tokens", "vision_concurrency"}
+INT_KEYS = {"context_tokens", "vision_concurrency", "concurrency"}
 
 
 def services(cfg: Config) -> dict:

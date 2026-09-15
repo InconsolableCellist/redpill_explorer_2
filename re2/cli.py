@@ -286,6 +286,51 @@ def cmd_tag_relations(cfg: config.Config, args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_digests(cfg: config.Config, args: argparse.Namespace) -> int:
+    from re2 import digest
+
+    stats = digest.run(db.open_db(cfg), cfg, limit=args.limit, concurrency=args.concurrency)
+    print(f"digests: {stats.summary()}")
+    return 0
+
+
+def cmd_wiki_update(cfg: config.Config, args: argparse.Namespace) -> int:
+    from re2 import wiki
+
+    stats = wiki.update(db.open_db(cfg), cfg)
+    print(f"wiki-update: {stats.summary()}")
+    return 0
+
+
+def cmd_wiki_events(cfg: config.Config, args: argparse.Namespace) -> int:
+    from re2 import wiki
+
+    stats = wiki.build(db.open_db(cfg), cfg, kinds=["event"], topics=args.topic, limit=args.limit, write=False)
+    print(f"wiki-events: {stats.summary()}")
+    return 0
+
+
+def cmd_wiki_build(cfg: config.Config, args: argparse.Namespace) -> int:
+    from re2 import wiki
+
+    stats = wiki.build(db.open_db(cfg), cfg, kinds=args.kind, limit=args.limit, topics=args.topic)
+    for slug in stats.written:
+        print(f"  wrote {slug}")
+    print(f"wiki-build: {stats.summary()}")
+    return 0
+
+
+def cmd_wiki_export(cfg: config.Config, args: argparse.Namespace) -> int:
+    from pathlib import Path
+
+    from re2 import wiki
+
+    out = Path(args.out) if args.out else cfg.data_dir / "wiki"
+    n = wiki.export(db.open_db(cfg), cfg, out)
+    print(f"wiki-export: {n} pages to {out}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="re2")
     parser.add_argument("--config", help="path to config.toml")
@@ -358,6 +403,31 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--concurrency", type=int, default=4, help="requests at once (default 4; match the server's slots)")
     p.add_argument("--rescore", action="store_true", help="forget earlier model scores and ask about every tag again")
     p.set_defaults(func=cmd_tag_relations)
+
+    p = sub.add_parser("digests", help="a title, summary and event hint per item ([wiki] text model)")
+    p.add_argument("--limit", type=int, help="send at most N items to the model")
+    p.add_argument("--concurrency", type=int, help="requests at once (default [wiki] concurrency)")
+    p.set_defaults(func=cmd_digests)
+
+    sub.add_parser("wiki-update", help="sync wiki pages with topics and entities, attach new items, mark stale "
+                                       "pages (no model)").set_defaults(func=cmd_wiki_update)
+
+    p = sub.add_parser("wiki-events", help="group topics' items into event pages (no page writing)")
+    p.add_argument("--topic", type=int, action="append", help="a topic's cluster id (repeatable)")
+    p.add_argument("--limit", type=int, help="at most N topics, largest first")
+    p.set_defaults(func=cmd_wiki_events)
+
+    p = sub.add_parser("wiki-build", help="update, group topics into events, write stale wiki pages")
+    p.add_argument("--kind", action="append", choices=["event", "topic", "theme", "entity", "overview"],
+                   help="only these kinds (repeatable)")
+    p.add_argument("--topic", type=int, action="append",
+                   help="only this topic (cluster id), its events and its page (repeatable)")
+    p.add_argument("--limit", type=int, help="at most N topics end to end, and N pages of each other kind")
+    p.set_defaults(func=cmd_wiki_build)
+
+    p = sub.add_parser("wiki-export", help="write the wiki as Obsidian-style Markdown")
+    p.add_argument("--out", help="directory (default data/wiki)")
+    p.set_defaults(func=cmd_wiki_export)
 
     sub.add_parser("dates", help="recompute item dates from sources, filenames, text and mtimes") \
         .set_defaults(func=cmd_dates)
