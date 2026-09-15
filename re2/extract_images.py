@@ -236,8 +236,26 @@ def retitle(conn: sqlite3.Connection, cfg, client_factory=httpx.Client, limit: i
     return done, finished
 
 
+def sized_for_server(cfg, client_factory=httpx.Client, requested: int = 0):
+    """cfg with vision_concurrency and vision_max_tokens_tall fitted to the server's slots and context."""
+    import dataclasses
+
+    with client_factory() as client:
+        limits = vlm.server_limits(client, cfg)
+    concurrency, tall, notes = vlm.plan_concurrency(cfg, limits, requested or cfg.vision_concurrency)
+    for note in notes:
+        log.info("vision server: %s", note)
+    log.info("vision server: running %d requests at once; long retries up to %d tokens", concurrency, tall)
+    if dataclasses.is_dataclass(cfg):
+        return dataclasses.replace(cfg, vision_concurrency=concurrency, vision_max_tokens_tall=tall)
+    cfg.vision_concurrency, cfg.vision_max_tokens_tall = concurrency, tall
+    return cfg
+
+
 def run(conn: sqlite3.Connection, cfg, limit: int | None = None, include_thumbnail_only: bool = True,
-        client_factory=httpx.Client) -> ExtractStats:
+        client_factory=httpx.Client, concurrency: int = 0) -> ExtractStats:
+    if concurrency or not cfg.vision_concurrency:
+        cfg = sized_for_server(cfg, client_factory, concurrency)
     retitled, finished = retitle(conn, cfg, client_factory)
     if not finished:
         return ExtractStats(interrupted=True, started=time.monotonic())

@@ -131,3 +131,48 @@ def test_schema_caps_are_independent():
     assert props["title"] is not props["summary"]
     assert vlm.KEYFRAME_SCHEMA["properties"]["description"] is not props["description"]
     assert "title" not in vlm.KEYFRAME_SCHEMA["properties"]
+
+
+def router(models, props=None, slots=None):
+    def handler(request):
+        if request.url.path.endswith("/models"):
+            return httpx.Response(200, json={"data": models})
+        if request.url.path.endswith("/props"):
+            return httpx.Response(200, json=props or {})
+        if request.url.path.endswith("/slots"):
+            return httpx.Response(200, json=slots or [])
+        return httpx.Response(404)
+    return httpx.Client(transport=httpx.MockTransport(handler))
+
+
+LIMIT_CFG = SimpleNamespace(base_url="http://r.test/v1", vision_model="g", vision_max_tokens=1600,
+                            vision_max_tokens_tall=5000, vision_max_tiles=6)
+
+
+def test_limits_from_router_args():
+    shared_8k = [{"id": "g", "status": {"value": "unloaded",
+                  "args": ["--ctx-size", "8192", "--kv-unified", "--parallel", "6"]}}]
+    limits = vlm.server_limits(router(shared_8k), LIMIT_CFG)
+    assert (limits.slots, limits.slot_ctx, limits.shared) == (6, 8192, True)
+    concurrency, tall, _ = vlm.plan_concurrency(LIMIT_CFG, limits)
+    assert (concurrency, tall) == (3, 5000)   # the cube entry used today: three at once
+
+    wide = [{"id": "g", "status": {"value": "unloaded", "args": ["--ctx-size", "32768", "--kv-unified",
+                                                                  "--parallel", "8"]}}]
+    assert vlm.plan_concurrency(LIMIT_CFG, vlm.server_limits(router(wide), LIMIT_CFG))[0] == 8
+
+    split = [{"id": "g", "status": {"value": "unloaded", "args": ["--ctx-size", "16384", "--parallel", "8"]}}]
+    limits = vlm.server_limits(router(split), LIMIT_CFG)
+    assert (limits.slot_ctx, limits.shared) == (2048, False)
+    concurrency, tall, notes = vlm.plan_concurrency(LIMIT_CFG, limits)
+    assert concurrency == 1 and tall == 1000 and any("lower vision_max_tokens" in n for n in notes)
+
+
+def test_limits_from_running_server_and_override():
+    loaded = [{"id": "g", "status": {"value": "loaded", "args": ["--ctx-size", "32768"]}}]
+    client = router(loaded, props={"total_slots": 4}, slots=[{"n_ctx": 32768}] * 4)
+    limits = vlm.server_limits(client, LIMIT_CFG)
+    assert (limits.slots, limits.slot_ctx, limits.shared, limits.source) == (4, 32768, True, "running server")
+    concurrency, _, notes = vlm.plan_concurrency(LIMIT_CFG, limits, requested=9)
+    assert concurrency == 9 and any("more than the server's 4 slots" in n for n in notes)
+    assert vlm.server_limits(router([]), LIMIT_CFG) is None

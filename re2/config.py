@@ -20,7 +20,7 @@ class Config:
     base_url: str
     vision_model: str
     chat_model: str
-    vision_concurrency: int
+    vision_concurrency: int     # 0 = auto: sized from the server's slots and context
     vision_max_tokens: int
     vision_max_tokens_tall: int
     vision_max_side: int
@@ -81,7 +81,7 @@ def load(path: Path | str | None = None) -> Config:
         legacy_output_json=_resolve(p["legacy_output_json"]),
         base_url=llm["base_url"].rstrip("/"),
         vision_model=llm["vision_model"],
-        vision_concurrency=int(llm["vision_concurrency"]),
+        vision_concurrency=0 if str(llm["vision_concurrency"]).lower() == "auto" else int(llm["vision_concurrency"]),
         vision_max_tokens=int(llm["vision_max_tokens"]),
         vision_max_tokens_tall=int(llm["vision_max_tokens_tall"]),
         vision_max_side=int(llm["vision_max_side"]),

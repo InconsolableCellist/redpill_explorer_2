@@ -112,8 +112,14 @@ def cmd_thumbs(cfg: config.Config, args: argparse.Namespace) -> int:
 def cmd_extract_images(cfg: config.Config, args: argparse.Namespace) -> int:
     from re2 import extract_images
 
+    if args.check:
+        sized = extract_images.sized_for_server(cfg, requested=args.concurrency or cfg.vision_concurrency)
+        print(f"extract-images --check: model {cfg.vision_model} at {cfg.base_url}: concurrency "
+              f"{sized.vision_concurrency}, long retries up to {sized.vision_max_tokens_tall} tokens")
+        return 0
+
     stats = extract_images.run(db.open_db(cfg), cfg, limit=args.limit,
-                               include_thumbnail_only=not args.no_thumbnail_only)
+                               include_thumbnail_only=not args.no_thumbnail_only, concurrency=args.concurrency or 0)
     print(f"extract-images: {stats.summary()}")
     return 0
 
@@ -250,6 +256,9 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("extract-images", help="caption, OCR and tag images with the vision model on cube")
     p.add_argument("--limit", type=int, help="process at most N images")
     p.add_argument("--no-thumbnail-only", action="store_true", help="skip items that only have a thumbnail")
+    p.add_argument("--concurrency", type=int,
+                   help="requests at once (default: sized from the server's slots and context)")
+    p.add_argument("--check", action="store_true", help="print what the server allows and exit")
     p.set_defaults(func=cmd_extract_images)
 
     p = sub.add_parser("embed", help="add new docs to the dense embedding index")

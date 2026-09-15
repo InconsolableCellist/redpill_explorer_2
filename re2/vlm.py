@@ -13,6 +13,7 @@ import math
 import re
 import sys
 import time
+from dataclasses import dataclass
 from pathlib import Path
 
 import httpx
@@ -98,7 +99,8 @@ Fill every field:
 - humor: if there is a joke, meme format, sarcasm, irony or punchline, explain it and name the meme format if known; otherwise "none".
 - entities: proper nouns only, as full canonical names (e.g. "Kamala Harris", "Federal Bureau of Investigation", "X (Twitter)", "January 6 Capitol riot").
 - tags: 10 to 20 lowercase search tags for finding this item later: topics, events, people, places, and the item's stance or tone (e.g. antisemitic, racist, anti-white, anti-immigrant, pro-israel, anti-trans, satirical). Spaces between words, no hashtags. Do not spend tags on the medium or format (screenshot, social media, meme, comparison, political commentary): media_type records that.
-  Always add a group tag for every ethnic, racial, religious, national, sexual or gender group the item is about, depicts as its subject, targets, blames, defends or refers to in coded terms, in plain plural form: jews, israelis, palestinians, arabs, muslims, christians, black people, white people, hispanic people, asian people, immigrants, refugees, trans people, gay people, women, men; other groups the same way (haitians, somalis, swedes). A group tag needs the group to be part of the content, not only its country: Israeli military action is tagged israel and israelis, and also jews when Jews, Judaism or Zionism are referenced or the conflict is framed in terms of Jews.
+  Always add a group tag for every ethnic, racial, religious, national, sexual or gender group that is named anywhere in the text or image (including in slurs, insults and anonymous posts), or that the item depicts as its subject, targets, blames, defends or refers to in coded terms, in plain plural form: jews, israelis, palestinians, arabs, muslims, christians, black people, white people, hispanic people, asian people, immigrants, refugees, trans people, gay people, women, men; other groups the same way (haitians, somalis, swedes). A slur gets the plain tag of the group it refers to. Tag only groups that are named or clearly referred to, not groups merely associated with a place.
+  Wars and conflicts get their common name as a tag (israel hamas war, israel hezbollah conflict, russia ukraine war, us iran conflict) together with the places involved (gaza, west bank, lebanon, iran).
 - date_hints: any dates, times, or datable references visible or implied.
 - language: primary language of the text, ISO 639-1 code, or "none".
 - sensitivity: 0.0 for benign, 0.3 for political but civil, 0.6 for slurs, hate or violence, 0.8 for graphic injury or explicit sexual content, 1.0 for the most extreme material. This is a retrieval filter, not a judgement.
@@ -332,6 +334,90 @@ def extract(client: httpx.Client, cfg, images: bytes | list[bytes], schema: dict
     data["_usage"] = body.get("usage") or {}
     data["_elapsed_s"] = round(time.monotonic() - started, 2)
     return data
+
+
+@dataclass
+class ServerLimits:
+    slots: int
+    slot_ctx: int      # context one request may use
+    shared: bool       # True when all slots draw from one pool of slot_ctx tokens (--kv-unified)
+    source: str
+
+
+# Rough prompt sizes: system prompt plus one image, and plus the most slices a tall image gets.
+PROMPT_TOKENS = 1100
+TILE_TOKENS = 330
+DEFAULT_ROUTER_SLOTS = 4   # llama.cpp's --parallel auto: 4 slots over a unified cache
+
+
+def _arg(args: list[str], flag: str) -> str | None:
+    return args[args.index(flag) + 1] if flag in args and args.index(flag) + 1 < len(args) else None
+
+
+def server_limits(client: httpx.Client, cfg) -> ServerLimits | None:
+    """Slots and context of the vision model, from the llama.cpp router, without loading the model."""
+    base = cfg.base_url[:-3] if cfg.base_url.endswith("/v1") else cfg.base_url
+    try:
+        models = client.get(f"{cfg.base_url}/models", timeout=20).json().get("data", [])
+    except (httpx.HTTPError, ValueError):
+        return None
+    entry = next((m for m in models if m.get("id") == cfg.vision_model), None)
+    if entry is None:
+        return None
+    status = entry.get("status") or {}
+    args = status.get("args") or []
+    ctx = int(_arg(args, "--ctx-size") or _arg(args, "-c") or 0)
+    parallel_arg = _arg(args, "--parallel") or _arg(args, "-np")
+    slots = int(parallel_arg) if parallel_arg and int(parallel_arg) > 0 else DEFAULT_ROUTER_SLOTS
+    shared = "--kv-unified" in args or "-kvu" in args or not parallel_arg
+    limits = ServerLimits(slots, ctx if shared else ctx // max(slots, 1), shared, "router arguments")
+    if status.get("value") == "loaded":
+        # The running instance is authoritative: slot count and each slot's context size.
+        try:
+            props = client.get(f"{base}/props", params={"model": cfg.vision_model}, timeout=20).json()
+            slot_list = client.get(f"{base}/slots", params={"model": cfg.vision_model}, timeout=20).json()
+            if isinstance(slot_list, list) and slot_list:
+                slot_ctx = int(slot_list[0].get("n_ctx") or 0)
+                slots = int(props.get("total_slots") or len(slot_list))
+                limits = ServerLimits(slots, slot_ctx, shared=bool(ctx) and slot_ctx >= ctx and slots > 1,
+                                      source="running server")
+        except (httpx.HTTPError, ValueError, TypeError):
+            pass
+    return limits if limits.slot_ctx else None
+
+
+def plan_concurrency(cfg, limits: ServerLimits | None, requested: int = 0) -> tuple[int, int, list[str]]:
+    """(concurrency, output budget for the one-at-a-time phase, notes) for this server."""
+    notes = []
+    need = PROMPT_TOKENS + cfg.vision_max_tokens
+    long_prompt = PROMPT_TOKENS + TILE_TOKENS * (cfg.vision_max_tiles - 1)
+    if limits is None:
+        concurrency = requested or 3
+        notes.append(f"could not read the server's limits; using concurrency {concurrency}")
+        return concurrency, cfg.vision_max_tokens_tall, notes
+    if limits.shared:
+        safe = max(1, min(limits.slots, limits.slot_ctx // need))
+        notes.append(f"{limits.slots} slots sharing {limits.slot_ctx:,} tokens ({limits.source}); "
+                     f"each request needs up to ~{need:,}, so {safe} fit at once")
+    else:
+        safe = limits.slots if limits.slot_ctx >= need else 1
+        notes.append(f"{limits.slots} slots of {limits.slot_ctx:,} tokens each ({limits.source})")
+        if limits.slot_ctx < need:
+            notes.append(f"a slot holds fewer than the ~{need:,} tokens a request can need; lower vision_max_tokens")
+    if requested:
+        if requested > limits.slots:
+            notes.append(f"--concurrency {requested} is more than the server's {limits.slots} slots; extra requests "
+                         "only queue")
+        elif requested > safe:
+            notes.append(f"--concurrency {requested} is above the ~{safe} that fit; requests may fail when many "
+                         "run long")
+        concurrency = requested
+    else:
+        concurrency = safe
+    tall = min(cfg.vision_max_tokens_tall, max(1000, limits.slot_ctx - long_prompt))
+    if tall < cfg.vision_max_tokens_tall:
+        notes.append(f"long retries limited to {tall:,} output tokens to fit a {limits.slot_ctx:,}-token slot")
+    return concurrency, tall, notes
 
 
 def main(argv: list[str]) -> int:
