@@ -5,7 +5,7 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from re2 import api, ask, config, db
+from re2 import api, ask, config, db, search
 
 
 @pytest.fixture
@@ -31,10 +31,10 @@ def scripted_model(steps, answer_chunks, seen):
     def handler(request):
         body = json.loads(request.content)
         seen.append(body)
-        if body.get("stream"):
-            sse = "".join(f"data: {json.dumps({'choices': [{'delta': {'content': c}}]})}\n\n" for c in answer_chunks)
-            return httpx.Response(200, text=sse + "data: [DONE]\n\n", headers={"content-type": "text/event-stream"})
-        return httpx.Response(200, json={"choices": [{"message": {"content": json.dumps(next(replies))}}]})
+        # Every call streams; the research steps are the ones constrained to the step schema.
+        chunks = [json.dumps(next(replies))] if body.get("response_format") else answer_chunks
+        sse = "".join(f"data: {json.dumps({'choices': [{'delta': {'content': c}}]})}\n\n" for c in chunks)
+        return httpx.Response(200, text=sse + "data: [DONE]\n\n", headers={"content-type": "text/event-stream"})
 
     return httpx.Client(transport=httpx.MockTransport(handler))
 
@@ -62,29 +62,83 @@ def test_agent_loop_cites_only_what_tools_returned(archive):
     assert any("(0:35)" in m["content"] for m in seen[2]["messages"] if m["role"] == "user")
     # The answer call is a fresh conversation with the research as notes, not a JSON transcript.
     answer_call = seen[-1]
-    assert answer_call["stream"] and len(answer_call["messages"]) == 2
+    assert not answer_call.get("response_format") and len(answer_call["messages"]) == 2
     assert "Research notes" in answer_call["messages"][1]["content"] and "(0:35)" in answer_call["messages"][1]["content"]
     row = conn.execute("SELECT question, session_id, trace_json FROM chat_log").fetchone()
-    assert row[0].startswith("What did Trudeau") and len(json.loads(row[2])) == 3
+    trace = json.loads(row[2])
+    assert row[0].startswith("What did Trudeau") and [t["action"] for t in trace] == ["search", "open_item", "answer", "fill"]
+    # The notes had room, so the item the search found but the agent did not open was read in too.
+    assert trace[-1]["args"] == {"items": 1} and "A meme about Trudeau" in answer_call["messages"][1]["content"]
 
 
 def test_step_cap_and_unavailable_model(archive):
     conn, cfg = archive
     seen = []
-    looping = scripted_model(steps=[{"thought": "again", "action": "search", "args": {"query": "trudeau"}}] * 4 +
-                             [{"thought": "again", "action": "timeline", "args": {"query": "trudeau"}}] * 3 +
-                             [{"thought": "done", "action": "answer", "args": {}}],
+    pl = ask.plan(cfg)
+    looping = scripted_model(steps=[{"thought": "again", "action": "search", "args": {"query": "trudeau"}}] * pl.searches +
+                             [{"thought": "again", "action": "timeline", "args": {"query": "trudeau"}}] * 30,
                              answer_chunks=["Nothing much."], seen=seen)
     events = list(ask.run(conn, cfg, "When?", client=looping))
-    assert sum(1 for e in events if e[0] == "step") == ask.MAX_STEPS - 1
-    enums = [c["response_format"]["json_schema"]["schema"]["properties"]["action"]["enum"] for c in seen if not c.get("stream")]
-    assert "search" in enums[3] and "search" not in enums[4]      # searches run out after four
-    assert enums[-1] == ["answer"]                                # the last step can only answer
+    assert sum(1 for e in events if e[0] == "step" and e[1]["action"] != "read") == pl.steps - 1
+    enums = [c["response_format"]["json_schema"]["schema"]["properties"]["action"]["enum"] for c in seen if c.get("response_format")]
+    assert "search" in enums[pl.searches - 1] and "search" not in enums[pl.searches]   # searches run out
+    assert enums[-1] == ["answer"]                                                     # the last step can only answer
+    # Deeper research gets more searches, more opens, and more of the window for notes.
+    shallow, deep = ask.plan(cfg, 0), ask.plan(cfg, 1)
+    assert shallow.searches < deep.searches and shallow.opens < deep.opens and shallow.notes_tokens * 5 < deep.notes_tokens
+    assert deep.notes_tokens <= cfg.chat_context_tokens - ask.ANSWER_MAX_TOKENS
 
     def down(request):
         raise httpx.ConnectError("no route")
     events = list(ask.run(conn, cfg, "Anything?", client=httpx.Client(transport=httpx.MockTransport(down))))
     assert events[-1][0] == "error"
+
+
+def test_attached_item_related_items_and_depth(archive):
+    conn, cfg = archive
+    conn.executescript("""
+        INSERT INTO media(id, uid, kind, status) VALUES (3, 'c', 'image', 'READY'), (4, 'd', 'image', 'READY');
+        INSERT INTO media_meta(media_id, item_date) VALUES (1, '2024-09-12'), (3, '2024-09-20'), (4, '2019-01-01');
+        INSERT INTO entity(id, name, type) VALUES (7, 'Justin Trudeau', 'person');
+        INSERT INTO media_entity(media_id, entity_id) VALUES (1, 7), (3, 7), (4, 7);
+        INSERT INTO doc(media_id, kind, seq, text) VALUES (3, 'legacy_caption', 0, 'Trudeau at a podium in Ottawa'),
+                                                           (4, 'legacy_caption', 0, 'An old Trudeau photo');
+    """)
+    conn.commit()
+    # Same person within a month counts as related; the same person five years earlier does not.
+    assert ask.related_items(conn, cfg, 1, k=5) == [3]
+    # Comma lists in a scope mean any of them.
+    conn.execute("INSERT INTO entity(id, name, type) VALUES (8, 'Ottawa', 'place')")
+    conn.execute("INSERT INTO media_entity(media_id, entity_id) VALUES (2, 8)")
+    assert search.scope_media_ids(conn, ["entity:8"]) == {2} and search.scope_media_ids(conn, ["entity:7,8"]) == {1, 2, 3, 4}
+    assert search.scope_label(conn, "entity:7,8") == "Justin Trudeau or Ottawa"
+    seen = []
+    client = scripted_model(steps=[{"thought": "", "action": "answer", "args": {}}], answer_chunks=["It shows [m:3]."], seen=seen)
+    events = list(ask.run(conn, cfg, "Discuss this", client=client, items=[1], related=True, depth=0))
+    first = seen[0]["messages"][-1]["content"]
+    assert first.startswith("The user is asking about these archive items") and "(0:35)" in first and "[m:3]" in first
+    assert events[0][1]["action"] == "attached" and dict(events)["final"]["text"] == "It shows [1]."
+    assert json.loads(conn.execute("SELECT context_json FROM chat_log").fetchone()[0]) == {"items": [1], "related": True, "depth": 0.0}
+
+
+def test_stop_ends_a_turn_between_chunks(archive):
+    conn, cfg = archive
+    control = ask.Control()
+
+    def slow(request):
+        body = json.loads(request.content)
+        if body.get("response_format"):
+            return httpx.Response(200, text=f"data: {json.dumps({'choices': [{'delta': {'content': json.dumps({'thought': '', 'action': 'answer', 'args': {}})}}]})}\n\n")
+        def chunks():
+            yield f"data: {json.dumps({'choices': [{'delta': {'content': 'Partial answer. '}}]})}\n\n".encode()
+            control.stop.set()   # the user presses stop while the answer streams
+            yield f"data: {json.dumps({'choices': [{'delta': {'content': 'Never shown.'}}]})}\n\n".encode()
+        return httpx.Response(200, content=chunks())
+
+    events = list(ask.run(conn, cfg, "Stop me", client=httpx.Client(transport=httpx.MockTransport(slow)), control=control))
+    names = [e[0] for e in events]
+    assert "stopped" in names and names[-1] == "done" and events[-1][1]["stopped"]
+    assert conn.execute("SELECT answer FROM chat_log").fetchone()[0] == "Partial answer. (stopped)"
 
 
 def test_citation_filter_holds_split_markers():
@@ -110,3 +164,29 @@ def test_ask_endpoint_streams_sse(archive, monkeypatch):
     assert turns[0]["answer"] == "No evidence."
     assert app.get("/api/ask/sessions").json()["sessions"][0]["turns"] == 1
     assert app.post("/api/ask", json={"question": " "}).status_code == 400
+    # A finished run can be watched again from the start, and a conversation can be deleted.
+    start = [json.loads(line[6:]) for line in resp.text.splitlines() if line.startswith("data: ") and "run_id" in line][0]
+    again = app.get(f"/api/ask/run/{start['run_id']}/events")
+    assert "event: final" in again.text and app.get("/api/ask/runs").json()["runs"] == []
+    plan = app.get("/api/ask/plan", params={"depth": 1, "s": "kind:video"}).json()
+    assert plan["in_scope"] == 1 and plan["notes_tokens"] > app.get("/api/ask/plan", params={"depth": 0}).json()["notes_tokens"]
+    assert app.delete(f"/api/ask/session/{session['session_id']}").json() == {"deleted_turns": 1}
+    assert app.get("/api/ask/sessions").json()["sessions"] == []
+
+
+def test_settings_save_to_local_file_and_apply_live(archive, monkeypatch, tmp_path):
+    conn, cfg = archive
+    local = tmp_path / "config.local.toml"
+    local.write_text('# my notes\n[server]\nhost = "0.0.0.0"\n')
+    monkeypatch.setattr(config, "LOCAL_OVERRIDES", local)
+    app = TestClient(api.create_app(cfg))
+    change = {"services": {"chat": {"model": "gemma-big", "context_tokens": 160000}, "asr": {"device": "cpu"}}}
+    assert app.post("/api/settings", json=change).status_code == 403      # no header: refused
+    resp = app.post("/api/settings", json=change, headers={"X-RE2-Settings": "1"})
+    assert resp.status_code == 200 and resp.json()["services"]["chat"]["model"] == "gemma-big"
+    assert (cfg.chat_model, cfg.chat_context_tokens, cfg.asr_device) == ("gemma-big", 160000, "cpu")
+    text = local.read_text()
+    assert text.startswith("# my notes") and 'model = "gemma-big"' in text and "context_tokens = 160000" in text
+    assert app.get("/api/ask/plan").json()["context_tokens"] == 160000
+    bad = {"services": {"chat": {"base_url": "file:///etc/passwd"}}}
+    assert app.post("/api/settings", json=bad, headers={"X-RE2-Settings": "1"}).status_code == 400

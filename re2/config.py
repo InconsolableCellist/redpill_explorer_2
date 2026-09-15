@@ -8,7 +8,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
-@dataclass(frozen=True)
+@dataclass
 class Config:
     corpus_root: Path
     data_dir: Path
@@ -99,3 +99,56 @@ def load(path: Path | str | None = None) -> Config:
         chat_model=chat.get("model", llm["chat_model"]),
         chat_context_tokens=int(chat.get("context_tokens", 32000)),
     )
+
+
+# ── Settings the dashboard can change ─────────────────────────────────────
+# (section in config.local.toml, key there, Config field). Written to config.local.toml, never config.toml.
+SERVICE_FIELDS = {
+    "chat": [("chat", "base_url", "chat_base_url"), ("chat", "model", "chat_model"),
+             ("chat", "context_tokens", "chat_context_tokens")],
+    "vision": [("llm", "base_url", "base_url"), ("llm", "vision_model", "vision_model"),
+               ("llm", "vision_concurrency", "vision_concurrency")],
+    "embed": [("embed", "url", "embed_url"), ("embed", "model", "embed_model")],
+    "asr": [("asr", "model", "asr_model"), ("asr", "device", "asr_device"), ("asr", "compute_type", "asr_compute_type")],
+}
+INT_KEYS = {"context_tokens", "vision_concurrency"}
+
+
+def services(cfg: Config) -> dict:
+    return {name: {key: getattr(cfg, attr) for _, key, attr in fields} for name, fields in SERVICE_FIELDS.items()}
+
+
+def save_services(cfg: Config, updates: dict) -> None:
+    """Write changed service settings to config.local.toml (keeping its comments), reload, and apply them to the
+    running cfg: the dashboard's Ask and search use them at once; batch jobs read them when next started."""
+    import tomlkit
+
+    path = LOCAL_OVERRIDES
+    doc = tomlkit.parse(path.read_text()) if path.is_file() else tomlkit.document()
+    current = services(cfg)
+    for name, values in updates.items():
+        if name not in SERVICE_FIELDS or not isinstance(values, dict):
+            raise ValueError(f"unknown service {name!r}")
+        for section, key, _ in SERVICE_FIELDS[name]:
+            if key not in values or values[key] == current[name][key]:
+                continue
+            value = values[key]
+            if key in INT_KEYS:
+                value = int(value)
+                if value < 0:
+                    raise ValueError(f"{name}.{key} must not be negative")
+            else:
+                value = str(value).strip()
+                if not value:
+                    raise ValueError(f"{name}.{key} must not be empty")
+                if key in ("base_url", "url") and not value.startswith(("http://", "https://")):
+                    raise ValueError(f"{name}.{key} must be an http(s) URL")
+            if section not in doc:
+                doc.add(tomlkit.nl())
+                doc.add(section, tomlkit.table())
+            doc[section][key] = value
+    path.write_text(tomlkit.dumps(doc))
+    fresh = load()
+    for fields in SERVICE_FIELDS.values():
+        for _, _, attr in fields:
+            setattr(cfg, attr, getattr(fresh, attr))

@@ -10,7 +10,7 @@ from contextlib import closing
 from pathlib import Path
 
 import httpx
-from fastapi import Body, FastAPI, HTTPException, Query
+from fastapi import Body, FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from jinja2 import Environment, FileSystemLoader, select_autoescape
@@ -93,7 +93,7 @@ def create_app(cfg: config.Config | None = None) -> FastAPI:
             try:
                 yield _line({"t": "scope", "scopes": labels,
                              "n_in_scope": None if allowed is None else len(allowed)})
-                tag_scopes = [int(x.split(":", 1)[1]) for x in s if x.startswith("tag:")]
+                tag_scopes = [int(x.split(":", 1)[1]) for x in s if x.startswith("tag:") and "," not in x]
                 if tag_scopes:
                     from re2 import relations
                     rel = relations.related(conn, tag_scopes[-1], limit=15)
@@ -275,52 +275,122 @@ def create_app(cfg: config.Config | None = None) -> FastAPI:
 
     chat_client = httpx.Client()
 
+    def sse(events) -> StreamingResponse:
+        def body():
+            for event in events:
+                if event is None:
+                    yield b": ping\n\n"   # keeps proxies from closing a quiet stream
+                    continue
+                name, data = event
+                yield f"event: {name}\ndata: {search.dumps(data)}\n\n".encode("utf-8")
+        return StreamingResponse(body(), media_type="text/event-stream",
+                                 headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"})
+
+    def ask_context(conn: sqlite3.Connection, body: dict) -> tuple[list[str], list[int], float | None]:
+        scopes = [str(x) for x in body.get("scopes") or []]
+        try:
+            search.scope_media_ids(conn, scopes)
+            items = [int(x) for x in body.get("items") or []][:8]
+            depth = None if body.get("depth") is None else float(body["depth"])
+        except (search.ScopeError, ValueError, TypeError) as exc:
+            raise HTTPException(400, str(exc)) from exc
+        return scopes, items, depth
+
     @app.post("/api/ask")
     def ask_endpoint(body: dict = Body(...)):
+        """Starts a turn and streams its events. The turn runs on regardless of this connection;
+        /api/ask/run/{id}/events watches it again from any event."""
         from re2 import ask
 
         question = str(body.get("question") or "").strip()
         if not question:
             raise HTTPException(400, "question is required")
-        scopes = [str(x) for x in body.get("scopes") or []]
-        conn = db.connect(cfg.db_path)   # writable: the agent logs its turns
-        try:
-            search.scope_media_ids(conn, scopes)
-        except (search.ScopeError, ValueError) as exc:
-            conn.close()
-            raise HTTPException(400, str(exc)) from exc
+        with closing(open_ro(cfg)) as conn:
+            scopes, items, depth = ask_context(conn, body)
+        run = ask.start_run(cfg, question, scopes, str(body.get("mode") or "informed"), body.get("session_id") or None,
+                            items=items, related=bool(body.get("related")), depth=depth, client=chat_client,
+                            embed_client=embed_client)
+        return sse(run.follow())
 
-        def events():
+    @app.get("/api/ask/runs")
+    def ask_runs():
+        from re2 import ask
+
+        return {"runs": [r.summary() for r in ask.active_runs()]}
+
+    @app.get("/api/ask/run/{run_id}/events")
+    def ask_run_events(run_id: str, start: int = 0):
+        from re2 import ask
+
+        run = ask.RUNS.get(run_id)
+        if run is None:
+            raise HTTPException(404, "no such run (finished runs are kept for ten minutes)")
+        return sse(run.follow(max(0, start)))
+
+    @app.post("/api/ask/run/{run_id}/stop")
+    def ask_run_stop(run_id: str):
+        from re2 import ask
+
+        run = ask.RUNS.get(run_id)
+        if run is None:
+            raise HTTPException(404, "no such run")
+        run.control.stop.set()
+        return {"stopping": run.finished is None}
+
+    @app.get("/api/ask/plan")
+    def ask_plan(depth: float | None = None, s: list[str] = Query(default=[])):
+        """What a depth means with the current chat model: notes budget, reading limits, and the scope's size."""
+        from re2 import ask
+
+        pl = ask.plan(cfg, depth)
+        with closing(open_ro(cfg)) as conn:
             try:
-                for name, data in ask.run(conn, cfg, question, scopes=scopes, mode=str(body.get("mode") or "informed"),
-                                          session_id=body.get("session_id") or None, client=chat_client,
-                                          embed_client=embed_client):
-                    yield f"event: {name}\ndata: {search.dumps(data)}\n\n".encode("utf-8")
-            except Exception as exc:  # noqa: BLE001 - the stream must end with an event, not a dropped connection
-                log.exception("ask failed")
-                yield f"event: error\ndata: {search.dumps({'msg': str(exc)})}\n\n".encode("utf-8")
-            finally:
-                conn.close()
+                allowed = search.scope_media_ids(conn, s)
+            except (search.ScopeError, ValueError) as exc:
+                raise HTTPException(400, str(exc)) from exc
+        return {"model": cfg.chat_model, "context_tokens": cfg.chat_context_tokens, "depth": pl.depth,
+                "notes_tokens": pl.notes_tokens, "searches": pl.searches, "opens": pl.opens, "related": pl.related,
+                "item_tokens": int(ask.RECORD_CHARS / ask.CHARS_PER_TOKEN),
+                "in_scope": None if allowed is None else len(allowed)}
 
-        return StreamingResponse(events(), media_type="text/event-stream",
-                                 headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"})
+    @app.delete("/api/ask/session/{session_id}")
+    def ask_session_delete(session_id: str):
+        from re2 import ask
+
+        for run in ask.active_runs():
+            if run.session_id == session_id:
+                run.control.stop.set()
+        conn = db.connect(cfg.db_path)
+        try:
+            with conn:
+                n = conn.execute("DELETE FROM chat_log WHERE session_id=?", (session_id,)).rowcount
+                conn.execute("DELETE FROM chat_session WHERE id=?", (session_id,))
+        finally:
+            conn.close()
+        return {"deleted_turns": n}
 
     @app.get("/api/ask/sessions")
     def ask_sessions(limit: int = 30):
+        from re2 import ask
+
         with closing(open_ro(cfg)) as conn:
             if not search._has_table(conn, "chat_session"):
                 return {"sessions": []}
             rows = conn.execute(
                 """SELECT s.id, s.title, s.created_at, COUNT(l.id) AS turns FROM chat_session s
-                   LEFT JOIN chat_log l ON l.session_id=s.id GROUP BY s.id ORDER BY MAX(l.id) DESC LIMIT ?""",
+                   LEFT JOIN chat_log l ON l.session_id=s.id GROUP BY s.id
+                   ORDER BY coalesce(MAX(l.ts), s.created_at) DESC LIMIT ?""",
                 (max(1, min(limit, 200)),)).fetchall()
-            return {"sessions": [dict(r) for r in rows]}
+            running = {r.session_id for r in ask.active_runs()}
+            # A session whose first turn failed or was stopped before answering has no turns; hide it.
+            return {"sessions": [{**dict(r), "running": r["id"] in running} for r in rows
+                                 if r["turns"] or r["id"] in running]}
 
     @app.get("/api/ask/session/{session_id}")
     def ask_session(session_id: str):
         with closing(open_ro(cfg)) as conn:
             rows = conn.execute(
-                """SELECT question, answer, citations_json, trace_json, mode, ts, latency_ms FROM chat_log
+                """SELECT question, answer, citations_json, trace_json, context_json, mode, ts, latency_ms FROM chat_log
                    WHERE session_id=? ORDER BY id""", (session_id,)).fetchall()
             turns = []
             for r in rows:
@@ -333,8 +403,51 @@ def create_app(cfg: config.Config | None = None) -> FastAPI:
                 from re2 import ask
                 turns.append({"question": r["question"], "answer": r["answer"], "citations": cites,
                               "steps": json.loads(r["trace_json"] or "[]"), "mode": r["mode"], "ts": r["ts"],
+                              "context": json.loads(r["context_json"] or "null"),
                               "sentences": ask.sentences_with_flags(r["answer"] or "")})
             return {"session_id": session_id, "turns": turns}
+
+    # ── Settings ──────────────────────────────────────────────────────────
+
+    @app.get("/api/settings")
+    def settings_get():
+        return {"services": config.services(cfg), "file": str(config.LOCAL_OVERRIDES)}
+
+    @app.get("/api/settings/models")
+    def settings_models(base_url: str):
+        """The models an OpenAI-compatible server offers, with context size and load state when llama.cpp says."""
+        base = base_url.strip().rstrip("/")
+        base = base.removesuffix("/embeddings")
+        if not base.startswith(("http://", "https://")):
+            raise HTTPException(400, "base_url must be an http(s) URL")
+        try:
+            resp = chat_client.get(f"{base}/models", timeout=8)
+            resp.raise_for_status()
+            data = resp.json().get("data") or []
+        except (httpx.HTTPError, ValueError, AttributeError) as exc:
+            return {"ok": False, "error": str(exc)[:300], "models": []}
+        models = []
+        for m in data:
+            status = m.get("status") if isinstance(m.get("status"), dict) else {}
+            args = status.get("args") or []
+            ctx = next((args[i + 1] for i, a in enumerate(args[:-1]) if a in ("--ctx-size", "-c")), None)
+            parallel = next((args[i + 1] for i, a in enumerate(args[:-1]) if a in ("--parallel", "-np")), None)
+            models.append({"id": m.get("id"), "state": status.get("value"),
+                           "ctx": int(ctx) if str(ctx or "").isdigit() else None,
+                           "parallel": int(parallel) if str(parallel or "").isdigit() else None})
+        return {"ok": True, "models": models}
+
+    @app.post("/api/settings")
+    def settings_save(request: Request, body: dict = Body(...)):
+        # A custom header cannot be sent cross-site without a CORS preflight, which this app never grants,
+        # so another web page open in the browser cannot rewrite the config.
+        if request.headers.get("x-re2-settings") != "1":
+            raise HTTPException(403, "missing X-RE2-Settings header")
+        try:
+            config.save_services(cfg, body.get("services") or {})
+        except (ValueError, TypeError, OSError) as exc:
+            raise HTTPException(400, str(exc)) from exc
+        return {"services": config.services(cfg), "file": str(config.LOCAL_OVERRIDES)}
 
     # ── Items ─────────────────────────────────────────────────────────────
 

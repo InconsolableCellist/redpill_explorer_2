@@ -15,18 +15,20 @@ import json
 import logging
 import re
 import sqlite3
+import threading
 import time
 import uuid
+from datetime import date, timedelta
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 
 import httpx
 
-from re2 import embed, search
+from re2 import db, embed, search
 
 log = logging.getLogger(__name__)
 
-MAX_STEPS = 8
+MAX_STEPS = 8          # at the default depth; deeper research gets more
 CHAT_TIMEOUT = 300.0
 STEP_MAX_TOKENS = 400
 ANSWER_MAX_TOKENS = 1400
@@ -97,6 +99,47 @@ class AskError(Exception):
     pass
 
 
+class Stopped(Exception):
+    """The user pressed stop."""
+
+
+class Control:
+    """A stop flag the model calls check between streamed chunks."""
+
+    def __init__(self):
+        self.stop = threading.Event()
+
+    def check(self) -> None:
+        if self.stop.is_set():
+            raise Stopped()
+
+
+# ── Depth: how much the agent reads and how much of it reaches the answer ──
+
+DEPTH_DEFAULT = 0.35
+PROMPT_OVERHEAD_TOKENS = 2500     # system prompt, question and answer instructions
+
+
+@dataclass
+class Plan:
+    depth: float
+    notes_tokens: int      # research notes handed to the answer model
+    searches: int
+    opens: int
+    search_limit: int
+    related: int           # related items gathered around each attached item
+    steps: int
+
+
+def plan(cfg, depth: float | None = None) -> Plan:
+    """0 is a quick answer from a few items; 1 fills the chat model's context window with evidence."""
+    d = DEPTH_DEFAULT if depth is None else max(0.0, min(1.0, float(depth)))
+    usable = max(2000, cfg.chat_context_tokens - ANSWER_MAX_TOKENS - PROMPT_OVERHEAD_TOKENS)
+    searches, opens = 3 + round(3 * d), 3 + round(5 * d)
+    return Plan(depth=d, notes_tokens=int(usable * (0.12 + 0.88 * d)), searches=searches, opens=opens,
+                search_limit=10 + round(10 * d), related=4 + round(20 * d), steps=searches + opens + 2)
+
+
 @dataclass
 class Evidence:
     """Everything the tools showed the model; only these may be cited."""
@@ -124,15 +167,37 @@ def step_schema(actions: list[str]) -> dict:
     return schema
 
 
-def next_action(client: httpx.Client, cfg, messages: list[dict], actions: list[str] | None = None) -> dict:
+def _stream_chat(client: httpx.Client, cfg, body: dict, control: Control | None) -> Iterator[str]:
+    """Content deltas from a streamed completion. Every call streams, so a stop takes effect between chunks;
+    return_progress makes llama.cpp send chunks while it reads a long prompt, too."""
+    body = {**body, "stream": True, "return_progress": True}
+    with client.stream("POST", f"{cfg.chat_base_url}/chat/completions", json=body, timeout=CHAT_TIMEOUT) as resp:
+        if resp.status_code >= 400:
+            resp.read()
+        resp.raise_for_status()
+        for line in resp.iter_lines():
+            if control:
+                control.check()   # leaving the with block closes the connection, which cancels the request
+            if not line.startswith("data: ") or line.strip() == "data: [DONE]":
+                continue
+            try:
+                chunk = json.loads(line[6:])
+            except json.JSONDecodeError:
+                continue
+            choices = chunk.get("choices") or []
+            delta = (choices[0].get("delta") or {}).get("content") if choices else None
+            if delta:
+                yield delta
+
+
+def next_action(client: httpx.Client, cfg, messages: list[dict], actions: list[str] | None = None,
+                control: Control | None = None) -> dict:
     schema = step_schema(actions or ACTIONS)
     body = _payload(cfg, messages, STEP_MAX_TOKENS,
                     response_format={"type": "json_schema", "json_schema": {"name": "step", "schema": schema}})
     try:
-        resp = client.post(f"{cfg.chat_base_url}/chat/completions", json=body, timeout=CHAT_TIMEOUT)
-        resp.raise_for_status()
-        content = resp.json()["choices"][0]["message"]["content"] or ""
-    except (httpx.HTTPError, KeyError, IndexError, ValueError) as exc:
+        content = "".join(_stream_chat(client, cfg, body, control))
+    except httpx.HTTPError as exc:
         raise AskError(f"chat model unavailable: {exc}") from exc
     content = re.sub(r"^\s*<think>.*?</think>", "", content, flags=re.DOTALL)
     try:
@@ -144,22 +209,9 @@ def next_action(client: httpx.Client, cfg, messages: list[dict], actions: list[s
     return step
 
 
-def stream_answer(client: httpx.Client, cfg, messages: list[dict]) -> Iterator[str]:
-    body = _payload(cfg, messages, ANSWER_MAX_TOKENS, stream=True)
+def stream_answer(client: httpx.Client, cfg, messages: list[dict], control: Control | None = None) -> Iterator[str]:
     try:
-        with client.stream("POST", f"{cfg.chat_base_url}/chat/completions", json=body, timeout=CHAT_TIMEOUT) as resp:
-            resp.raise_for_status()
-            for line in resp.iter_lines():
-                if not line.startswith("data: ") or line.strip() == "data: [DONE]":
-                    continue
-                try:
-                    chunk = json.loads(line[6:])
-                except json.JSONDecodeError:
-                    continue
-                choices = chunk.get("choices") or []
-                delta = (choices[0].get("delta") or {}).get("content") if choices else None
-                if delta:
-                    yield delta
+        yield from _stream_chat(client, cfg, _payload(cfg, messages, ANSWER_MAX_TOKENS), control)
     except httpx.HTTPError as exc:
         raise AskError(f"chat model failed while answering: {exc}") from exc
 
@@ -408,48 +460,154 @@ def history(conn: sqlite3.Connection, session_id: str | None) -> list[dict]:
     return msgs
 
 
+# ── Attached items, related items, and filling the notes to the depth's budget ──
+
+RELATED_DAYS = 30
+RECORD_CHARS = 1800        # one item's record when filling the notes; attached items get RESULT_CHARS
+FILL_SEARCH_LIMIT = 80
+
+
+def _day(text: str | None) -> date | None:
+    try:
+        return date.fromisoformat(text[:10]) if text and len(text) >= 10 else None
+    except ValueError:
+        return None
+
+
+def related_items(conn: sqlite3.Connection, cfg, media_id: int, k: int) -> list[int]:
+    """Items around one item: close in meaning and from the same weeks first, then items from those weeks
+    sharing its people, places and organizations, then the closest in meaning from any time."""
+    try:
+        similar = search.similar(conn, cfg, media_id, k=k * 4)
+    except Exception:  # noqa: BLE001 - no embedding index yet; the other two sources still work
+        log.warning("similar items unavailable for %s", media_id, exc_info=True)
+        similar = []
+    to_primary, members = search.post_maps(conn)
+    primary = to_primary.get(media_id, media_id)
+    own = set(members.get(primary, [])) | {primary, media_id}
+    card = search.cards(conn, [media_id]).get(media_id) or {}
+    near: set[int] = set()
+    sharing: list[int] = []
+    day = _day(card.get("date"))
+    if day:
+        lo, hi = day - timedelta(days=RELATED_DAYS), day + timedelta(days=RELATED_DAYS)
+        near = search.scope_media_ids(conn, [f"date:{lo.isoformat()}..{hi.isoformat()}"]) or set()
+        sharing = [r[0] for r in conn.execute(
+            """SELECT b.media_id FROM media_entity a
+               JOIN media_entity b ON b.entity_id=a.entity_id AND b.media_id != a.media_id
+               WHERE a.media_id IN (SELECT value FROM json_each(?))
+               GROUP BY b.media_id ORDER BY COUNT(*) DESC LIMIT 2000""", (json.dumps(sorted(own)),))
+            if r[0] in near]
+    out: list[int] = []
+    for m in [m for m in similar if m in near] + sharing + similar:
+        m = to_primary.get(m, m)
+        if m not in own and m not in out:
+            out.append(m)
+            if len(out) >= k:
+                break
+    return out
+
+
+def _one_line(card: dict) -> str:
+    return (f"[m:{card['media_id']}] {card['date'] or 'undated'} · {card['kind']}{_status_note(card)} · {card['title']}"
+            f" — {_clip(card.get('summary') or card.get('description') or '', 200)}")
+
+
+def _fill_candidates(conn, cfg, embed_client, question: str, scopes: list[str], seen: list[int]) -> list[int]:
+    """What to add when the notes have room: items the searches found, then the question's best matches in
+    scope, then the rest of the scope, newest first."""
+    out = list(seen)
+    allowed = search.scope_media_ids(conn, scopes)
+    ranked = [search.lexical(conn, question, k=400, allowed=allowed)]
+    try:
+        ranked.append(search.dense(conn, embed_client, cfg, question, k=400, allowed=allowed))
+    except (embed.EmbedError, httpx.HTTPError, OSError):
+        pass
+    out += search.group_by_media(conn, search.fuse(ranked), question, limit=0)[1][:FILL_SEARCH_LIMIT]
+    if allowed is not None:
+        out += search.items_in_scope(conn, allowed, limit=500)
+    return list(dict.fromkeys(out))
+
+
 def run(conn: sqlite3.Connection, cfg, question: str, scopes: list[str] | None = None, mode: str = "informed",
         session_id: str | None = None, client: httpx.Client | None = None,
-        embed_client: httpx.Client | None = None) -> Iterator[tuple[str, dict]]:
+        embed_client: httpx.Client | None = None, items: list[int] | None = None, related: bool = False,
+        depth: float | None = None, control: Control | None = None) -> Iterator[tuple[str, dict]]:
+    """One turn. items are what the user attached ("discuss this"); related gathers items around them;
+    depth (0..1) sets how much the agent reads and how much of the window the answer's notes may fill."""
     scopes = scopes or []
     mode = mode if mode in ANSWER_INSTRUCTIONS else "informed"
     session_id = session_id or uuid.uuid4().hex[:12]
     client = client or httpx.Client()
     embed_client = embed_client or httpx.Client()
+    control = control or Control()
+    pl = plan(cfg, depth)
     started = time.monotonic()
     ev = Evidence()
     trace: list[dict] = []
+    context = {"items": list(items or []), "related": bool(related), "depth": pl.depth}
+    with conn:
+        conn.execute("INSERT OR IGNORE INTO chat_session(id, title) VALUES (?, ?)", (session_id, question[:120]))
     system = SYSTEM_PROMPT.replace("{wiki_tools}", WIKI_TOOLS if _has_wiki(conn) else "") \
                           .replace("{scope_note}", _scope_note(conn, scopes))
-    messages = [{"role": "system", "content": system}, *history(conn, session_id),
-                {"role": "user", "content": question}]
-    budget_chars = cfg.chat_context_tokens * CHARS_PER_TOKEN * 0.7
+    past = history(conn, session_id)
+    loop_budget_chars = cfg.chat_context_tokens * CHARS_PER_TOKEN * 0.7
+    notes_budget = max(4000, int(pl.notes_tokens * CHARS_PER_TOKEN) - sum(len(m["content"]) for m in past))
 
+    # Attached items go in whole, ahead of the question; related items as one line each, to open if they matter.
+    attached = [r for r in (tool_open_item(conn, cfg, embed_client, ev, [], {"id": m}) for m in context["items"])
+                if not r.startswith("No item")]
+    related_ids: list[int] = []
+    if related and context["items"]:
+        for m in context["items"]:
+            related_ids += [x for x in related_items(conn, cfg, m, pl.related) if x not in related_ids]
+        for card in search.cards(conn, related_ids).values():
+            ev.items.setdefault(card["media_id"], card)
+    conn.commit()
+    lead = ""
+    if attached:
+        lead = "The user is asking about these archive items:\n\n" + "\n\n".join(attached) + "\n\n"
+        if related_ids:
+            lead += "Related items (near in time or meaning; open_item any that matter):\n" + "\n".join(
+                _one_line(ev.items[m]) for m in related_ids if m in ev.items) + "\n\n"
+        lead += "Question: "
+        yield "step", {"n": 0, "action": "attached", "args": {"id": ", ".join(map(str, context["items"]))},
+                       "thought": "", "summary": f"{len(attached)} item(s)" +
+                       (f", {len(related_ids)} related" if related_ids else "")}
+    messages = [{"role": "system", "content": system}, *past, {"role": "user", "content": lead + question}]
+
+    cites = CitationFilter(ev)
+    stopped = False
     try:
         notes: list[str] = []
+        opened: set[int] = set(context["items"])
         used = {"search": 0, "open_item": 0}
-        for step_no in range(MAX_STEPS):
+        for step_no in range(pl.steps):
             t0 = time.monotonic()
             # Steer by narrowing the grammar, not by pleading: searches and opens run out,
             # and the last step can only be an answer.
             actions = [a for a in ACTIONS
-                       if not (a == "search" and used["search"] >= MAX_SEARCHES)
-                       and not (a == "open_item" and used["open_item"] >= MAX_OPENS)
+                       if not (a == "search" and used["search"] >= pl.searches)
+                       and not (a == "open_item" and used["open_item"] >= pl.opens)
                        and not (a in ("find_pages", "open_page") and not _has_wiki(conn))]
-            if step_no == MAX_STEPS - 1:
+            if step_no == pl.steps - 1:
                 actions = ["answer"]
-            step = next_action(client, cfg, messages, actions)
+            step = next_action(client, cfg, messages, actions, control)
             action, args = step["action"], step["args"]
             if action == "answer":
                 trace.append({"action": "answer", "thought": step.get("thought", ""), "ms": int((time.monotonic() - t0) * 1000)})
                 break
+            if action == "search":
+                args["limit"] = min(int(args.get("limit") or pl.search_limit), pl.search_limit)
             try:
                 result = TOOLS[action](conn, cfg, embed_client, ev, scopes, args)
-            except search.ScopeError as exc:
+            except (search.ScopeError, ValueError, TypeError) as exc:
                 result = f"error: {exc}"
             # Search helpers fill temp tables, which opens a transaction; end it so the snapshot
             # stays fresh while other stages (ASR, extraction) commit, or the final log write fails.
             conn.commit()
+            if action == "open_item" and str(args.get("id", "")).isdigit():
+                opened.add(int(args["id"]))
             summary = result.split("\n", 1)[0][:160]
             used[action] = used.get(action, 0) + 1
             notes.append(f"## {action} {json.dumps(args, ensure_ascii=False)}\n{result[:RESULT_CHARS]}")
@@ -458,19 +616,48 @@ def run(conn: sqlite3.Connection, cfg, question: str, scopes: list[str] | None =
             yield "step", {"n": step_no + 1, "action": action, "args": args, "thought": step.get("thought", ""),
                            "summary": summary}
             messages.append({"role": "assistant", "content": json.dumps(step, ensure_ascii=False)})
-            remaining = MAX_STEPS - step_no - 1
+            remaining = pl.steps - step_no - 1
             nudge = f"\n\n({remaining} steps left.)" if remaining <= 3 else ""
             messages.append({"role": "user", "content": f"Tool result ({action}):\n{result[:RESULT_CHARS]}{nudge}"})
-            if sum(len(m["content"]) for m in messages) > budget_chars:
+            if sum(len(m["content"]) for m in messages) > loop_budget_chars:
                 break
+
+        # Fill the notes up to the depth's budget: related items first, then what the searches and the scope hold.
+        notes = [f"## attached by the user\n{r}" for r in attached] + notes
+        used_chars = sum(len(n) for n in notes)
+        added = 0
+        if used_chars < notes_budget:
+            t0 = time.monotonic()
+            candidates = related_ids + _fill_candidates(conn, cfg, embed_client, question, scopes,
+                                                        [m for m in ev.items if m not in related_ids])
+            extra = []
+            for m in candidates:
+                control.check()
+                if m in opened:
+                    continue
+                record = tool_open_item(conn, cfg, embed_client, ev, [], {"id": m})[:RECORD_CHARS]
+                if record.startswith("No item"):
+                    continue
+                if used_chars + len(record) > notes_budget:
+                    break
+                opened.add(m)
+                extra.append(record)
+                used_chars += len(record) + 2
+            conn.commit()
+            added = len(extra)
+            if extra:
+                notes.append("## more items from the archive (related, found, or in scope)\n" + "\n\n".join(extra))
+                trace.append({"action": "fill", "args": {"items": added}, "chars": sum(map(len, extra)),
+                              "ms": int((time.monotonic() - t0) * 1000)})
+                yield "step", {"n": len(trace), "action": "read", "args": {"id": f"{added} more items"},
+                               "thought": "", "summary": f"~{used_chars // CHARS_PER_TOKEN / 1000:.1f}k tokens of notes"}
 
         # A fresh conversation for the answer: after a run of JSON steps the model otherwise
         # keeps writing JSON. The research becomes notes in a single message.
-        answer_messages = [{"role": "system", "content": ANSWER_SYSTEM}, *history(conn, session_id),
+        answer_messages = [{"role": "system", "content": ANSWER_SYSTEM}, *past,
                            {"role": "user", "content": ANSWER_PROMPT.format(
-                               question=question, notes="\n\n".join(notes)[: int(budget_chars)] or "(no research)",
+                               question=question, notes="\n\n".join(notes)[:notes_budget] or "(no research)",
                                mode_instruction=ANSWER_INSTRUCTIONS[mode])}]
-        cites = CitationFilter(ev)
 
         def emit_cites():
             for n, ref in cites.new_cites:
@@ -483,7 +670,7 @@ def run(conn: sqlite3.Connection, cfg, question: str, scopes: list[str] | None =
                 yield "cite", payload
             cites.new_cites.clear()
 
-        for delta in stream_answer(client, cfg, answer_messages):
+        for delta in stream_answer(client, cfg, answer_messages, control):
             out = cites.feed(delta)
             yield from emit_cites()
             if out:
@@ -492,6 +679,8 @@ def run(conn: sqlite3.Connection, cfg, question: str, scopes: list[str] | None =
         yield from emit_cites()
         if tail:
             yield "token", {"text": tail}
+    except Stopped:
+        stopped = True
     except AskError as exc:
         yield "error", {"msg": str(exc)}
         return
@@ -499,13 +688,110 @@ def run(conn: sqlite3.Connection, cfg, question: str, scopes: list[str] | None =
     answer = cites.text.strip()
     latency = int((time.monotonic() - started) * 1000)
     conn.commit()
+    if stopped:
+        trace.append({"action": "stopped", "ms": latency})
+        if not answer:
+            yield "stopped", {}
+            yield "done", {"session_id": session_id, "ms": latency, "steps": len(trace), "stopped": True}
+            return
+        answer += " (stopped)"
     citations = [{"n": n, "ref": ref} for ref, n in cites.numbers.items()]
     with conn:
-        conn.execute("INSERT OR IGNORE INTO chat_session(id, title) VALUES (?, ?)", (session_id, question[:120]))
         conn.execute(
             """INSERT INTO chat_log(question, retrieved_doc_ids, answer, citations_json, model, latency_ms,
-                                    session_id, mode, trace_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                                    session_id, mode, trace_json, context_json)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (question, json.dumps(sorted(ev.items)), answer, json.dumps(citations), cfg.chat_model, latency,
-             session_id, mode, json.dumps(trace, ensure_ascii=False)))
+             session_id, mode, json.dumps(trace, ensure_ascii=False), json.dumps(context)))
+    if stopped:
+        yield "stopped", {}
     yield "final", {"text": answer, "sentences": sentences_with_flags(answer)}
-    yield "done", {"session_id": session_id, "ms": latency, "steps": len(trace)}
+    yield "done", {"session_id": session_id, "ms": latency, "steps": len(trace), "stopped": stopped}
+
+
+# ── Runs: a turn keeps going when the browser looks away, and can be watched again ──
+
+KEEP_FINISHED_S = 600
+
+
+class Run:
+    def __init__(self, session_id: str, question: str, context: dict):
+        self.id = uuid.uuid4().hex[:12]
+        self.session_id = session_id
+        self.question = question
+        self.context = context
+        self.started = time.time()
+        self.finished: float | None = None
+        self.control = Control()
+        self.events: list[tuple[str, dict]] = []
+        self._cond = threading.Condition()
+
+    def add(self, name: str, data: dict) -> None:
+        with self._cond:
+            self.events.append((name, data))
+            self._cond.notify_all()
+
+    def finish(self) -> None:
+        with self._cond:
+            self.finished = time.time()
+            self._cond.notify_all()
+
+    def follow(self, start: int = 0, heartbeat_s: float = 15.0) -> Iterator[tuple[str, dict] | None]:
+        """Every event from start on, as it happens; None now and then while nothing does."""
+        i = start
+        while True:
+            with self._cond:
+                if i >= len(self.events) and self.finished is None:
+                    self._cond.wait(heartbeat_s)
+                batch, finished = self.events[i:], self.finished is not None
+            if not batch and not finished:
+                yield None
+            for event in batch:
+                yield event
+            i += len(batch)
+            if finished and i >= len(self.events):
+                return
+
+    def summary(self) -> dict:
+        return {"run_id": self.id, "session_id": self.session_id, "question": self.question,
+                "context": self.context, "started": self.started, "done": self.finished is not None}
+
+
+RUNS: dict[str, Run] = {}
+_runs_lock = threading.Lock()
+
+
+def start_run(cfg, question: str, scopes: list[str], mode: str, session_id: str | None,
+              items: list[int] | None = None, related: bool = False, depth: float | None = None,
+              client: httpx.Client | None = None, embed_client: httpx.Client | None = None) -> Run:
+    """Run one turn on a thread of its own, so it finishes (and is logged) whoever is watching."""
+    session_id = session_id or uuid.uuid4().hex[:12]
+    r = Run(session_id, question, {"items": list(items or []), "related": related, "depth": depth, "scopes": scopes,
+                                   "mode": mode})
+    with _runs_lock:
+        for rid in [k for k, v in RUNS.items() if v.finished and time.time() - v.finished > KEEP_FINISHED_S]:
+            del RUNS[rid]
+        RUNS[r.id] = r
+    r.add("start", {"run_id": r.id, "session_id": session_id})
+
+    def work():
+        conn = db.connect(cfg.db_path)
+        try:
+            for name, data in run(conn, cfg, question, scopes=scopes, mode=mode, session_id=session_id,
+                                  client=client, embed_client=embed_client, items=items, related=related,
+                                  depth=depth, control=r.control):
+                r.add(name, data)
+        except Exception as exc:  # noqa: BLE001 - whoever watches must see an end, not silence
+            log.exception("ask run %s failed", r.id)
+            r.add("error", {"msg": str(exc)})
+        finally:
+            conn.close()
+            r.finish()
+
+    threading.Thread(target=work, name=f"ask-{r.id}", daemon=True).start()
+    return r
+
+
+def active_runs() -> list[Run]:
+    with _runs_lock:
+        return [r for r in RUNS.values() if r.finished is None]

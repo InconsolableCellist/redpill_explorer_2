@@ -185,6 +185,7 @@ ADDED_COLUMNS = [
     ("chat_log", "session_id", "TEXT"),       # ask.py
     ("chat_log", "mode", "TEXT"),             # informed | archive
     ("chat_log", "trace_json", "TEXT"),       # the agent's steps: action, args, result size, timing
+    ("chat_log", "context_json", "TEXT"),     # what the user attached: items, related, depth
 ]
 
 

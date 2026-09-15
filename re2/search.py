@@ -18,6 +18,7 @@ from re2 import embed
 log = logging.getLogger(__name__)
 
 SCOPE_TYPES = ("text", "entity", "tag", "folder", "kind", "status", "date", "page", "media", "cluster", "caption")
+LIST_SCOPES = ("entity", "tag", "cluster")   # these take comma lists, meaning any of them
 VALID_KINDS = {"image", "video", "pdf"}
 VALID_STATUSES = {"READY", "THUMBNAIL_ONLY", "SOURCE_OFFLINE"}
 MARK_START, MARK_END = "\x02", "\x03"
@@ -64,6 +65,12 @@ def _has_table(conn: sqlite3.Connection, table: str) -> bool:
 
 def _scope_ids(conn: sqlite3.Connection, kind: str, value: str) -> set[int]:
     q = lambda sql, *args: {r[0] for r in conn.execute(sql, args)}  # noqa: E731
+    if kind in LIST_SCOPES and "," in value:
+        # "cluster:12,40": items in any of them.
+        out: set[int] = set()
+        for part in filter(None, (v.strip() for v in value.split(","))):
+            out |= _scope_ids(conn, kind, part)
+        return out
     if kind == "text":
         match = fts_query(value, prefix_last=False)
         if not match:
@@ -137,6 +144,8 @@ def scope_media_ids(conn: sqlite3.Connection, scopes: list[str]) -> set[int] | N
 
 def scope_label(conn: sqlite3.Connection, scope: str) -> str:
     kind, value = parse_scope(scope)
+    if kind in LIST_SCOPES and "," in value:
+        return " or ".join(scope_label(conn, f"{kind}:{v.strip()}") for v in value.split(",") if v.strip())
     row = None
     if kind == "entity":
         row = conn.execute("SELECT name FROM entity WHERE id=?", (int(value),)).fetchone()
