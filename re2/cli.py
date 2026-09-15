@@ -177,6 +177,28 @@ def cmd_pdf_ocr(cfg: config.Config, args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_review(cfg: config.Config, args: argparse.Namespace) -> int:
+    """Print the most recent vision-model captions: title, summary, and the start of the description."""
+    import json
+    import textwrap
+
+    conn = db.open_db(cfg)
+    rows = conn.execute(
+        """SELECT d.media_id, d.created_at, d.json,
+                  (SELECT rel_path FROM media_path p WHERE p.media_id=d.media_id ORDER BY p.id LIMIT 1)
+           FROM doc d WHERE d.kind='caption' ORDER BY d.created_at DESC, d.id DESC LIMIT ?""", (args.n,)).fetchall()
+    for media_id, created, raw, rel_path in rows:
+        d = json.loads(raw or "{}")
+        print(f"\n#{media_id}  {created}  {rel_path}")
+        print(f"  link     http://{cfg.server_host}:{cfg.server_port}/#/item/{media_id}")
+        print(f"  title    {d.get('title') or '(none: extracted before titles existed)'}")
+        for label, text in (("summary", d.get("summary")), ("meaning", d.get("meaning")),
+                            ("describe", (d.get("description") or "")[:300])):
+            if text:
+                print(textwrap.fill(text, width=110, initial_indent=f"  {label:8} ", subsequent_indent=" " * 11))
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="re2")
     parser.add_argument("--config", help="path to config.toml")
@@ -224,6 +246,10 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("pdf-ocr", help="transcribe queued scanned PDF pages with the vision model on cube")
     p.add_argument("--limit", type=int, help="transcribe at most N pages")
     p.set_defaults(func=cmd_pdf_ocr)
+
+    p = sub.add_parser("review", help="print the most recent vision-model titles and summaries")
+    p.add_argument("-n", type=int, default=10, help="how many (default 10)")
+    p.set_defaults(func=cmd_review)
 
     sub.add_parser("dates", help="recompute item dates from sources, filenames, text and mtimes") \
         .set_defaults(func=cmd_dates)
