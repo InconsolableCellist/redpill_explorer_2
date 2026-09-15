@@ -498,6 +498,18 @@ mark { background: var(--hot-w); color: var(--ink); padding: 0 1px; }
 
 .mobile-close { display: none; }
 
+/* Which-key: after a prefix key, what can follow. Vim users know the keys; this shows them to everyone else. */
+.whichkey {
+  position: fixed; left: 20px; bottom: calc(44px + env(safe-area-inset-bottom)); z-index: 70;
+  background: var(--stock-card); border: 1px solid var(--rule); box-shadow: var(--shadow-lift);
+  padding: 10px 12px; display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; align-items: baseline;
+  font-size: 12.5px; color: var(--ink-2); min-width: 230px;
+}
+.whichkey h4 { grid-column: 1 / -1; font-family: var(--font-mono); font-size: 10.5px; letter-spacing: .13em; text-transform: uppercase; color: var(--ink-3); font-weight: 500; margin-bottom: 2px; }
+.whichkey .off { color: var(--ink-3); }
+.mode-btn .hint { font-size: 9.5px; letter-spacing: .02em; opacity: .55; margin-left: 5px; text-transform: none; }
+.mode-btn[aria-pressed="true"] .hint { opacity: .8; }
+
 /* ─────────────────────────────────────────────────────────────
    Tablet: lenses become a strip, the reader a drawer
    ───────────────────────────────────────────────────────────── */
@@ -562,12 +574,12 @@ mark { background: var(--hot-w); color: var(--ink); padding: 0 1px; }
         <span class="omni__n" id="omniN"></span>
       </label>
       <nav class="modes" aria-label="Modes">
-        <button class="btn mode-btn" data-mode="search" title="Search (gs)">Search</button>
-        <button class="btn mode-btn" data-mode="timeline" title="Timeline (gt)">Timeline</button>
-        <button class="btn mode-btn" data-mode="wiki" disabled title="Wiki (gw) — arrives with Phase 6">Wiki</button>
-        <button class="btn mode-btn" data-mode="graph" title="Graph (gn)">Graph</button>
-        <button class="btn mode-btn" data-mode="map" title="Map (gm)">Map</button>
-        <button class="btn mode-btn" data-mode="ask" title="Ask (ga, or a to ask about the current scope)">Ask</button>
+        <button class="btn mode-btn" data-mode="search" title="Search (g s)">Search<span class="hint">gs</span></button>
+        <button class="btn mode-btn" data-mode="timeline" title="Timeline (g t)">Timeline<span class="hint">gt</span></button>
+        <button class="btn mode-btn" data-mode="wiki" disabled title="Wiki (g w) — once the wiki is compiled">Wiki<span class="hint">gw</span></button>
+        <button class="btn mode-btn" data-mode="graph" title="Graph (g r)">Graph<span class="hint">gr</span></button>
+        <button class="btn mode-btn" data-mode="map" title="Map (g m)">Map<span class="hint">gm</span></button>
+        <button class="btn mode-btn" data-mode="ask" title="Ask (g a, or a to ask within the current scopes)">Ask<span class="hint">ga</span></button>
         <button class="btn" id="themeBtn" title="Theme">◐</button>
         <button class="btn" id="helpBtn" aria-expanded="false" aria-controls="panel" title="Keys (?)">?</button>
       </nav>
@@ -645,7 +657,7 @@ mark { background: var(--hot-w); color: var(--ink); padding: 0 1px; }
         <div class="keys">
           <kbd>g s</kbd><span>Search</span>
           <kbd>g t</kbd><span>Timeline. There <kbd>h l</kbd> move by month, <kbd>H L</kbd> by year, <kbd>v</kbd> marks a range, <kbd>&gt;</kbd> narrows to it</span>
-          <kbd>g n</kbd><span>Graph of who and what appear together. <kbd>h l</kbd> step through nodes, <kbd>&gt;</kbd> narrows to one, <kbd>T</kbd> switches entities / tags. Click a node; double-click narrows.</span>
+          <kbd>g r</kbd><span>Graph of who and what appear together (<kbd>g n</kbd> too). <kbd>h l</kbd> step through nodes, <kbd>&gt;</kbd> narrows to one, <kbd>T</kbd> switches entities / tags. Click a node; double-click narrows.</span>
           <kbd>g m</kbd><span>Map of the whole archive by meaning; your scope lights up. <kbd>h l</kbd> step through topics (<kbd>T</kbd> for themes), <kbd>z</kbd> zooms to one, <kbd>+ -</kbd> zoom, <kbd>0</kbd> resets, <kbd>&gt;</kbd> narrows. Scroll to zoom, drag to pan, click a dot to open it.</span>
           <kbd>g a</kbd><span>Ask a question; the agent searches the archive and answers with numbered sources. <kbd>a</kbd> asks within your current scopes. In ask mode <kbd>/</kbd> focuses the question, <kbd>m</kbd> switches informed / archive-only, <kbd>j k</kbd> walk the citations, <kbd>Enter</kbd> opens one.</span>
           <kbd>g w</kbd><span>Wiki — once it is compiled</span>
@@ -666,6 +678,7 @@ mark { background: var(--hot-w); color: var(--ink); padding: 0 1px; }
       </nav>
     </div>
   </footer>
+  <div class="whichkey" id="whichkey" hidden></div>
 </div>
 
 <script>
@@ -2064,7 +2077,20 @@ function paintMode() {
   tag.classList.toggle("is-insert", insert);
   $("#modeBuf").textContent = S.count + S.pending;
 }
-function clearPending() { S.count = ""; S.pending = ""; paintMode(); }
+const WHICH_KEY = {
+  g: ["Go to", [["g", "top of the column"], ["s", "search"], ["t", "timeline"], ["r", "graph"], ["m", "map"], ["a", "ask"],
+                ["w", "wiki", "off"]]],
+  y: ["Copy", [["y", "citation for the item under the cursor"]]],
+};
+function showWhichKey(prefix) {
+  const el = $("#whichkey");
+  const entry = WHICH_KEY[prefix];
+  if (!entry) { el.hidden = true; return; }
+  el.innerHTML = `<h4>${escapeHtml(prefix)} … ${escapeHtml(entry[0])}</h4>` + entry[1].map(([k, label, off]) =>
+    `<kbd>${escapeHtml(k)}</kbd><span class="${off ? "off" : ""}">${escapeHtml(label)}${off ? " (not built yet)" : ""}</span>`).join("");
+  el.hidden = false;
+}
+function clearPending() { S.count = ""; S.pending = ""; $("#whichkey").hidden = true; paintMode(); }
 
 function onKey(e) {
   const t = e.target;
@@ -2115,7 +2141,7 @@ function onKey(e) {
     else if (k === "s") setMode("search");
     else if (k === "t") setMode("timeline");
     else if (k === "w") setMode("wiki");
-    else if (k === "n") setMode("graph");
+    else if (k === "n" || k === "r") setMode("graph");
     else if (k === "m") setMode("map");
     else if (k === "a") setMode("ask");
   });
@@ -2127,7 +2153,7 @@ function onKey(e) {
   const inReaderVideo = S.focus === "reader" && $("#reader video");
 
   switch (k) {
-    case "g": case "y": e.preventDefault(); S.pending = k; paintMode(); return;
+    case "g": case "y": e.preventDefault(); S.pending = k; paintMode(); showWhichKey(k); return;
     case "S": return done(cycleSort);
     case "O": return done(openOriginal);
     case ",": return done(() => stepMember(-n));
