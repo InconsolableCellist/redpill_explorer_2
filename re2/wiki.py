@@ -16,6 +16,12 @@
 #   body_md == '' means not written yet; named, events_split_at. Current member count: COUNT(wiki_member).
 #   Tree: parent_slug (event -> topic -> theme -> 'overview'; entity pages have none). Members are post
 #   primaries, as in clusters. I will not touch api.py, search.py, dashboard/index.html or tests/test_wiki_api.py.
+#   API SIDE: done and committed (347dcd7 API, af45b2a dashboard Wiki mode + Settings "wiki", e9b6725 tests).
+#   Live runs, to avoid two builds on the live DB and mlboy at once: YOU run the real digests/wiki-build/export
+#   (small limits) and do not start a server on port 4015; I run the server on 4015 for dashboard screenshots
+#   only (read-only). When real pages exist, add a line here naming the topics built; I'll then check the UI.
+#   Both reports should mention the split. The Ask section's openCitation for [p:slug] still says "wiki mode
+#   arrives..." (parent's area): it should call openWikiPage(slug), which the dashboard now defines.
 """Phase 6.6–6.8: the compiled wiki — events, page writing, incremental updates and Markdown export.
 
 The hierarchy is overview → theme → topic → event → item, with entity pages across it. Topics and
@@ -510,7 +516,11 @@ def split_lines(texts: list[digest.ItemText]) -> list[str]:
     for n, it in enumerate(texts, 1):
         weak = "~" if it.date_source == "mtime" else ""
         ents = ", ".join(it.entities[:5]) or "-"
-        out.append(f"{n} | {weak}{it.date or '?'} | {digest._clip(digest.title_of(it), 140)} | {ents} | "
+        # Without a digest or current caption, a title made from a 2024 caption names only the poster
+        # ("Tweet from a user named ..."); the start of the caption says what the post is about.
+        label = digest.title_of(it) if it.digest or it.current_caption() else \
+            search._BOILERPLATE.sub("", " ".join((it.legacy or it.transcript or it.pdf or [digest.title_of(it)])[0].split()))
+        out.append(f"{n} | {weak}{it.date or '?'} | {digest._clip(label, 140 if it.digest or it.current_caption() else 260)} | {ents} | "
                    f"hint: {digest._clip(digest.event_hint(it), 80)}")
     return out
 
