@@ -145,6 +145,22 @@ def cmd_dates(cfg: config.Config, args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_video_probe(cfg: config.Config, args: argparse.Namespace) -> int:
+    from re2 import video
+
+    stats = video.run(db.open_db(cfg), cfg, limit=args.limit)
+    print(f"video-probe: {stats.summary()}")
+    return 0
+
+
+def cmd_asr(cfg: config.Config, args: argparse.Namespace) -> int:
+    from re2 import asr
+
+    stats = asr.run(db.open_db(cfg), cfg, limit=args.limit)
+    print(f"asr: {stats.summary()}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="re2")
     parser.add_argument("--config", help="path to config.toml")
@@ -176,6 +192,14 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--limit", type=int, help="embed at most N docs")
     p.add_argument("--rebuild", action="store_true", help="drop the index and embed everything again")
     p.set_defaults(func=cmd_embed)
+
+    p = sub.add_parser("video-probe", help="ffprobe videos, extract keyframes and thumbnails (local CPU)")
+    p.add_argument("--limit", type=int, help="process at most N videos")
+    p.set_defaults(func=cmd_video_probe)
+
+    p = sub.add_parser("asr", help="transcribe videos with faster-whisper on the local GPU")
+    p.add_argument("--limit", type=int, help="transcribe at most N videos")
+    p.set_defaults(func=cmd_asr)
 
     sub.add_parser("dates", help="recompute item dates from sources, filenames, text and mtimes") \
         .set_defaults(func=cmd_dates)

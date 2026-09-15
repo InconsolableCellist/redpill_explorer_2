@@ -1,4 +1,5 @@
 import json
+import zlib
 from types import SimpleNamespace
 
 import httpx
@@ -7,11 +8,14 @@ import numpy as np
 from re2 import db, embed
 
 
-def fake_vector(text: str, dims: int = 8) -> list[float]:
-    """Deterministic vector: one-hot-ish on words so similar texts are close."""
+DIMS = 64
+
+
+def fake_vector(text: str, dims: int = DIMS) -> list[float]:
+    """Deterministic bag-of-words vector (crc32, not hash(), which is randomized per process)."""
     v = np.zeros(dims)
     for word in text.split():
-        v[hash(word.strip(".,").lower()) % dims] += 1
+        v[zlib.crc32(word.strip(".,").lower().encode()) % dims] += 1
     return v.tolist()
 
 
@@ -27,13 +31,13 @@ def mock_client(calls=None):
 
 def make_cfg(tmp_path):
     return SimpleNamespace(data_dir=tmp_path, embed_url="http://embed.test/v1/embeddings",
-                           embed_model="nomic", embed_dims=8, embed_max_chars=50)
+                           embed_model="nomic", embed_dims=DIMS, embed_max_chars=50)
 
 
 def test_embed_texts_normalizes_prefixes_and_truncates(tmp_path):
     calls = []
     vecs = embed.embed_texts(mock_client(calls), make_cfg(tmp_path), ["alpha beta", "x" * 100], "search_document: ")
-    assert vecs.shape == (2, 8) and vecs.dtype == np.float32
+    assert vecs.shape == (2, DIMS) and vecs.dtype == np.float32
     assert np.allclose(np.linalg.norm(vecs, axis=1), 1)
     assert calls[0][0] == "search_document: alpha beta"
     assert len(calls[0][1]) == len("search_document: ") + 50
