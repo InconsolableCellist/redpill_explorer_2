@@ -297,6 +297,8 @@ kbd {
   box-shadow: var(--shadow);
   cursor: pointer;
 }
+/* Keep the cursor clear of the sticky top bar and mode line when motions scroll the page. */
+.hit { scroll-margin-top: calc(var(--top-h) + 14px); scroll-margin-bottom: 46px; }
 .hit.k-image { border-left-color: var(--blue); }
 .hit.k-video { border-left-color: var(--ink); }
 .hit.k-pdf { border-left-color: var(--ink-3); }
@@ -344,6 +346,20 @@ mark { background: var(--hot-w); color: var(--ink); padding: 0 1px; }
 .badge.is-thumb { border-color: var(--hot); color: var(--hot); }
 .badge.is-time { border-color: var(--blue); color: var(--blue); }
 .more-btn { margin: 14px auto 0; display: block; }
+.strip { display: flex; gap: 3px; align-items: center; margin-top: 2px; }
+.strip i { display: block; width: 26px; height: 26px; background: var(--stock-well) center/cover no-repeat; border: 1px solid var(--rule-soft); position: relative; }
+.strip i.is-video::after { content: "▶"; position: absolute; inset: 0; display: grid; place-items: center; font-size: 9px; color: var(--stock); background: color-mix(in srgb, var(--ink) 45%, transparent); font-style: normal; }
+.strip i.is-match { outline: 2px solid var(--hot); outline-offset: -1px; }
+.strip span { font-family: var(--font-mono); font-size: 10px; color: var(--ink-3); margin-left: 4px; }
+.sort-btn { font-family: var(--font-mono); font-size: 10.5px; letter-spacing: .13em; text-transform: uppercase; color: var(--ink-3); }
+.sort-btn b { color: var(--blue); font-weight: 500; }
+.sort-btn:hover, .sort-btn:hover b { color: var(--hot); }
+.gallery { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; }
+.gallery button { flex: none; width: 64px; height: 64px; background: var(--stock-well) center/cover no-repeat; border: 1px solid var(--rule); position: relative; }
+.gallery button.is-current { outline: 2px solid var(--hot); outline-offset: 1px; }
+.gallery button span { position: absolute; left: 2px; bottom: 2px; font-family: var(--font-mono); font-size: 9px; background: var(--ink); color: var(--stock); padding: 0 3px; }
+.lede { font-size: 14.5px !important; line-height: 1.55; color: var(--ink) !important; }
+.preview a { display: block; cursor: zoom-in; }
 .empty { padding: 40px 10px; text-align: center; color: var(--ink-3); font-family: var(--font-mono); font-size: 12px; }
 
 /* ── Reader ──────────────────────────────────────────────── */
@@ -519,7 +535,7 @@ mark { background: var(--hot-w); color: var(--ink); padding: 0 1px; }
     <section class="col results" id="results" aria-label="Results">
       <div id="timeline" hidden></div>
       <div id="graph" hidden></div>
-      <div class="results__head"><span class="label" id="resultsLabel">Recent</span><span class="label tnum" id="resultsCount"></span></div>
+      <div class="results__head"><span class="label" id="resultsLabel">Recent</span><span><button class="sort-btn" id="sortBtn" title="Change sort (S)">sort <b id="sortName">relevance</b></button> <span class="label tnum" id="resultsCount"></span></span></div>
       <div class="list" id="list"></div>
       <button class="btn more-btn" id="moreBtn" hidden>Load more</button>
     </section>
@@ -540,6 +556,8 @@ mark { background: var(--hot-w); color: var(--ink); padding: 0 1px; }
           <kbd>G</kbd><span>Last in the column (loads more at the end of results)</span>
           <kbd>Ctrl-d</kbd><span>Half a page down · <kbd>Ctrl-u</kbd> up</span>
           <kbd>[ ]</kbd><span>Previous / next result while the reader is open</span>
+          <kbd>, .</kbd><span>Previous / next photo or video in the same post</span>
+          <kbd>S</kbd><span>Sort: relevance · newest · oldest · recently read by the models</span>
         </div>
       </div>
       <div>
@@ -558,6 +576,7 @@ mark { background: var(--hot-w); color: var(--ink); padding: 0 1px; }
         <h3>Items</h3>
         <div class="keys">
           <kbd>Enter</kbd><span>Open in the reader (<kbd>o</kbd> too). On a lens: narrow.</span>
+          <kbd>O</kbd><span>Open the full-size file in a new tab (or click the preview)</span>
           <kbd>x</kbd><span>Reveal / veil the item under the cursor · <kbd>X</kbd> cycles the veil threshold</span>
           <kbd>y y</kbd><span>Copy a citation: title — date — source — link</span>
           <kbd>n N</kbd><span>Next / previous highlighted match in the reader</span>
@@ -631,6 +650,7 @@ const VEILS = [null, 0.8, 0.6, 0.3];
 const S = {
   mode: "search",
   q: "",
+  sort: "relevance",
   scopes: [],          // ["entity:12", "text:missiles", ...]
   labels: {},          // scope -> label
   hits: [],            // current result cards
@@ -655,6 +675,7 @@ function writeHash(replace = false) {
   const p = new URLSearchParams();
   if (S.q) p.set("q", S.q);
   for (const s of S.scopes) p.append("s", s);
+  if (S.sort !== "relevance") p.set("sort", S.sort);
   if (S.open != null) p.set("open", S.open);
   const hash = `#/${S.mode}${p.toString() ? "?" + p : ""}`;
   if (location.hash === hash) return;
@@ -670,7 +691,8 @@ function readHash() {
   let open = p.get("open");
   if (mode === "item") { mode = "search"; open = parts[1]; }
   if (!["search", "timeline", "graph"].includes(mode)) mode = "search";
-  return { mode, q: p.get("q") || "", scopes: p.getAll("s"), open: open ? Number(open) : null };
+  const sort = SORTS.includes(p.get("sort")) ? p.get("sort") : "relevance";
+  return { mode, q: p.get("q") || "", scopes: p.getAll("s"), sort, open: open ? Number(open) : null };
 }
 
 /* ── Streaming search ─────────────────────────────────────── */
@@ -680,8 +702,27 @@ function queryParams(extra = {}) {
   const p = new URLSearchParams();
   if (S.q.trim()) p.set("q", S.q);
   for (const s of S.scopes) p.append("s", s);
+  if (S.sort !== "relevance") p.set("sort", S.sort);
   for (const [k, v] of Object.entries(extra)) p.set(k, v);
   return p;
+}
+
+const SORTS = ["relevance", "newest", "oldest", "recent"];
+const SORT_NAMES = { relevance: "relevance", newest: "newest", oldest: "oldest", recent: "recently read" };
+function renderSort() {
+  // With no query there is nothing to be relevant to; the server lists newest first.
+  const shown = S.sort === "relevance" && !S.q.trim() ? "newest" : S.sort;
+  $("#sortName").textContent = SORT_NAMES[shown];
+}
+function cycleSort() {
+  const choices = S.q.trim() ? SORTS : SORTS.filter((x) => x !== "relevance");
+  const cur = S.sort === "relevance" && !S.q.trim() ? "newest" : S.sort;
+  S.sort = choices[(choices.indexOf(cur) + 1) % choices.length];
+  if (!S.q.trim() && S.sort === "newest") S.sort = "relevance";   // newest is the no-query default
+  renderSort();
+  say(`Sorted by ${$("#sortName").textContent}.`);
+  S.cursor.results = 0;
+  navigate(true);
 }
 
 function scheduleSearch(delay = 90) {
@@ -906,13 +947,28 @@ function badges(card) {
   if (hit && hit.page != null) out.push(`<span class="badge is-time">p. ${hit.page}</span>`);
   return out.join("");
 }
+function stripHtml(card) {
+  const post = card.post;
+  if (!post || post.members.length < 2) return "";
+  const match = card.hit?.member_id;
+  const shown = post.members.slice(0, 7);
+  const photos = post.members.filter((m) => m.role === "photo").length;
+  const videos = post.members.filter((m) => m.role === "video").length;
+  const counts = [photos && `${photos} photo${photos > 1 ? "s" : ""}`, videos && `${videos} video${videos > 1 ? "s" : ""}`].filter(Boolean).join(" · ");
+  const matchLabel = match ? ` · match in ${escapeHtml(post.members.find((m) => m.media_id === match)?.role || "member")} ${post.members.findIndex((m) => m.media_id === match)}` : "";
+  return `<div class="strip">${shown.map((m) =>
+    `<i class="${m.kind === "video" ? "is-video" : ""}${m.media_id === match ? " is-match" : ""}"${m.thumb_url ? ` style="background-image:url('${escapeHtml(m.thumb_url)}')"` : ""}></i>`).join("")}` +
+    `<span>${post.members.length > 7 ? `+${post.members.length - 7} · ` : ""}${counts}${matchLabel}</span></div>`;
+}
 function cardHtml(card, i) {
   const hit = card.hit;
-  const snippet = hit ? `<div class="hit__snip">${markSnippet(hit.snippet)}</div>` : "";
+  const snippet = hit ? `<div class="hit__snip">${markSnippet(hit.snippet)}</div>` :
+    card.summary ? `<div class="hit__snip">${escapeHtml(card.summary)}</div>` : "";
   const sens = card.sensitivity != null ? `<span title="sensitivity">${card.sensitivity.toFixed(1)}</span>` : "";
-  return `<article class="hit k-${escapeHtml(card.kind)}${card.media_id === S.open ? " is-open" : ""}" data-i="${i}" data-id="${card.media_id}">` +
+  const open = card.media_id === S.open || card.post?.members.some((m) => m.media_id === S.open);
+  return `<article class="hit k-${escapeHtml(card.kind)}${open ? " is-open" : ""}" data-i="${i}" data-id="${card.media_id}">` +
     thumbHtml(card) +
-    `<div class="hit__body"><div class="hit__title">${escapeHtml(card.title)}</div>${snippet}` +
+    `<div class="hit__body"><div class="hit__title">${escapeHtml(card.title)}</div>${snippet}${stripHtml(card)}` +
     `<div class="meta"><span>${escapeHtml(card.kind.toUpperCase())}</span>${dateHtml(card)}<span>${escapeHtml(card.folder === "." ? "/" : card.folder + "/")}</span>${sens}${badges(card)}</div>` +
     `</div></article>`;
 }
@@ -983,7 +1039,8 @@ async function openItem(mediaId, hit = null) {
   const el = $("#reader");
   el.hidden = false;
   el.innerHTML = `<div class="reader__bar"><span class="label">Loading…</span></div>`;
-  $$(".hit").forEach((h) => h.classList.toggle("is-open", Number(h.dataset.id) === mediaId));
+  $$(".hit").forEach((h) => h.classList.toggle("is-open", Number(h.dataset.id) === mediaId ||
+    S.hits[Number(h.dataset.i)]?.post?.members.some((m) => m.media_id === mediaId)));
   const resp = await fetch(`/api/item/${mediaId}`);
   if (S.open !== mediaId) return;
   if (!resp.ok) { el.innerHTML = `<div class="reader__bar"><span class="label">Not found</span></div>`; return; }
@@ -1002,6 +1059,13 @@ function closeReader() {
   return true;
 }
 
+function galleryHtml(d) {
+  const post = d.post;
+  if (!post || post.members.length < 2) return "";
+  return `<div class="gallery" aria-label="Media in this post">${post.members.map((m, i) =>
+    `<button data-r data-open="${m.media_id}" class="${m.media_id === d.media_id ? "is-current" : ""}" title="${escapeHtml(m.role)} ${i}: ${escapeHtml(m.title)}"` +
+    `${m.thumb_url ? ` style="background-image:url('${escapeHtml(m.thumb_url)}')"` : ""}><span>${m.role === "screenshot" ? "post" : m.role === "video" ? "▶ " + i : i}</span></button>`).join("")}</div>`;
+}
 function section(title, body) {
   return body ? `<section><h3 class="label">${escapeHtml(title)}</h3>${body}</section>` : "";
 }
@@ -1013,8 +1077,10 @@ function renderReader() {
   let preview;
   if (d.kind === "video" && d.media_url) {
     preview = `<video controls preload="metadata" src="${escapeHtml(d.media_url)}"${d.thumb_url ? ` poster="${escapeHtml(d.thumb_url)}"` : ""}></video>`;
+    preview += `<a class="label" href="${escapeHtml(d.media_url)}" target="_blank" rel="noopener" style="padding:4px 0">open in a new tab ↗</a>`;
   } else if (d.kind === "image" && (d.media_url || d.thumb_url)) {
-    preview = `<div class="${veiled(d) ? "is-veiled" : ""}" data-veil><img src="${escapeHtml(d.media_url || d.thumb_url)}" alt=""></div>`;
+    const full = escapeHtml(d.media_url || d.thumb_url);
+    preview = `<div class="${veiled(d) ? "is-veiled" : ""}" data-veil><a href="${full}" target="_blank" rel="noopener" title="Open full size in a new tab (O)" data-zoom><img src="${full}" alt=""></a></div>`;
   } else if (d.kind === "pdf" && d.media_url) {
     const page = S.openHit?.page;
     preview = `<a class="btn" target="_blank" rel="noopener" href="${escapeHtml(d.media_url)}${page ? `#page=${page}` : ""}" data-r>Open PDF${page ? ` at page ${page}` : ""}</a>`;
@@ -1038,11 +1104,13 @@ function renderReader() {
     `<div class="reader__bar"><span class="label">${escapeHtml(d.kind)} · #${d.media_id}</span>` +
     `<span><button class="btn" data-copy title="Copy citation (yy)">Cite</button> <button class="btn mobile-close" data-close>Close</button></span></div>` +
     `<div class="reader__body">` +
+    galleryHtml(d) +
     `<div class="preview">${preview}</div>` +
     `<h2>${escapeHtml(d.title)}</h2>` +
     `<div class="meta"><span>${escapeHtml(d.kind.toUpperCase())}</span>${dateHtml(d)}<span>${escapeHtml(d.folder)}/</span>` +
     `${d.sensitivity != null ? `<span>sensitivity ${d.sensitivity.toFixed(2)}</span>` : ""}` +
     `${d.legacy_spicy != null ? `<span title="The 2024 tagger's guess; not used for veiling">old spicy ${d.legacy_spicy.toFixed(1)}</span>` : ""}${d.width ? `<span>${d.width}×${d.height}</span>` : ""}${badges({ ...d, hit: S.openHit })}</div>` +
+    (cap?.summary ? `<p class="lede">${escapeHtml(cap.summary)}</p>` : "") +
     section("Source", sources) +
     (chips ? `<div class="chips">${chips}</div>` : "") +
     section("Description", cap ? `<p>${escapeHtml(cap.description)}</p>` : "") +
@@ -1484,7 +1552,25 @@ function stepResult(delta) {
   if (!S.hits.length) return;
   S.cursor.results = Math.max(0, Math.min(S.hits.length - 1, S.cursor.results + delta));
   paintCursor("results");
-  openItem(S.hits[S.cursor.results].media_id);
+  openCard(S.hits[S.cursor.results]);
+}
+function openCard(card) {
+  // A post opens at the photo or video that matched, with the rest one , or . away.
+  openItem(card.hit?.member_id ?? card.media_id, card.hit);
+}
+function stepMember(delta) {
+  const post = S.item?.post;
+  if (!post) return say("This item is not part of a post with other media.");
+  const i = post.members.findIndex((m) => m.media_id === S.item.media_id);
+  const next = post.members[(i + delta + post.members.length) % post.members.length];
+  openItem(next.media_id, null);
+}
+function openOriginal() {
+  const d = S.item || currentCard();
+  if (!d) return;
+  const url = d.media_url || d.thumb_url;
+  if (!url) return say("No file to open: the original is offline.");
+  window.open(url, "_blank", "noopener");
 }
 
 /* ── Keys ─────────────────────────────────────────────────── */
@@ -1533,7 +1619,11 @@ function onKey(e) {
   const done = (fn) => { e.preventDefault(); clearPending(); fn(); };
 
   if (seq === "g") return done(() => {
-    if (k === "g") { S.cursor[S.focus] = 0; paintCursor(S.focus); if (S.focus === "reader") $("#reader").scrollTop = 0; }
+    if (k === "g") {
+      S.cursor[S.focus] = 0; paintCursor(S.focus);
+      if (S.focus === "reader") $("#reader").scrollTop = 0;
+      if (S.focus === "results") window.scrollTo({ top: 0 });
+    }
     else if (k === "s") setMode("search");
     else if (k === "t") setMode("timeline");
     else if (k === "w") setMode("wiki");
@@ -1549,6 +1639,10 @@ function onKey(e) {
 
   switch (k) {
     case "g": case "y": e.preventDefault(); S.pending = k; paintMode(); return;
+    case "S": return done(cycleSort);
+    case "O": return done(openOriginal);
+    case ",": return done(() => stepMember(-n));
+    case ".": return done(() => stepMember(n));
     case "j": case "ArrowDown": return done(() => move(n));
     case "k": case "ArrowUp": return done(() => move(-n));
     case "h": return done(() => timelineAxis ? tlMove(-n) : graphAxis ? grMove(-n) : setFocus(COLS[Math.max(0, COLS.indexOf(S.focus) - 1)]));
@@ -1572,7 +1666,7 @@ function onKey(e) {
       if (S.focus === "lenses") return narrowHere();
       if (S.focus === "reader") return activateReaderRow(rowsOf("reader")[S.cursor.reader]);
       const card = S.hits[S.cursor.results];
-      if (card) openItem(card.media_id, card.hit);
+      if (card) openCard(card);
     });
     case ">": return done(narrowHere);
     case "<": return done(() => popScope());
@@ -1619,7 +1713,7 @@ function toggleHelp(force) {
 
 /* ── Wiring ───────────────────────────────────────────────── */
 document.addEventListener("keydown", onKey);
-$("#q").addEventListener("input", (e) => { S.q = e.target.value; writeHash(true); scheduleSearch(); });
+$("#q").addEventListener("input", (e) => { S.q = e.target.value; renderSort(); writeHash(true); scheduleSearch(); });
 $("#q").addEventListener("focus", paintMode);
 $("#q").addEventListener("blur", paintMode);
 $("#scopes").addEventListener("click", (e) => {
@@ -1639,12 +1733,12 @@ $("#list").addEventListener("click", (e) => {
   setFocus("results");
   const card = S.hits[S.cursor.results];
   if (e.target.closest(".is-veiled") && veiled(card)) return toggleVeil();
-  openItem(card.media_id, card.hit);
+  openCard(card);
 });
 $("#reader").addEventListener("click", (e) => {
   if (e.target.closest("[data-close]")) return closeReader();
   if (e.target.closest("[data-copy]")) { S.focus = "reader"; return copyCitation(); }
-  if (e.target.closest("[data-veil].is-veiled")) return toggleVeil();
+  if (e.target.closest("[data-veil].is-veiled")) { e.preventDefault(); return toggleVeil(); }
   const row = e.target.closest("[data-r]");
   if (!row || row.tagName === "A") return;
   S.cursor.reader = rowsOf("reader").indexOf(row);
@@ -1652,6 +1746,7 @@ $("#reader").addEventListener("click", (e) => {
   activateReaderRow(row);
 });
 $("#moreBtn").addEventListener("click", loadMore);
+$("#sortBtn").addEventListener("click", cycleSort);
 $$("[data-mode]").forEach((b) => b.addEventListener("click", () => setMode(b.dataset.mode)));
 $("#helpBtn").addEventListener("click", () => toggleHelp());
 $("#themeBtn").addEventListener("click", () => {
@@ -1671,7 +1766,8 @@ new ResizeObserver(() => {
 function fromHash() {
   const h = readHash();
   const openChanged = h.open !== S.open;
-  Object.assign(S, { mode: h.mode, q: h.q, scopes: h.scopes });
+  Object.assign(S, { mode: h.mode, q: h.q, scopes: h.scopes, sort: h.sort });
+  renderSort();
   $("#q").value = S.q;
   renderScopes();
   renderModes();
