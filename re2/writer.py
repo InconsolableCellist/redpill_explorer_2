@@ -1,7 +1,7 @@
 """The text model that writes digests and wiki pages ([wiki] in config, defaulting to [chat]).
 
-Requests stream, like ask.py's, so llama.cpp sends progress while it reads a long prompt and
-no read timeout fires on a slow server. Batches are sized from the configured context.
+Requests go through ask.py's streaming helpers (llama.cpp sends progress while it reads a long
+prompt, so no read timeout fires on a slow server). Batches are sized from the configured context.
 """
 from __future__ import annotations
 
@@ -9,12 +9,12 @@ import json
 import logging
 import re
 import threading
+from types import SimpleNamespace
 
 import httpx
 
 log = logging.getLogger(__name__)
 
-TIMEOUT = 300.0
 CHARS_PER_TOKEN = 3.0      # conservative for English mixed with names, handles and URLs
 PROMPT_OVERHEAD_TOKENS = 1200
 
@@ -23,65 +23,41 @@ class WriterError(Exception):
     pass
 
 
-class LengthError(WriterError):
-    """The model ran out of output tokens."""
-
-
 def input_chars(cfg, max_tokens: int, overhead_tokens: int = PROMPT_OVERHEAD_TOKENS) -> int:
     """How many characters of material fit in one request next to the instructions and the reply."""
     return max(4000, int((cfg.wiki_context_tokens - max_tokens - overhead_tokens) * CHARS_PER_TOKEN))
 
 
+def _as_chat(cfg) -> SimpleNamespace:
+    """A view of cfg in which ask.py's chat helpers address the wiki model."""
+    return SimpleNamespace(chat_base_url=cfg.wiki_base_url, chat_model=cfg.wiki_model)
+
+
 def payload(cfg, system: str, user: str, max_tokens: int, schema: dict | None = None,
             temperature: float = 0.3) -> dict:
-    body = {
-        "model": cfg.wiki_model,
-        "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
-        "max_tokens": max_tokens,
+    from re2 import ask
+
+    extra = {
         "temperature": temperature,
         # Servers set a presence penalty for chat; it punishes the repeated "[m:" of citations and
         # the numbers of member lists, so the wiki turns it off.
         "presence_penalty": 0.0,
-        "chat_template_kwargs": {"enable_thinking": False},
-        "reasoning_budget": 0,
     }
     if schema is not None:
-        body["response_format"] = {"type": "json_schema", "json_schema": {"name": "out", "schema": schema}}
-    return body
+        extra["response_format"] = {"type": "json_schema", "json_schema": {"name": "out", "schema": schema}}
+    return ask._payload(_as_chat(cfg), [{"role": "system", "content": system}, {"role": "user", "content": user}],
+                        max_tokens, **extra)
 
 
 def complete(client: httpx.Client, cfg, body: dict) -> str:
-    """The whole reply; raises LengthError when it was cut off, WriterError on HTTP failures."""
-    body = {**body, "stream": True, "return_progress": True}
-    parts: list[str] = []
-    finish = None
+    """The whole reply, streamed with ask.py's helper; WriterError on HTTP failures."""
+    from re2 import ask
+
     try:
-        with client.stream("POST", f"{cfg.wiki_base_url}/chat/completions", json=body, timeout=TIMEOUT) as resp:
-            if resp.status_code >= 400:
-                resp.read()
-                raise WriterError(f"HTTP {resp.status_code}: {resp.text[:300]}")
-            for line in resp.iter_lines():
-                if not line.startswith("data: ") or line.strip() == "data: [DONE]":
-                    continue
-                try:
-                    chunk = json.loads(line[6:])
-                except json.JSONDecodeError:
-                    continue
-                choices = chunk.get("choices") or []
-                if not choices:
-                    continue
-                delta = (choices[0].get("delta") or {}).get("content")
-                if delta:
-                    parts.append(delta)
-                finish = choices[0].get("finish_reason") or finish
+        text = "".join(ask._stream_chat(client, _as_chat(cfg), body, None))
     except httpx.HTTPError as exc:
         raise WriterError(f"{type(exc).__name__}: {exc}") from exc
-    text = re.sub(r"^\s*<think>.*?</think>", "", "".join(parts), flags=re.DOTALL).strip()
-    if finish == "length":
-        err = LengthError(f"reply cut off at {body['max_tokens']} tokens")
-        err.raw = text
-        raise err
-    return text
+    return re.sub(r"^\s*<think>.*?</think>", "", text, flags=re.DOTALL).strip()
 
 
 def complete_json(client: httpx.Client, cfg, body: dict) -> dict:

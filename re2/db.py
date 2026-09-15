@@ -212,6 +212,7 @@ CREATE TABLE IF NOT EXISTS wiki_member (             -- items a page is about (p
   media_id INTEGER NOT NULL REFERENCES media(id),
   origin TEXT NOT NULL DEFAULT 'cluster',           -- cluster | split | attached | entity
   read_hash TEXT,                                   -- the item's record as the page's writer read it; NULL = not read
+  added_at TEXT NOT NULL DEFAULT (datetime('now')),
   PRIMARY KEY (page_id, media_id)
 );
 CREATE INDEX IF NOT EXISTS ix_wiki_member_media ON wiki_member(media_id);
