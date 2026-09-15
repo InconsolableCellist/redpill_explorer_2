@@ -1,0 +1,72 @@
+# What each folder of the archive collects, as the collector's purpose, not as fact.
+# The vision model gets the brief for an item's top-level folder, which helps it see why the item
+# was kept (saved_as) and which later events matter (later_context). Drafted 2026-09-15 from
+# samples of each folder; correct anything that is wrong or too narrow. Briefs marked "(guess)"
+# are for folders with few or no captions yet.
+
+"." = "The collector's general feed: US politics and elections, Trump, Biden and Harris, free speech and censorship, media bias, big tech and Elon Musk, culture-war stories and viral political clips."
+
+"race" = "Race relations from the collector's point of view: violent crime by or against Black people, white people and immigrants (especially interracial attacks, mugshots, and cases the collector sees as under-reported or misreported by the media), racial crime statistics, anti-white rhetoric, immigration and its local effects (e.g. Haitian migrants), Jews and antisemitism, and double standards in policing, courts and media."
+
+"covid-19" = "The pandemic and vaccines, mostly from a sceptical angle: purported vaccine injuries and deaths, including 'died suddenly' cases (deaths or collapses of vaccinated people, athletes and celebrities, often saved soon after the death alongside their earlier pro-vaccine statements); official claims later contradicted; mandates, lockdowns and censorship of dissenting doctors; lab-leak and gain-of-function origin claims (Fauci, EcoHealth, Wuhan); and studies or data cited as evidence."
+
+"voter fraud" = "Claims of election fraud and irregularities, mostly about the 2020 and 2024 US elections: voting machines, mail-in ballots, swing-state counts (Michigan, Pennsylvania, Georgia, Arizona), lawsuits and affidavits, non-citizen voting, big tech or media suppression of fraud claims, and accusations that Democrats deny elections they lose."
+
+"161572883" = "A general collection of recent (2024-2025) political news and commentary without one theme: the second Trump administration, Elon Musk and X, disputes over media coverage, political violence and viral clips. (guess)"
+
+"uk race" = "Britain: immigration and asylum hotels, grooming-gang (rape gang) cases, crimes by migrants, 'two-tier' policing and justice, arrests for online speech, Tommy Robinson, and riots and protests such as those after the 2024 Southport murders."
+
+"groomers" = "Claims that LGBTQ activists, teachers and institutions sexualise or 'groom' children: drag events for children, gender-affirming care for minors, school curricula and library books, trans issues in schools, and abuse cases involving LGBTQ people or school staff used as evidence."
+
+"ukraine" = "The Russia-Ukraine war from a critical view of Western involvement: US aid spending, corruption claims (Burisma, Hunter Biden, Zelensky), escalation fears (long-range missiles, nuclear threats) and claims of Western propaganda."
+
+"dixie" = "Footage and photos from the 2020 riots and protests in US cities (Black Lives Matter and antifa unrest): looting, arson, assaults and confrontations with police. (guess from video titles)"
+
+"ufos" = "UFO and UAP sightings and disclosure: the 2024 New Jersey drone sightings, military and congressional UAP testimony, and claims of government cover-up."
+
+"UAPs" = "UFO and UAP sightings and disclosure: military and congressional UAP testimony, sightings, and claims of government cover-up."
+
+"assassination attempt 1" = "The 13 July 2024 attempt on Donald Trump's life at Butler, Pennsylvania: Secret Service failures, the shooter, claims of insider help or cover-up, and rhetoric by media or Democrats blamed for inciting it."
+
+"assassination attempt 2" = "The 15 September 2024 attempt on Donald Trump at his West Palm Beach golf course (Ryan Routh), and rhetoric blamed for it."
+
+"assassination attempt 3" = "Claims of a third attempt or attack around Trump events in September 2024, such as the Tucson rally illness incident and reported Iranian plots."
+
+"assassination attempt 4" = "Later threats and alleged plots against Donald Trump, such as the October 2024 arrest near his Coachella rally, '8647' chants and calls for violence."
+
+"jan 6" = "The 6 January 2021 Capitol riot from a sceptical angle: claims of FBI informants or provocateurs, withheld footage, police letting people in, the pipe-bomb investigation, harsh prosecutions of the 'J6 hostages', and the 2025 pardons."
+
+"jan6" = "The 6 January 2021 Capitol riot from a sceptical angle: claims of FBI informants or provocateurs, withheld footage, police letting people in, the pipe-bomb investigation, harsh prosecutions of the 'J6 hostages', and the 2025 pardons."
+
+"automated_retries" = "Items the collector's archiving tool fetched again after a failed first attempt; no single theme."
+
+"chinks" = "The folder name is a slur for Chinese people; the videos (apparently from 4chan, 2021) presumably show Chinese or East Asian people. (guess)"
+
+"monkeypox" = "The 2022 mpox outbreak: transmission among gay men, vaccines and the government response, and claims it was exaggerated or connected to COVID vaccines."
+
+"jart stolen code llama.cpp" = "A 2023 open-source dispute: accusations that a developer (jart, Justine Tunney) took credit for others' work on llama.cpp's memory-mapped model loading, and the related GitHub and Discord arguments."
+
+"arson" = "Wildfires blamed on arsonists, especially the 2020 US West Coast fires: arrests and claims that activists set fires, set against climate explanations."
+
+"tds" = "'Trump Derangement Syndrome': anti-Trump reactions and media stories the collector considers hysterical or absurd."
+
+"abortion" = "Abortion politics, especially disruptive or violent pro-abortion protests after the 2022 Dobbs ruling."
+
+"flooding" = "Flood videos from around July 2021, apparently from 4chan, possibly the Zhengzhou (China) or German floods. (guess)"
+
+"philly" = "The October 2020 Philadelphia riots and looting after the police shooting of Walter Wallace Jr."
+
+"funny" = "Memes kept mainly because they are funny."
+
+"biden" = "Items about Joe Biden."
+
+"VHFO" = "Reports of viral hemorrhagic fever outbreaks (e.g. Xi'an, China) watched as possible new epidemics."
+
+"disease x" = "'Disease X' and warnings of the next pandemic, often read as signs of a planned or anticipated outbreak."
+
+"bird_flu" = "Bird flu (H5N1) outbreaks and warnings of it becoming the next pandemic."
+
+"polio" = "Polio cases and outbreaks."
+
+"trans" = "Transgender issues."
+

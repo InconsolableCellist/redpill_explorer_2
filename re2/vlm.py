@@ -5,6 +5,8 @@ Run `python -m re2.vlm <image>` to extract one file and pretty-print the result.
 from __future__ import annotations
 
 import base64
+import tomllib
+from functools import lru_cache
 import copy
 import io
 import json
@@ -74,12 +76,14 @@ IMAGE_SCHEMA: dict = {
         "language": _str(20),
         "sensitivity": {"type": "number"},
         # Last on purpose: the model writes these after it has transcribed and interpreted the image.
+        "later_context": _str(1200),
         "saved_as": _str(400),
         "title": _str(160),
         "summary": _str(800),
     },
     "required": ["media_type", "description", "ocr_text", "subjects", "actions", "meaning", "claims",
-                 "intent", "humor", "entities", "tags", "date_hints", "language", "sensitivity", "saved_as", "title", "summary"],
+                 "intent", "humor", "entities", "tags", "date_hints", "language", "sensitivity", "later_context", "saved_as",
+                 "title", "summary"],
     "additionalProperties": False,
 }
 
@@ -105,11 +109,13 @@ Fill every field:
 - date_hints: any dates, times, or datable references visible or implied.
 - language: primary language of the text, ISO 639-1 code, or "none".
 - sensitivity: 0.0 for benign, 0.3 for political but civil, 0.6 for slurs, hate or violence, 0.8 for graphic injury or explicit sexual content, 1.0 for the most extreme material. This is a retrieval filter, not a judgement.
-- saved_as: what the collector most likely saved this as evidence or an example of, judging from the folder name (when given) and the content, e.g. "purported evidence that athletes collapse after COVID-19 vaccination" or "example of media hiding the race of attackers". State it as the collector's likely purpose, not as fact. "unclear" if nothing suggests one.
+- later_context: what you know happened after the item's date to the people, organisations, claims or events shown that changes how the item reads today, especially in light of what the collector's folder collects. Collectors keep political material for the contrast with what came later: someone who promoted something and later died or was harmed; a prediction or denial that later events confirmed or contradicted; words later contradicted by deeds; an early report of what became a bigger story. Name the later event and its date if you know them. "none known" if nothing relevant happened or you are not sure; never invent events.
+- saved_as: what the collector most likely saved this as evidence or an example of, judging from the folder and what it collects, the file name and date (when given), the content, and later_context, e.g. "purported evidence that athletes collapse after COVID-19 vaccination" or "example of media hiding the race of attackers". When later_context names a later event, spell out the connection the collector is drawing, including any implied cause, irony or hypocrisy. State it as the collector's likely purpose, not as fact. "unclear" if nothing suggests one.
 - title: a headline of at most 14 words about the substance. Its subject is the person, group, event or thing the item is about, named; not the account that posted it and not the medium. Include identifiable people shown in the image. Bad: "Gareth Icke claims woman pictured released JFK files", "X post discusses Judas goats", "Screenshot of a tweet about crime". Good: "Netanyahu pictured beside the official promising unredacted JFK and Epstein files", "Judas goats lead livestock to slaughter; reply likens them to baited rat traps".
 - summary: one to three sentences. Lead with what is shown and claimed and what it implies, naming the people involved; then, briefly, who posted it. Platform names and engagement counts only if they matter. Never begin with the medium. Bad: "A screenshot of an X post by Gareth Icke claiming that a woman pictured with Netanyahu...". Good: "A woman pictured with Benjamin Netanyahu is said to control the release of the JFK and Epstein files; Gareth Icke sarcastically predicts a transparent, unredacted release, implying Israeli influence over what is withheld"."""
 
-_KEYFRAME_DROPPED = ("claims", "intent", "humor", "date_hints", "media_type", "saved_as", "title", "summary")
+_KEYFRAME_DROPPED = ("claims", "intent", "humor", "date_hints", "media_type", "later_context", "saved_as", "title",
+                     "summary")
 
 KEYFRAME_SCHEMA: dict = copy.deepcopy(IMAGE_SCHEMA)
 for _field in _KEYFRAME_DROPPED:
@@ -263,11 +269,46 @@ def prepare_images(source: Path | str | bytes, max_side: int = 1024, max_tiles: 
     return [_jpeg(im.crop(box)) for box in tile_boxes(im.width, im.height, max_tiles)]
 
 
+FOLDER_BRIEFS_FILE = Path(__file__).resolve().parent.parent / "folder_briefs.toml"
+
+
+@lru_cache(maxsize=1)
+def folder_briefs() -> dict[str, str]:
+    if not FOLDER_BRIEFS_FILE.is_file():
+        return {}
+    with open(FOLDER_BRIEFS_FILE, "rb") as f:
+        return tomllib.load(f)
+
+
 def folder_note(folder: str | None) -> str:
-    """The collector's folder is a strong hint about why an item was kept (covid-19, voter fraud, race...)."""
-    if not folder or folder in (".", "/"):
+    """The collector's folder, and what it collects (folder_briefs.toml), hint at why an item was kept."""
+    folder = (folder or ".").strip("/") or "."
+    brief = folder_briefs().get(folder) or folder_briefs().get(folder.split("/", 1)[0])
+    if folder == ".":
+        return f" It is in the collector's top-level folder, which holds: {brief}" if brief else ""
+    if brief:
+        return f' The collector filed it under the folder "{folder}", which collects: {brief}'
+    return f' The collector filed it under the folder "{folder}".'
+
+
+# Names that carry no meaning: 4chan timestamps, screenshot and camera names, X media keys.
+_MEANINGLESS_NAME = re.compile(
+    r"^(screenshot[_ -]?[\w-]*\d{6}|\d{8,}|[A-Za-z0-9_-]{15}$|(IMG|VID|PXL)_|(image|photo|download|unnamed)[\d_ ()-]*$)",
+    re.IGNORECASE)
+
+
+def filename_note(rel_path: str | None) -> str:
+    """Descriptive file names ("Detroit-riot-escalates-1967.jpg", video titles) often name the event."""
+    if not rel_path:
         return ""
-    return f" The collector filed it under the folder: {folder}."
+    stem = Path(rel_path).stem
+    if len(stem) < 12 or _MEANINGLESS_NAME.match(stem) or not re.search(r"[A-Za-z]{3,}.*[A-Za-z]{3,}", stem):
+        return ""
+    return f" Its file name is: {Path(rel_path).name}."
+
+
+def date_note(item_date: str | None) -> str:
+    return f" It was saved around {item_date}." if item_date else ""
 
 
 def tiles_note(n: int) -> str:

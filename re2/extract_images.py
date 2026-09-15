@@ -43,6 +43,7 @@ def caption_text(d: dict) -> str:
         f"Claims: {'; '.join(d.get('claims') or [])}\n"
         f"Intent: {d.get('intent', '')}\n"
         f"Saved as: {d.get('saved_as', '')}\n"
+        f"Later context: {d.get('later_context', '')}\n"
         f"Humor: {d.get('humor', '')}"
     )
 
@@ -109,6 +110,8 @@ class Job:
     low_res: bool
     long_output: bool = False  # tall image, or ran out of tokens before
     folder: str | None = None
+    rel_path: str | None = None
+    item_date: str | None = None
 
 
 @dataclass
@@ -145,7 +148,9 @@ def select_jobs(conn: sqlite3.Connection, cfg, limit: int | None, include_thumbn
     rows = conn.execute(
         f"""SELECT m.id, m.status, m.width, m.height, m.thumb_path,
                    (SELECT p.rel_path FROM media_path p WHERE p.media_id=m.id AND p.readable=1
-                    ORDER BY p.id LIMIT 1) AS rel_path
+                    ORDER BY p.id LIMIT 1) AS rel_path,
+                   (SELECT p.rel_path FROM media_path p WHERE p.media_id=m.id ORDER BY p.id LIMIT 1) AS any_path,
+                   (SELECT mm.item_date FROM media_meta mm WHERE mm.media_id=m.id) AS item_date
             FROM media m
             WHERE m.kind='image' AND m.status IN ({','.join('?' * len(statuses))})
               AND NOT EXISTS (SELECT 1 FROM doc d WHERE d.media_id=m.id AND d.kind='caption')
@@ -164,8 +169,9 @@ def select_jobs(conn: sqlite3.Connection, cfg, limit: int | None, include_thumbn
         else:
             continue
         long_output = vlm.is_tall(r["width"], r["height"]) or r["id"] in ran_out
-        folder = os.path.dirname(r["rel_path"]) if r["rel_path"] else None
-        jobs.append(Job(r["id"], path, low_res, long_output, folder))
+        name = r["rel_path"] or r["any_path"]
+        folder = os.path.dirname(name) if name else None
+        jobs.append(Job(r["id"], path, low_res, long_output, folder, name, r["item_date"]))
         if limit is not None and len(jobs) >= limit:
             break
     return jobs
@@ -276,7 +282,8 @@ def run(conn: sqlite3.Connection, cfg, limit: int | None = None, include_thumbna
             with lock:
                 clients.append(client)
         images = vlm.prepare_images(job.path, cfg.vision_max_side, cfg.vision_max_tiles, dense=job.long_output)
-        text = USER_TEXT + (LOW_RES_TEXT if job.low_res else "") + vlm.folder_note(job.folder) + vlm.tiles_note(len(images))
+        text = (USER_TEXT + (LOW_RES_TEXT if job.low_res else "") + vlm.folder_note(job.folder)
+                + vlm.filename_note(job.rel_path) + vlm.date_note(job.item_date) + vlm.tiles_note(len(images)))
         result = vlm.extract(client, cfg, images, vlm.IMAGE_SCHEMA, vlm.IMAGE_SYSTEM_PROMPT, text,
                              max_tokens=max_tokens, sampling=vlm.LOOP_BREAKER if job.long_output else None)
         result["_tiles"] = len(images)

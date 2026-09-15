@@ -17,7 +17,7 @@ def sample_result():
         "actions": "a", "meaning": "m", "claims": [], "intent": "i", "humor": "none",
         "entities": {"people": [], "organizations": [], "places": [], "events": [], "platforms": []},
         "tags": ["t"], "date_hints": [], "language": "en", "sensitivity": 0.1,
-        "saved_as": "unclear", "title": "Headline", "summary": "Lede first.",
+        "later_context": "none known", "saved_as": "unclear", "title": "Headline", "summary": "Lede first.",
     }
 
 
@@ -176,3 +176,15 @@ def test_limits_from_running_server_and_override():
     concurrency, _, notes = vlm.plan_concurrency(LIMIT_CFG, limits, requested=9)
     assert concurrency == 9 and any("more than the server's 4 slots" in n for n in notes)
     assert vlm.server_limits(router([]), LIMIT_CFG) is None
+
+
+
+def test_context_notes():
+    assert "died suddenly" in vlm.folder_note("covid-19")
+    assert vlm.folder_note("race/sub").startswith(' The collector filed it under the folder "race/sub", which collects:')
+    assert vlm.folder_note("no such folder") == ' The collector filed it under the folder "no such folder".'
+    assert vlm.filename_note("Detroit-riot-escalates-1967-mcrfb-1.jpg") == " Its file name is: Detroit-riot-escalates-1967-mcrfb-1.jpg."
+    for meaningless in ("race/1694983939173792.jpg", "screenshot_20241002_000508.jpg", "EsRztOsXEAYO79D.jpeg",
+                        "covid-19/F9oeBpPboAAAtAG.jpeg", "IMG_20200101_120000.jpg", "0iet7g.mp4"):
+        assert vlm.filename_note(meaningless) == "", meaningless
+    assert vlm.date_note("2023-10-29") == " It was saved around 2023-10-29."
