@@ -2,7 +2,9 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<!-- resizes-content: the on-screen keyboard shrinks the layout viewport, so the sticky composer and
+     mode bar ride above the keyboard instead of hiding behind it. -->
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
 <meta name="color-scheme" content="light dark">
 <title>Redpill</title>
 <link rel="icon" href="data:,">
@@ -56,6 +58,10 @@ img, video { display: block; max-width: 100%; }
   --lens-w: 280px;
   --reader-w: 460px;
   --top-h: 0px;
+  /* The mode line's height (measured; the help panel above it does not count) plus the phone's
+     home-bar inset: what a sticky bottom bar has to clear. */
+  --foot-bar-h: 34px;
+  --foot-h: calc(var(--foot-bar-h) + 1px + env(safe-area-inset-bottom));   /* + the footer's rule */
 }
 
 @media (prefers-color-scheme: dark) {
@@ -183,6 +189,9 @@ kbd {
   text-decoration: none;
 }
 .brand__sub { font-size: 11.5px; color: var(--ink-3); white-space: nowrap; }
+/* The wordmark is temporary; where the search box needs the room the brand is just the pill. */
+.brand__pill { font-size: 19px; line-height: 1; }
+.narrow-only { display: none; }
 
 /* The omnibox is the page's centre of gravity: scopes read left to right as
    the path you took to get here, and the text you are typing is the next step. */
@@ -257,7 +266,7 @@ kbd {
 .lenses {
   grid-area: lenses;
   position: sticky; top: var(--top-h);
-  max-height: calc(100vh - var(--top-h) - 34px);
+  max-height: calc(100dvh - var(--top-h) - var(--foot-h));
   overflow-y: auto;
   background: var(--stock-well);
   border-right: 1px solid var(--rule);
@@ -304,7 +313,7 @@ kbd {
   cursor: pointer;
 }
 /* Keep the cursor clear of the sticky top bar and mode line when motions scroll the page. */
-.hit { scroll-margin-top: calc(var(--top-h) + 14px); scroll-margin-bottom: 46px; }
+.hit { scroll-margin-top: calc(var(--top-h) + 14px); scroll-margin-bottom: calc(var(--foot-h) + 12px); }
 .hit.k-image { border-left-color: var(--blue); }
 .hit.k-video { border-left-color: var(--ink); }
 .hit.k-pdf { border-left-color: var(--ink-3); }
@@ -318,6 +327,9 @@ kbd {
 .tl.is-cursor, .gr.is-cursor, .mp.is-cursor { border-color: var(--hot); box-shadow: 0 0 0 2px var(--hot), var(--shadow-lift); }
 .tl, .gr, .mp { scroll-margin-top: calc(var(--top-h) + 14px); }
 .hit.is-open { background: color-mix(in srgb, var(--blue-w) 60%, var(--stock-card)); }
+/* Closed again, the last item read keeps a fainter mark: where you were, and what "reopen" will open. */
+.hit.is-last { background: color-mix(in srgb, var(--blue-w) 30%, var(--stock-card)); }
+.reopen-btn { display: none; margin-right: auto; }
 .thumb {
   position: relative;
   width: 96px; height: 96px;
@@ -376,7 +388,7 @@ mark { background: var(--hot-w); color: var(--ink); padding: 0 1px; }
 .reader {
   grid-area: reader;
   position: sticky; top: var(--top-h);
-  max-height: calc(100vh - var(--top-h) - 34px);
+  max-height: calc(100dvh - var(--top-h) - var(--foot-h));
   overflow-y: auto;
   background: var(--stock-card);
   border-left: 1px solid var(--rule);
@@ -388,7 +400,13 @@ mark { background: var(--hot-w); color: var(--ink); padding: 0 1px; }
   padding: 8px 12px;
   background: var(--stock-bar); border-bottom: 1px solid var(--rule-soft);
 }
+.reader__what { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* On a phone the actions fold into a ⋯ menu so the header stays one row; on desktop they are just a row. */
+.ractions { position: relative; flex: none; }
+.ractions__more { display: none; }
+.ractions__pop { display: flex; gap: 6px; align-items: center; }
 .reader__body { padding: 14px 16px 30px; display: flex; flex-direction: column; gap: 14px; }
+.reader__end { display: none; align-self: flex-start; }
 .preview { background: var(--stock-well); display: grid; place-items: center; min-height: 120px; position: relative; }
 .preview img { max-height: 70vh; width: auto; margin: 0 auto; }
 .preview video { width: 100%; max-height: 60vh; background: #000; }
@@ -444,8 +462,11 @@ mark { background: var(--hot-w); color: var(--ink); padding: 0 1px; }
 .src a:hover { color: var(--hot); }
 
 /* ── Ask ─────────────────────────────────────────────────── */
-.ask { display: flex; flex-direction: column; gap: 14px; }
-.ask__log { display: flex; flex-direction: column; gap: 18px; }
+/* The log takes whatever height is going, so the composer sits at the bottom of the view instead of
+   floating under a short conversation. */
+.ask { display: flex; flex-direction: column; gap: 14px; min-height: calc(100vh - var(--top-h) - var(--foot-h) - 54px); }
+.ask { min-height: calc(100dvh - var(--top-h) - var(--foot-h) - 54px); }
+.ask__log { display: flex; flex-direction: column; gap: 18px; flex: 1 1 auto; }
 .turn { background: var(--stock-card); border: 1px solid var(--rule-soft); box-shadow: var(--shadow); padding: 14px 16px 16px; }
 .turn__q { font-family: var(--font-display); font-size: 19px; font-weight: 600; line-height: 1.25; margin-bottom: 8px; }
 .turn__scope { font-family: var(--font-mono); font-size: 10.5px; color: var(--ink-3); margin: -4px 0 8px; }
@@ -471,7 +492,7 @@ mark { background: var(--hot-w); color: var(--ink); padding: 0 1px; }
 .source .n { font-family: var(--font-mono); font-size: 10.5px; color: var(--blue); }
 .source i { width: 40px; height: 30px; background: var(--stock-well) center/cover no-repeat; display: block; }
 .source span { font-size: 12.5px; color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.composer { position: sticky; bottom: 44px; background: var(--stock-bar); border: 1px solid var(--rule); box-shadow: var(--shadow-lift); padding: 8px; display: flex; flex-wrap: wrap; gap: 8px; align-items: stretch; }
+.composer { position: sticky; bottom: var(--foot-h); background: var(--stock-bar); border: 1px solid var(--rule); box-shadow: var(--shadow-lift); padding: 8px; display: flex; flex-wrap: wrap; gap: 8px; align-items: stretch; }
 .composer textarea { flex: 1 1 320px; min-height: 40px; height: 40px; max-height: 30vh; resize: vertical; border: 1px solid var(--rule); background: var(--stock-card); padding: 9px 10px; font-size: 14px; line-height: 1.4; outline: none; }
 .composer textarea:focus { border-color: var(--blue); }
 .composer__side { display: flex; gap: 5px; align-items: stretch; }
@@ -515,7 +536,8 @@ mark { background: var(--hot-w); color: var(--ink); padding: 0 1px; }
 .session .del:hover { color: var(--hot); }
 .session .live { color: var(--hot); }
 .settings { display: flex; flex-direction: column; gap: 14px; margin-bottom: 14px; }
-.settings > p { color: var(--ink-2); font-size: 13px; margin: 0; }
+/* A long config path used to push the page sideways on a phone; it may break anywhere instead. */
+.settings > p { color: var(--ink-2); font-size: 13px; margin: 0; overflow-wrap: anywhere; }
 .svc { background: var(--stock-card); border: 1px solid var(--rule-soft); box-shadow: var(--shadow); padding: 12px 14px 14px; }
 .svc h3 { font-family: var(--font-display); font-size: 18px; font-weight: 600; margin: 0 0 2px; }
 .svc > p { font-size: 12.5px; color: var(--ink-3); margin: 0 0 10px; }
@@ -528,7 +550,7 @@ mark { background: var(--hot-w); color: var(--ink); padding: 0 1px; }
 .svc__models button:hover { background: var(--stock-well); color: var(--ink); }
 .svc__models button.is-current { border-left-color: var(--blue); color: var(--ink); }
 .svc__models .on { color: var(--focus); }
-.settings__bar { display: flex; gap: 8px; align-items: center; position: sticky; bottom: 44px; background: var(--stock-bar); border: 1px solid var(--rule); padding: 8px; box-shadow: var(--shadow-lift); }
+.settings__bar { display: flex; gap: 8px; align-items: center; position: sticky; bottom: var(--foot-h); background: var(--stock-bar); border: 1px solid var(--rule); padding: 8px; box-shadow: var(--shadow-lift); }
 @media (max-width: 560px) { .svc label { grid-template-columns: 1fr; gap: 3px; } }
 .session { width: 100%; text-align: left; padding: 5px 6px; font-size: 12.5px; color: var(--ink-2); border-left: 2px solid transparent; }
 .session small { display: block; font-family: var(--font-mono); font-size: 10px; color: var(--ink-3); }
@@ -701,6 +723,7 @@ html.is-touch .mp canvas, html.is-touch .gr canvas { height: min(52vh, 520px); }
   padding-bottom: env(safe-area-inset-bottom);
 }
 .foot__bar { display: flex; align-items: center; gap: 12px; padding: 6px 20px; min-height: 33px; }
+.say:empty { display: none; }
 .mode { display: flex; align-items: center; gap: 9px; font-family: var(--font-mono); font-size: 10.5px; letter-spacing: .12em; }
 .mode__tag { padding: 3px 8px; background: var(--ink); color: var(--stock); }
 .mode__tag.is-insert { background: var(--hot); color: var(--on-ink); }
@@ -726,7 +749,7 @@ html.is-touch .mp canvas, html.is-touch .gr canvas { height: min(52vh, 520px); }
 
 /* Which-key: after a prefix key, what can follow. Vim users know the keys; this shows them to everyone else. */
 .whichkey {
-  position: fixed; left: 20px; bottom: calc(44px + env(safe-area-inset-bottom)); z-index: 70;
+  position: fixed; left: 20px; bottom: calc(var(--foot-h) + 8px); z-index: 70;
   background: var(--stock-card); border: 1px solid var(--rule); box-shadow: var(--shadow-lift);
   padding: 10px 12px; display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; align-items: baseline;
   font-size: 12.5px; color: var(--ink-2); min-width: 230px;
@@ -736,10 +759,72 @@ html.is-touch .mp canvas, html.is-touch .gr canvas { height: min(52vh, 520px); }
 .mode-btn .hint { font-size: 9.5px; letter-spacing: .02em; opacity: .55; margin-left: 5px; text-transform: none; }
 .mode-btn[aria-pressed="true"] .hint { opacity: .8; }
 
+/* The scrim is what you tap to put the reader sheet or the lenses drawer away again. */
+.scrim { position: fixed; inset: 0; z-index: 50; background: color-mix(in srgb, var(--ink) 38%, transparent); }
+.scrim.is-reader { z-index: 58; }
+.drawer-btn { display: none; }
+.phone-modes { display: none; gap: 4px; }
+
+/* NORMAL / SEARCH is a vim thing: on a touch screen there are no modes, but say() still has news. */
+@media (pointer: coarse) {
+  .mode { display: none; }
+}
+
 /* ─────────────────────────────────────────────────────────────
-   Tablet: lenses become a strip, the reader a drawer
+   Narrow (the Fold unfolded, tablets): two columns, the reader
+   an overlay sheet, the modes on the bottom bar
    ───────────────────────────────────────────────────────────── */
 @media (max-width: 1099px) {
+  :root { --lens-w: 240px; }
+  .shell, .shell.no-reader { grid-template-columns: var(--lens-w) minmax(0, 1fr); grid-template-areas: "lenses results"; }
+  .reader {
+    position: fixed; z-index: 60; top: 0; right: 0; bottom: 0;
+    width: min(560px, 92vw); max-height: none;
+    box-shadow: var(--shadow-lift);
+    padding-top: env(safe-area-inset-top);
+  }
+  /* The sheet's header is the way out: back on the left, everything else behind ⋯ on the right. */
+  .mobile-close { display: inline-block; }
+  .reader__end { display: inline-block; margin-top: 6px; }
+  .reader__bar { padding: 6px 8px 6px 6px; }
+  .reader__back { padding: 9px 12px; }
+  .ractions__more { display: inline-block; padding: 9px 12px; }
+  .ractions__pop {
+    position: absolute; right: 0; top: calc(100% + 6px); z-index: 3;
+    display: none; flex-direction: column; align-items: stretch; gap: 0;
+    background: var(--stock-card); border: 1px solid var(--rule); box-shadow: var(--shadow-lift);
+  }
+  .ractions.is-open .ractions__pop { display: flex; }
+  .ractions__pop .btn { border: 0; border-bottom: 1px solid var(--rule-soft); padding: 11px 16px; text-align: left; }
+  .ractions__pop .btn:last-child { border-bottom: 0; }
+  /* The bottom bar carries the modes, so the top row keeps only what it does not: settings, theme, keys. */
+  .modes .mode-btn:not([data-mode="settings"]) { display: none; }
+  .modes .btn .hint { display: none; }
+  .wide-only { display: none; }
+  .narrow-only { display: inline; }
+  .phone-modes { display: flex; }
+  .foot__bar { flex-wrap: wrap; gap: 4px 10px; padding: 5px 12px; }
+  .say { flex: 1 1 100%; white-space: normal; }
+  .phone-modes { flex: 1 1 100%; }
+  .phone-modes .btn { flex: 1 1 0; text-align: center; padding: 9px 4px; }
+  .reopen-btn:not([hidden]) { display: inline-block; }
+  .timing { display: none; }   /* how long the search took is a desk nicety; the bar has no room for it */
+  /* In Ask the composer is the bottom of the page: nothing between it and the mode bar. */
+  .results.is-ask { padding-bottom: 0; }
+  .ask { min-height: calc(100dvh - var(--top-h) - var(--foot-h) - 14px); }
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Phone (the Fold folded): one column, lenses a strip or a
+   drawer, the reader a full-width sheet
+   ───────────────────────────────────────────────────────────── */
+@media (max-width: 699px) {
+  .bar { gap: 8px; padding: 8px 10px; }
+  .brand { gap: 0; }
+  .scopes { max-width: 40%; }
+  .omni__n { display: none; }   /* the results head already counts them; the box needs the room */
+  .modes { gap: 4px; }
+  .modes .btn { padding: 8px 9px; }
   .shell, .shell.no-reader { grid-template-columns: minmax(0, 1fr); grid-template-areas: "lenses" "results"; }
   .lenses {
     position: relative; top: 0; max-height: none;
@@ -750,45 +835,42 @@ html.is-touch .mp canvas, html.is-touch .gr canvas { height: min(52vh, 520px); }
   .lens-group { padding: 0; flex: none; width: 220px; }
   .lens-group + .lens-group { margin-top: 0; }
   .lens-group .lens:nth-child(n+8) { display: none; }
-  .reader {
-    position: fixed; z-index: 60; top: 0; right: 0; bottom: 0;
-    width: min(560px, 92vw); max-height: none;
+  /* Ask's conversations and the wiki's page tree are navigation, not a summary: a strip cannot hold
+     them, so they slide in over the page and a button in the view opens them. */
+  .shell.has-drawer > .lenses {
+    position: fixed; z-index: 55; top: 0; left: 0; bottom: 0;
+    width: min(300px, 86vw); max-height: none;
+    display: block; overflow-x: hidden; overflow-y: auto;
+    border-right: 1px solid var(--rule); border-bottom: 0;
     box-shadow: var(--shadow-lift);
-    padding-top: env(safe-area-inset-top);
+    padding: calc(env(safe-area-inset-top) + 12px) 0 20px;
+    transform: translateX(-100%); visibility: hidden;
+    transition: transform .16s ease, visibility .16s;
   }
-  .mobile-close { display: inline-block; }
-  .modes .btn span { display: none; }
-}
-
-/* ─────────────────────────────────────────────────────────────
-   Phone: one column, reader as a sheet, modes at the bottom
-   ───────────────────────────────────────────────────────────── */
-@media (max-width: 699px) {
-  .bar { flex-wrap: wrap; gap: 8px; padding: 9px 12px; }
-  .brand__sub { display: none; }
-  .omni { order: 3; flex-basis: 100%; }
-  .scopes { max-width: 45%; }
-  .modes { margin-left: auto; }
-  .modes .mode-btn { display: none; }
+  .shell.has-drawer.is-open > .lenses { transform: none; visibility: visible; }
+  .shell.has-drawer .lens-group { width: auto; padding: 0 12px; }
+  .drawer-btn { display: inline-block; }
+  .wiki .drawer-btn { margin-right: 8px; }
   .results { padding: 10px 10px 30px; }
   .hit { grid-template-columns: 72px minmax(0, 1fr); gap: 10px; padding: 8px; }
   .thumb { width: 72px; height: 72px; }
   .hit__title { font-size: 15px; }
   .reader { width: 100vw; }
-  .foot__bar { padding: 6px 12px; }
-  .timing, .mode { display: none; }
-  .phone-modes { display: flex !important; }
+  .composer { padding: 7px; }
+  .composer textarea { flex: 1 1 100%; }
+  .ask { min-height: calc(100dvh - var(--top-h) - var(--foot-h) - 10px); }   /* the column's own top padding */
+  .wiki__title { font-size: 25px; }
+  .wiki__body { font-size: 16px; }
 }
-.phone-modes { display: none; gap: 4px; }
 </style>
 
 <div id="app">
   <div class="topbar" id="topbar">
     <header class="bar">
       <div class="brand">
-        <span class="brand__mark" aria-hidden="true"></span>
-        <a class="brand__title" href="#/search" title="Home">Redpill</a>
-        <span class="brand__sub mono tnum" id="brandSub"></span>
+        <span class="brand__mark wide-only" aria-hidden="true"></span>
+        <a class="brand__title" href="#/search" id="brandLink" aria-label="Home" title="Home — tap for what is in the archive"><span class="wide-only">Redpill</span><span class="narrow-only brand__pill" aria-hidden="true">💊</span></a>
+        <span class="brand__sub mono tnum wide-only" id="brandSub"></span>
       </div>
       <label class="omni" for="q">
         <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true">
@@ -806,7 +888,7 @@ html.is-touch .mp canvas, html.is-touch .gr canvas { height: min(52vh, 520px); }
         <button class="btn mode-btn" data-mode="graph" title="Graph (g r)">Graph<span class="hint">gr</span></button>
         <button class="btn mode-btn" data-mode="map" title="Map (g m)">Map<span class="hint">gm</span></button>
         <button class="btn mode-btn" data-mode="ask" title="Ask (g a, or a to ask within the current scopes)">Ask<span class="hint">ga</span></button>
-        <button class="btn mode-btn" data-mode="settings" title="Settings: the model servers this uses (g ,)">Settings<span class="hint">g,</span></button>
+        <button class="btn mode-btn" data-mode="settings" aria-label="Settings" title="Settings: the model servers this uses (g ,)"><span class="wide-only">Settings</span><span class="narrow-only" aria-hidden="true">⚙</span><span class="hint">g,</span></button>
         <button class="btn" id="themeBtn" title="Theme">◐</button>
         <button class="btn" id="helpBtn" aria-expanded="false" aria-controls="panel" title="Keys (?)">?</button>
       </nav>
@@ -825,6 +907,7 @@ html.is-touch .mp canvas, html.is-touch .gr canvas { height: min(52vh, 520px); }
           <div class="composer__ctx" id="askCtx" hidden></div>
           <textarea id="askInput" rows="2" placeholder="Ask about the archive…  (Enter sends, Shift-Enter new line, Esc leaves)" aria-label="Question"></textarea>
           <div class="composer__side">
+            <button class="btn drawer-btn" type="button" data-drawer title="The conversations so far">Chats</button>
             <button class="btn" type="submit" id="askSend">Ask</button>
             <button class="btn" type="button" id="askMode" title="m: informed uses general knowledge too; archive answers only from the archive">informed</button>
             <button class="btn" type="button" id="askReach" title="E: sample reads what fits the context at this depth; read all reads every candidate item in batches (minutes)">sample</button>
@@ -845,18 +928,20 @@ html.is-touch .mp canvas, html.is-touch .gr canvas { height: min(52vh, 520px); }
       </div>
       <div id="wiki" class="wiki" hidden></div>
       <div id="settings" class="settings" hidden></div>
-      <div class="results__head"><span class="label" id="resultsLabel"></span><span class="review" id="review" hidden></span><span><button class="sort-btn" id="sortBtn" title="Change sort (S)">sort <b id="sortName">relevance</b></button> <span class="label tnum" id="resultsCount"></span></span></div>
+      <div class="results__head"><span class="label" id="resultsLabel"></span><span class="review" id="review" hidden></span><button class="btn reopen-btn" id="reopenBtn" hidden title="Open the last item you read again">↩ reopen</button><span><button class="sort-btn" id="sortBtn" title="Change sort (S)">sort <b id="sortName">relevance</b></button> <span class="label tnum" id="resultsCount"></span></span></div>
       <div class="list" id="list"></div>
       <button class="btn more-btn" id="moreBtn" hidden>Load more</button>
     </section>
     <aside class="col reader" id="reader" aria-label="Reader" hidden></aside>
   </main>
+  <div class="scrim" id="scrim" hidden></div>
 
   <footer class="foot">
     <div class="panel" id="panel" hidden>
       <p class="lede">Everything is reachable from the keyboard. Type to search; results stream in as you type and the
         lenses on the left show who, what, where and when the results are about. Narrow with <kbd>&gt;</kbd>
-        and step back out with <kbd>&lt;</kbd> — the chips in the search box are the path you took.</p>
+        and step back out with <kbd>&lt;</kbd> — the chips in the search box are the path you took.
+        <br><span class="mono tnum" id="panelCounts"></span></p>
       <div>
         <h3>Moving</h3>
         <div class="keys">
@@ -913,6 +998,16 @@ html.is-touch .mp canvas, html.is-touch .gr canvas { height: min(52vh, 520px); }
           <kbd>g c</kbd><span>Caption review: images captioned with the current prompt, newest first, updating live while an extraction runs. <kbd>R</kbd> refreshes by hand.</span>
           <kbd>g w</kbd><span>Wiki: pages compiled from the archive, overview › themes › topics › events, and people and places. On the left, each page is marked written (green), stale (half orange) or not yet (hollow), themes and topics show how many pages below them are written, and <kbd>W</kbd> shows all pages, only written or only unwritten ones (with their parents); <kbd>j k</kbd> walk the page tree and <kbd>Enter</kbd> opens a page; in the page, <kbd>j k</kbd> walk its links, citations, child pages and items, and <kbd>Enter</kbd> follows one (a citation opens the item in the reader). <kbd>&gt;</kbd> narrows search to the page's items. The line under the title says how many of the page's items its writer read and whether newer captions have made it stale.</span>
           <kbd>?</kbd><span>This panel</span>
+        </div>
+      </div>
+      <div>
+        <h3>On a phone</h3>
+        <div class="keys">
+          <kbd>💊</kbd><span>The brand is the way home; tapping it says what is in the archive, since the counts no longer sit next to the search box.</span>
+          <kbd>⚙ ◐ ?</kbd><span>Settings, theme and this panel stay in the top row. The modes live on the bar at the bottom, where the thumb is.</span>
+          <kbd>←</kbd><span>An item opens as a sheet over the results: <b>Back</b> at the top left closes it (so does <kbd>Esc</kbd>, the shade beside it, and the button at the end of the item), and <b>⋯</b> holds recaption, discuss and cite.</span>
+          <kbd>↩</kbd><span><b>reopen</b> above the results opens the last item you read again; its card keeps a faint blue mark until then.</span>
+          <kbd>☰</kbd><span><b>Chats</b> in Ask and <b>Pages</b> in the wiki slide that column in from the left; picking a row or tapping the shade puts it away.</span>
         </div>
       </div>
     </div>
@@ -978,6 +1073,12 @@ function store(key, value) {
   try { if (value === undefined) return JSON.parse(localStorage.getItem("rp." + key)); localStorage.setItem("rp." + key, JSON.stringify(value)); }
   catch { return null; }
 }
+/* The hints about "/" and Shift-Enter are for keyboards; on a phone the boxes just need their names. */
+const narrowQ = matchMedia("(max-width: 699px)");
+function setPlaceholders() {
+  $("#q").placeholder = narrowQ.matches ? "search the archive…" : "search the archive…  (/ to focus)";
+  if (S.ask.kind !== "argue") renderComposer();   // the argue prompts are about the debate, not the keys
+}
 let sayTimer = 0;
 function say(msg, sticky = false) {
   const el = $("#say");
@@ -1001,6 +1102,8 @@ const S = {
   cursor: { lenses: 0, results: 0, reader: 0 },
   onChart: true,       // in the timeline, graph and map: the results cursor is on the chart, not the list
   open: null,         // media id in the reader
+  lastOpen: null,      // the last one read, for the reopen button after the sheet is closed
+  counts: "",          // "16,720 items · …", shown in the key panel and on a tap of the brand
   item: null,          // /api/item payload for the reader
   openHit: null,       // the hit that opened it (for start_s)
   veil: store("veil") ?? 0.6,
@@ -1368,8 +1471,9 @@ function cardHtml(card, i) {
   const snippet = hit ? `<div class="hit__snip">${markSnippet(hit.snippet)}</div>` :
     card.summary ? `<div class="hit__snip">${escapeHtml(card.summary)}</div>` : "";
   const sens = card.sensitivity != null ? `<span title="sensitivity">${card.sensitivity.toFixed(1)}</span>` : "";
-  const open = card.media_id === S.open || card.post?.members.some((m) => m.media_id === S.open);
-  return `<article class="hit k-${escapeHtml(card.kind)}${open ? " is-open" : ""}" data-i="${i}" data-id="${card.media_id}">` +
+  const holds = (id) => id != null && (card.media_id === id || card.post?.members.some((m) => m.media_id === id));
+  const state = holds(S.open) ? " is-open" : holds(S.lastOpen) ? " is-last" : "";
+  return `<article class="hit k-${escapeHtml(card.kind)}${state}" data-i="${i}" data-id="${card.media_id}">` +
     thumbHtml(card) +
     `<div class="hit__body"><div class="hit__title">${escapeHtml(card.title)}</div>${snippet}${stripHtml(card)}` +
     `<div class="meta"><span>${escapeHtml(card.kind.toUpperCase())}</span>${dateHtml(card)}<span>${escapeHtml(card.folder === "." ? "/" : card.folder + "/")}</span>${sens}${badges(card)}</div>` +
@@ -1490,16 +1594,23 @@ function currentCard() {
 async function openItem(mediaId, hit = null) {
   if (mediaId == null) return;
   S.open = mediaId;
+  S.lastOpen = mediaId;
   S.openHit = hit || S.hits.find((h) => h.media_id === mediaId)?.hit || null;
   S.cursor.reader = 0;
   writeHash(true);
   $("#shell").classList.remove("no-reader");
+  closeDrawer();
   const el = $("#reader");
   el.hidden = false;
+  paintSheets();
   el.innerHTML = `<div class="reader__bar"><span class="label">Loading…</span></div>`;
   // toggle() flips the class when its second argument is undefined, so the test must be a real boolean.
-  $$(".hit").forEach((h) => h.classList.toggle("is-open", Number(h.dataset.id) === mediaId ||
-    !!S.hits[Number(h.dataset.i)]?.post?.members.some((m) => m.media_id === mediaId)));
+  $$(".hit").forEach((h) => {
+    const holds = Number(h.dataset.id) === mediaId ||
+      !!S.hits[Number(h.dataset.i)]?.post?.members.some((m) => m.media_id === mediaId);
+    h.classList.toggle("is-open", holds);
+    h.classList.remove("is-last");
+  });
   const resp = await fetch(`/api/item/${mediaId}`);
   if (S.open !== mediaId) return;
   if (!resp.ok) { el.innerHTML = `<div class="reader__bar"><span class="label">Not found</span></div>`; return; }
@@ -1512,9 +1623,30 @@ function closeReader() {
   S.open = null; S.item = null;
   $("#reader").hidden = true;
   $("#shell").classList.add("no-reader");
-  $$(".hit.is-open").forEach((h) => h.classList.remove("is-open"));
+  // The card you were reading keeps a fainter mark, so tapping it (or "reopen") gets you back.
+  $$(".hit.is-open").forEach((h) => { h.classList.remove("is-open"); h.classList.add("is-last"); });
   if (S.focus === "reader") setFocus("results");
   writeHash(true);
+  paintSheets();
+  return true;
+}
+/* The reader sheet and the lenses drawer both sit over the page on a narrow screen: one scrim behind
+   whichever is up, and the reopen button only where there is a last item to go back to. */
+function paintSheets() {
+  const reader = S.open != null;
+  const drawer = $("#shell").classList.contains("is-open");
+  const scrim = $("#scrim");
+  scrim.hidden = !(drawer || (reader && innerWidth <= 1099));
+  scrim.classList.toggle("is-reader", !drawer);
+  $("#reopenBtn").hidden = reader || S.lastOpen == null;
+}
+function openDrawer(show = true) {
+  $("#shell").classList.toggle("is-open", show);
+  paintSheets();
+}
+function closeDrawer() {
+  if (!$("#shell").classList.contains("is-open")) return false;
+  openDrawer(false);
   return true;
 }
 
@@ -1563,10 +1695,13 @@ function renderReader() {
     `<button data-r data-open="${c.media_id}">${thumbHtml(c)}<span class="t">${escapeHtml(c.title)}</span></button>`).join("")}</div>` : "";
 
   el.innerHTML =
-    `<div class="reader__bar"><span class="label">${escapeHtml(d.kind)} · #${d.media_id}</span>` +
-    `<span>${d.kind === "image" ? `<button class="btn" data-recaption title="Tell the vision model what this image is and have it read the image again (C)">Recaption</button> ` : ""}` +
+    `<div class="reader__bar">` +
+    `<button class="btn mobile-close reader__back" data-close title="Back to the results (Esc)">← Back</button>` +
+    `<span class="label reader__what">${escapeHtml(d.kind)} · #${d.media_id}</span>` +
+    `<span class="ractions"><button class="btn ractions__more" data-acts aria-expanded="false" aria-label="More actions">⋯</button>` +
+    `<span class="ractions__pop">${d.kind === "image" ? `<button class="btn" data-recaption title="Tell the vision model what this image is and have it read the image again (C)">Recaption</button> ` : ""}` +
     `<button class="btn" data-discuss title="Discuss this item in Ask, with its full record attached (D)">Discuss</button> ` +
-    `<button class="btn" data-copy title="Copy citation (yy)">Cite</button> <button class="btn mobile-close" data-close>Close</button></span></div>` +
+    `<button class="btn" data-copy title="Copy citation (yy)">Cite</button></span></span></div>` +
     `<div class="reader__body">` +
     galleryHtml(d) +
     `<div class="preview">${preview}</div>` +
@@ -1594,6 +1729,8 @@ function renderReader() {
       `<button class="chip" data-r data-page="${escapeHtml(pg.slug)}" title="${escapeHtml(pg.summary || "")}${pg.written ? "" : " (not written yet)"}"><b>${escapeHtml(pg.kind)}</b>${escapeHtml(pg.title)}${pg.cited ? " ·" : ""}</button>`).join("")}</div>` : "") +
     section("Similar", similar) +
     section("Paths", `<ul class="paths">${d.paths.map((p) => `<li>${escapeHtml(p.rel_path)}${p.readable ? "" : " (unreadable)"}</li>`).join("")}</ul>`) +
+    // At the end of a long item the thumb is nowhere near the header, so the way back is here too.
+    `<button class="btn reader__end" data-close>← Back to results</button>` +
     `</div>`;
   highlightReader();
   // In a post, the reader cursor starts on the photo or video being shown.
@@ -2262,7 +2399,8 @@ function renderComposer() {
   const busy = askBusy();
   $("#askSend").textContent = busy ? "Stop" : !argue ? "Ask" : !started ? "Argue" : role ? "Reply" : "Next round";
   $("#askSend").title = busy ? "Stop this answer" : "Send (Enter)";
-  $("#askInput").placeholder = !argue ? "Ask about the archive…  (Enter sends, Shift-Enter new line, Esc leaves)"
+  // The key hints only help where there are keys; narrow, the box is already small.
+  $("#askInput").placeholder = !argue ? (narrowQ.matches ? "Ask about the archive…" : "Ask about the archive…  (Enter sends, Shift-Enter new line, Esc leaves)")
     : !started ? (role === "steelman" ? "The claim, then your opening case for it…" : "A claim to debate, e.g. “Canada's missiles were used inside Russia”…")
     : role ? `Your turn as the ${role}…` : "Optional note to both sides as moderator; Enter runs the next round…";
 }
@@ -2605,7 +2743,8 @@ function renderWikiPage() {
     : `<p class="wiki__empty">${pg.summary ? `${escapeHtml(pg.summary)}<br><br>` : ""}This page has not been written yet; <code>scripts/wiki_build.sh</code> writes it${pg.kind === "topic" ? " after its events" : ""}.</p>`;
   $("#wiki").innerHTML =
     (crumbs ? `<div class="wiki__crumbs">${crumbs}</div>` : "") +
-    `<div><span class="label">${escapeHtml(WIKI_KINDS[pg.kind] || pg.kind)}${pg.date_start ? ` · ${escapeHtml(pg.date_start)}${pg.date_end && pg.date_end !== pg.date_start ? ` – ${escapeHtml(pg.date_end)}` : ""}` : ""}</span>` +
+    `<div><button class="btn drawer-btn" data-drawer title="The page tree">☰ Pages</button>` +
+    `<span class="label">${escapeHtml(WIKI_KINDS[pg.kind] || pg.kind)}${pg.date_start ? ` · ${escapeHtml(pg.date_start)}${pg.date_end && pg.date_end !== pg.date_start ? ` – ${escapeHtml(pg.date_end)}` : ""}` : ""}</span>` +
     `<div class="wiki__title">${escapeHtml(pg.title)}</div></div>` +
     wikiCoverage(pg) + body + kids +
     (pg.backlinks.length ? section("Linked from", `<div class="wlinks">${linkList(pg.backlinks)}</div>`) : "") +
@@ -3870,6 +4009,13 @@ function renderModes() {
   $(".results__head").hidden = asking || setting || reading;
   $("#list").hidden = asking || setting || reading;
   if (asking || setting || reading) $("#moreBtn").hidden = true;
+  $("#lenses").hidden = setting;   // settings has no lenses; an empty strip is just a bar of nothing
+  $("#results").classList.toggle("is-ask", asking);   // the composer is the bottom of the page there
+  // Ask's conversations and the wiki's page tree are navigation, not a summary of the results:
+  // on a phone they slide in over the page instead of squeezing into the lens strip.
+  $("#shell").classList.toggle("has-drawer", asking || reading);
+  closeDrawer();
+  paintSheets();
 }
 
 /* ── Actions ──────────────────────────────────────────────── */
@@ -4176,6 +4322,7 @@ function onKey(e) {
     e.preventDefault();
     if (!$("#panel").hidden) return toggleHelp(false);
     if (S.count || S.pending) return clearPending();
+    if (closeDrawer()) return;
     if (S.tl.mark != null) { S.tl.mark = null; drawTimeline(); if (S.tl.picked) tlListMonth(); return; }
     if (closeReader()) return;
     if (S.mode === "timeline" && S.tl.picked) return tlDeselect();
@@ -4359,6 +4506,7 @@ $("#lenses").addEventListener("click", (e) => {
   if (!row) return;
   S.cursor.lenses = rowsOf("lenses").indexOf(row);
   setFocus("lenses");
+  closeDrawer();   // picked a page: the drawer has done its job
   activateWikiRow(row);
 });
 $("#wiki").addEventListener("click", (e) => {
@@ -4382,6 +4530,17 @@ $("#list").addEventListener("click", (e) => {
   openCard(card);
 });
 $("#reader").addEventListener("click", (e) => {
+  const acts = e.target.closest("[data-acts]");
+  const menu = $("#reader .ractions");
+  if (acts) {
+    const open = menu.classList.toggle("is-open");
+    acts.setAttribute("aria-expanded", String(open));
+    return;
+  }
+  if (menu) {   // any other tap puts the ⋯ menu away
+    menu.classList.remove("is-open");
+    $("[data-acts]", menu)?.setAttribute("aria-expanded", "false");
+  }
   if (e.target.closest("[data-close]")) return closeReader();
   if (e.target.closest("[data-copy]")) { S.focus = "reader"; return copyCitation(); }
   if (e.target.closest("[data-discuss]")) return discussItem(S.item);
@@ -4520,7 +4679,7 @@ $("#lenses").addEventListener("click", (e) => {
   const del = e.target.closest("[data-del]");
   if (del) { e.stopPropagation(); return deleteSession(del.dataset.del); }
   const row = e.target.closest(".session");
-  if (row) loadSession(row.dataset.session);
+  if (row) { closeDrawer(); loadSession(row.dataset.session); }
 });
 $("#askDepth").addEventListener("input", (e) => { S.ask.depth = Number(e.target.value); store("askDepth", S.ask.depth); fetchPlan(); });
 for (const id of ["#askFrom", "#askTo"]) $(id).addEventListener("change", applyPeriod);
@@ -4568,6 +4727,14 @@ $("#settings").addEventListener("change", (e) => {
 $("#sortBtn").addEventListener("click", cycleSort);
 $$("[data-mode]").forEach((b) => b.addEventListener("click", () => setMode(b.dataset.mode)));
 $("#helpBtn").addEventListener("click", () => toggleHelp());
+$("#reopenBtn").addEventListener("click", () => { if (S.lastOpen != null) openItem(S.lastOpen); });
+// One toggle for both drawers: Ask's conversations and the wiki's page tree are the same column.
+document.addEventListener("click", (e) => {
+  if (e.target.closest("[data-drawer]")) openDrawer(!$("#shell").classList.contains("is-open"));
+});
+$("#scrim").addEventListener("click", () => { if (!closeDrawer()) closeReader(); });
+// The counts used to crowd the search box; now they are a tap on the pill (and live in the key panel).
+$("#brandLink").addEventListener("click", () => { if (S.counts) say(S.counts); });
 $("#themeBtn").addEventListener("click", () => {
   const cur = document.documentElement.dataset.theme ||
     (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
@@ -4582,6 +4749,14 @@ window.addEventListener("popstate", fromHash);
 new ResizeObserver(() => {
   document.documentElement.style.setProperty("--top-h", $("#topbar").offsetHeight + "px");
 }).observe($("#topbar"));
+// The mode line's own height, not the footer's: the key panel opens inside the footer and must not
+// push the sticky composer up with it.
+new ResizeObserver(() => {
+  document.documentElement.style.setProperty("--foot-bar-h", $(".foot__bar").offsetHeight + "px");
+}).observe($(".foot__bar"));
+window.addEventListener("resize", paintSheets);   // the sheet is only an overlay while the window is narrow
+narrowQ.addEventListener("change", setPlaceholders);
+setPlaceholders();
 
 function fromHash() {
   const h = readHash();
@@ -4617,7 +4792,9 @@ function fromHash() {
     const st = await (await fetch("/api/status")).json();
     const total = st.media.filter((r) => ["image", "video", "pdf"].includes(r.kind)).reduce((a, r) => a + r.n, 0);
     const caps = (st.docs.find((d) => d.kind === "caption") || {}).n || 0;
-    $("#brandSub").textContent = `${fmtN(total)} items · ${fmtN(caps)} read by the vision model`;
+    S.counts = `${fmtN(total)} items · ${fmtN(caps)} read by the vision model`;
+    $("#brandSub").textContent = S.counts;
+    $("#panelCounts").textContent = S.counts;
   } catch { /* the status line is a nicety */ }
 })();
 </script>
