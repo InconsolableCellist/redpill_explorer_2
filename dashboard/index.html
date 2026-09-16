@@ -684,9 +684,9 @@ html.is-touch .mp canvas, html.is-touch .gr canvas { height: min(52vh, 520px); }
 .viewer {
   position: fixed; inset: 0; z-index: 90;
   display: flex; flex-direction: column;
-  /* The deepest stock, nearly opaque: a sheet laid over the page, in either theme, with the archive
-     just showing through at the edges. Ink itself would go pale in the dark theme. */
-  background: color-mix(in srgb, var(--stock-well) 97%, transparent);
+  /* The deepest stock, opaque: page text showing through made a photo hard to read on a phone.
+     Ink itself would go pale in the dark theme. */
+  background: var(--stock-well);
   padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom);
 }
 .viewer__bar, .viewer__foot {
@@ -705,9 +705,9 @@ html.is-touch .mp canvas, html.is-touch .gr canvas { height: min(52vh, 520px); }
   cursor: grab;
 }
 .viewer__stage img {
-  max-width: 100%; max-height: 100%;
+  /* Fill the stage, keeping the aspect: max-width alone left a small screenshot a stamp in the middle. */
+  width: 100%; height: 100%; object-fit: contain;
   display: block; transform-origin: center center;
-  box-shadow: 0 0 0 1px var(--rule);   /* a photo on pale stock needs an edge */
   user-select: none; -webkit-user-drag: none;
 }
 /* Veiled here as everywhere else, only heavier: a full-size photo needs more blur than a thumbnail. */
