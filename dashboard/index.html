@@ -660,7 +660,7 @@ mark { background: var(--hot-w); color: var(--ink); padding: 0 1px; }
 .chart-tools { display: none; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
 /* Where they are shown the charts give up a little height, so the tools are on screen with the chart
    rather than a scroll below it. */
-@media (hover: none) {
+@media (hover: none) and (pointer: coarse) {
   .chart-tools { display: flex; }
   .mp canvas { height: min(52vh, 520px); }
   .gr canvas { height: min(52vh, 520px); }
@@ -686,7 +686,7 @@ html.is-touch .mp canvas, html.is-touch .gr canvas { height: min(52vh, 520px); }
   display: flex; flex-direction: column;
   /* The deepest stock, nearly opaque: a sheet laid over the page, in either theme, with the archive
      just showing through at the edges. Ink itself would go pale in the dark theme. */
-  background: color-mix(in srgb, var(--stock-well) 94%, transparent);
+  background: color-mix(in srgb, var(--stock-well) 97%, transparent);
   padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom);
 }
 .viewer__bar, .viewer__foot {
@@ -707,6 +707,7 @@ html.is-touch .mp canvas, html.is-touch .gr canvas { height: min(52vh, 520px); }
 .viewer__stage img {
   max-width: 100%; max-height: 100%;
   display: block; transform-origin: center center;
+  box-shadow: 0 0 0 1px var(--rule);   /* a photo on pale stock needs an edge */
   user-select: none; -webkit-user-drag: none;
 }
 /* Veiled here as everywhere else, only heavier: a full-size photo needs more blur than a thumbnail. */
@@ -4194,8 +4195,8 @@ function vwPaint() {
   $("#vwTitle").textContent = it.title;
   $("#vwRaw").href = it.src;
   $("#vwHint").textContent = veil ? "Veiled — tap the photo to reveal it (x)" :
-    n > 1 ? "swipe or ‹ › for the next · pinch or double-tap zooms · Esc closes" :
-            "pinch or double-tap zooms · drag pans · Esc, or a tap beside the photo, closes";
+    n > 1 ? "swipe, ‹ ›, ← → or , . for the next · pinch, scroll or a double tap zooms · Esc closes" :
+            "pinch, scroll or a double tap zooms · drag pans · Esc, or a tap beside the photo, closes";
   vwPaintTransform();
 }
 function vwReveal() {
@@ -4240,7 +4241,6 @@ function vwKey(e) {
   if (k === "0") return hit(vwFit);
   if (k === "x") return hit(vwReveal);
   if (k === "O" || k === "Enter" || k === "o") return hit(() => window.open($("#vwRaw").href, "_blank", "noopener"));
-  if (k === "?") return hit(() => toggleHelp());
 }
 
 /* ── Caption review ───────────────────────────────────────── */
