@@ -292,6 +292,13 @@ kbd {
 .lens.is-cursor { border-left-color: var(--hot); color: var(--ink); background: var(--stock-card); }
 .lens.is-cursor .lens__bar { background: var(--hot); }
 .lens__lift { font-family: var(--font-mono); font-size: 10.5px; color: var(--blue); font-variant-numeric: tabular-nums; }
+.lens__or {
+  font-family: var(--font-mono); font-size: 9.5px; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--ink-3); border: 1px solid var(--rule); padding: 0 4px; margin-right: 6px; opacity: 0;
+}
+.lens:hover .lens__or, .lens.is-cursor .lens__or { opacity: 1; }
+.lens__or:hover { color: var(--on-ink); background: var(--blue); border-color: var(--blue); }
+@media (hover: none) and (pointer: coarse) { .lens__or { opacity: 1; } }
 .spark { display: flex; align-items: flex-end; gap: 1px; height: 34px; margin: 2px 6px 6px; }
 .spark span { flex: 1 1 0; min-width: 1px; background: color-mix(in srgb, var(--blue) 55%, transparent); }
 .lenses.is-stale, .results.is-stale .list { opacity: .55; transition: opacity .15s; }
@@ -962,6 +969,7 @@ html.is-touch .mp canvas, html.is-touch .gr canvas { height: min(52vh, 520px); }
           <kbd>/</kbd><span>Focus the search box</span>
           <kbd>Enter</kbd><span>In the box: keep the words as a scope and search within them</span>
           <kbd>Backspace</kbd><span>In an empty box: drop the last scope</span>
+          <kbd>|</kbd><span>On a tag, person or topic on the left (or its <b>or</b> button): add it to the group beside it, so results match <b>any</b> of them. <kbd>&gt;</kbd> keeps narrowing instead, so each step matches <b>all</b> of them. In the search box, <kbd>#vaccines|mrna|myocarditis</kbd> builds such a group in one go.</span>
           <kbd>&gt;</kbd><span>Narrow to what's under the cursor: an entity, tag, folder, year, a result's main entity — in the timeline, the month or marked range</span>
           <kbd>*</kbd><span>Narrow to the main entity of the item under the cursor</span>
           <kbd>&lt;</kbd><span>Drop the last scope</span>
@@ -1308,10 +1316,54 @@ function renderScopes(n) {
   $("#scopes").innerHTML = S.scopes.map((s, i) => {
     const [type, ...rest] = s.split(":");
     const label = S.labels[s] ?? rest.join(":");
-    return `${i ? '<span class="scope-sep">›</span>' : ""}<button class="chip scope-chip" data-i="${i}" title="Drop this scope">` +
+    const group = LIST_SCOPES.includes(type) && rest.join(":").includes(",");
+    return `${i ? '<span class="scope-sep">›</span>' : ""}<button class="chip scope-chip" data-i="${i}" title="${escapeHtml(group ? `Any of: ${label}. Click to drop the whole group.` : "Drop this scope")}">` +
       `${SCOPE_NAMES[type] ? `<b>${escapeHtml(SCOPE_NAMES[type])}</b>` : ""}${escapeHtml(label)}</button>`;
   }).join("");
   $("#omniN").textContent = n == null ? "" : `${fmtN(n)} in scope`;
+}
+const LIST_SCOPES = ["tag", "entity", "cluster"];   // these take "a,b,c": items matching any of them
+/* Add one tag, person or topic to the newest group of its kind ("#a or #b"), instead of narrowing again. */
+function orScope(scope, label) {
+  const kind = scope.split(":")[0], value = scope.split(":").slice(1).join(":");
+  if (!LIST_SCOPES.includes(kind)) return say("Only tags, people and topics can be grouped with or.");
+  const at = S.scopes.map((x, i) => [x, i]).filter(([x]) => x.startsWith(`${kind}:`)).pop();
+  if (!at) return pushScope(scope, label);
+  const [old, i] = at;
+  const values = old.slice(kind.length + 1).split(",");
+  if (values.includes(value)) return say(`${label || value} is already in that group.`);
+  const merged = `${kind}:${values.concat(value).join(",")}`;
+  // A placeholder until the server answers with the group's real names ("a or b or c").
+  const names = (S.labels[old] || old).split(" or ").concat(label || value);
+  S.labels[merged] = names.join(" or ");
+  S.scopes[i] = merged;
+  S.cursor.results = 0;
+  say(`Any of: ${names.join(", ")}. The chip's × drops the whole group.`);
+  navigate();
+}
+
+/* "#a|b|c": look each name up among tags and people and narrow to items matching any of them. */
+async function namedGroup(text) {
+  const names = text.replace(/^#/, "").split("|").map((w) => w.trim().replace(/^#/, "")).filter(Boolean);
+  if (!names.length) return;
+  const found = [], missing = [];
+  for (const name of names) {
+    const resp = await fetch(`/api/lookup?${new URLSearchParams({ q: name, limit: 12 })}`).catch(() => null);
+    const hits = resp?.ok ? (await resp.json()).results : [];
+    const exact = hits.find((r) => r.name.toLowerCase() === name.toLowerCase()) || hits[0];
+    if (exact) found.push(exact); else missing.push(name);
+  }
+  if (!found.length) return say(`No tag or person matches ${names.join(", ")}.`);
+  for (const kind of ["tag", "entity"]) {
+    const mine = found.filter((r) => r.scope.startsWith(`${kind}:`));
+    if (!mine.length) continue;
+    const scope = `${kind}:${mine.map((r) => r.scope.split(":")[1]).join(",")}`;
+    S.labels[scope] = mine.map((r) => r.name).join(" or ");
+    S.scopes.push(scope);
+  }
+  S.cursor.results = 0;
+  say(`Any of: ${found.map((r) => r.name).join(", ")}.` + (missing.length ? ` No match for ${missing.join(", ")}.` : ""));
+  navigate();
 }
 function pushScope(scope, label) {
   if (!scope || S.scopes.includes(scope)) return say("Already narrowed to that.");
@@ -1348,11 +1400,14 @@ function lensRow(scope, name, n, max, opts = {}) {
   const right = opts.related
     ? `<span class="lens__lift" title="relatedness ${opts.related.semantic ?? "—"} · together on ${opts.related.n_ab ?? 0} items">${opts.related.score.toFixed(2)}</span>`
     : opts.lift != null
-    ? `<span class="lens__lift" title="${fmtN(n)} results · ${opts.lift}× the archive rate">×${opts.lift >= 10 ? Math.round(opts.lift) : opts.lift.toFixed(1)}</span>`
+    ? `<span class="lens__lift" title="${fmtN(n)} of these results mention it — ${opts.lift}× as often as the whole archive">×${opts.lift >= 10 ? Math.round(opts.lift) : opts.lift.toFixed(1)}</span>`
     : `<span class="lens__n">${fmtN(n)}</span>`;
+  // Tags, people and topics can join the group beside them as "or"; everything else only narrows.
+  const or = LIST_SCOPES.includes(scope.split(":")[0]) && !opts.page
+    ? `<span class="lens__or" data-or="${escapeHtml(scope)}" data-label="${escapeHtml(name)}" role="button" tabindex="-1" title="Add to the group beside it: results matching any of them (|)">or</span>` : "";
   return `<button class="lens" data-scope="${escapeHtml(scope)}" data-label="${escapeHtml(name)}"${opts.page ? ` data-page="${escapeHtml(opts.page)}" title="Enter opens the page · > narrows to its items"` : ""} style="--w:${w.toFixed(3)}">` +
     `<span class="lens__name">${opts.glyph ? `<span class="lens__type">${escapeHtml(opts.glyph)}</span>` : ""}${escapeHtml(name)}</span>` +
-    `${right}<span class="lens__bar"></span></button>`;
+    `${or}${right}<span class="lens__bar"></span></button>`;
 }
 
 function renderLenses() {
@@ -1423,7 +1478,7 @@ function renderLenses() {
   }
   el.innerHTML = groups.map(([title, rows, extra]) =>
     `<div class="lens-group"><h3><span class="label">${escapeHtml(title)}</span>` +
-    `${title === "Correlated" ? '<span class="label" title="How much more often than in the whole archive">lift</span>' : ""}</h3>` +
+    `${title === "Correlated" ? '<span class="label" title="How much more often these results mention it than the whole archive does">vs usual</span>' : ""}</h3>` +
     `${extra || ""}${rows.join("")}</div>`).join("") ||
     `<div class="empty">No lenses for these results.</div>`;
   paintCursor("lenses");
@@ -4433,6 +4488,11 @@ function onKey(e) {
       if (card) openCard(card);
     });
     case ">": return done(() => S.mode === "wiki" && S.focus !== "reader" ? narrowToWikiPage() : narrowHere());
+    case "|": return done(() => {
+      const row = S.focus === "lenses" ? rowsOf("lenses")[S.cursor.lenses] : null;
+      if (row?.dataset.scope) return orScope(row.dataset.scope, row.dataset.label);
+      say("Move to a tag, person or topic on the left, then | adds it to the group beside it.");
+    });
     case "<": return done(() => popScope());
     case "*": return done(narrowToMainEntity);
     case "/": return done(() => { if (S.mode === "ask") $("#askInput").focus(); else { $("#q").focus(); $("#q").select(); } });
@@ -4465,7 +4525,9 @@ function omniKey(e) {
     const words = input.value.trim();
     if (words) {
       S.q = ""; input.value = "";
-      pushScope(`text:${words}`, words);
+      // "#vaccines|mrna" (or "vaccines|mrna") is a group: results matching any of those tags or people.
+      if (words.includes("|") || words.startsWith("#")) namedGroup(words);
+      else pushScope(`text:${words}`, words);
     }
     input.blur(); setFocus("results"); paintMode();
     return;
@@ -4495,6 +4557,8 @@ $("#scopes").addEventListener("click", (e) => {
   if (chip) { e.preventDefault(); popScope(Number(chip.dataset.i)); }
 });
 $("#lenses").addEventListener("click", (e) => {
+  const orBtn = e.target.closest("[data-or]");
+  if (orBtn) { e.stopPropagation(); return orScope(orBtn.dataset.or, orBtn.dataset.label); }
   const row = e.target.closest(".lens");
   if (!row) return;
   S.cursor.lenses = rowsOf("lenses").indexOf(row);
