@@ -424,6 +424,16 @@ mark { background: var(--hot-w); color: var(--ink); padding: 0 1px; }
 .frames { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 6px; }
 .frames button { position: relative; }
 .frames span { position: absolute; left: 2px; bottom: 2px; font-family: var(--font-mono); font-size: 9.5px; background: var(--ink); color: var(--stock); padding: 0 3px; }
+/* A corner handle on a thumbnail that already does something else: the gallery thumb still swaps the
+   reader's photo and the keyframe still seeks, while this opens the picture itself. */
+.zoomdot {
+  position: absolute; right: 0; bottom: 0; z-index: 1;
+  width: 24px; height: 24px; display: grid; place-items: center;
+  font-style: normal; font-size: 11px; line-height: 1;
+  background: var(--stock-card); color: var(--ink-2); border: 1px solid var(--rule);
+  cursor: zoom-in;
+}
+.zoomdot:hover { color: var(--hot); border-color: var(--hot); }
 .sim { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 8px; }
 .sim button { display: flex; flex-direction: column; gap: 4px; text-align: left; }
 .sim .thumb { width: 100%; height: 90px; }
@@ -623,12 +633,63 @@ mark { background: var(--hot-w); color: var(--ink); padding: 0 1px; }
 .preview-chip .preview-chip__x { color: var(--ink-3); padding: 0 4px; }
 .preview-chip .preview-chip__x:hover { color: var(--hot); text-decoration: none; }
 
+/* Chart tools: what a finger has instead of shift-click and shift-drag. Shown only where there is no
+   mouse to hover with, so the desktop keeps its uncluttered chart. */
+.chart-tools { display: none; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+/* Where they are shown the charts give up a little height, so the tools are on screen with the chart
+   rather than a scroll below it. */
+@media (hover: none) {
+  .chart-tools { display: flex; }
+  .mp canvas { height: min(52vh, 520px); }
+  .gr canvas { height: min(52vh, 520px); }
+}
+html.is-touch .chart-tools { display: flex; }
+html.is-touch .mp canvas, html.is-touch .gr canvas { height: min(52vh, 520px); }
+.chart-tools .btn { padding: 7px 12px; font-size: 11px; }
+.chart-tools .btn[aria-pressed="true"] { background: var(--hot); border-color: var(--hot); color: var(--on-ink); }
+
 /* ── Timeline ────────────────────────────────────────────── */
 .tl { background: var(--stock-card); border: 1px solid var(--rule-soft); box-shadow: var(--shadow); padding: 10px 12px 6px; margin-bottom: 12px; }
 .tl canvas { width: 100%; height: 190px; display: block; cursor: crosshair; touch-action: pan-y; }
 .tl__legend { display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: baseline; margin-top: 4px; }
 .tl__hint { flex: 1 1 100%; opacity: .7; font-size: 10px; }
 .sw { display: inline-block; width: 9px; height: 9px; margin-right: 5px; vertical-align: -1px; }
+
+/* ─────────────────────────────────────────────────────────────
+   Image viewer: a sheet over the page, so looking closely at a
+   photo never loses your place in the archive
+   ───────────────────────────────────────────────────────────── */
+.viewer {
+  position: fixed; inset: 0; z-index: 90;
+  display: flex; flex-direction: column;
+  /* The deepest stock, nearly opaque: a sheet laid over the page, in either theme, with the archive
+     just showing through at the edges. Ink itself would go pale in the dark theme. */
+  background: color-mix(in srgb, var(--stock-well) 94%, transparent);
+  padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom);
+}
+.viewer__bar, .viewer__foot {
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 10px;
+  background: var(--stock-bar); border-bottom: 1px solid var(--rule);
+}
+.viewer__foot { border-bottom: 0; border-top: 1px solid var(--rule); }
+.viewer__bar .btn, .viewer__foot .btn { padding: 8px 13px; }
+.viewer__title { font-family: var(--font-mono); font-size: 10.5px; color: var(--ink-2); flex: 1 1 0; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.viewer__hint { font-family: var(--font-mono); font-size: 10.5px; color: var(--ink-3); flex: 1 1 0; min-width: 0; text-align: center; }
+.viewer__stage {
+  flex: 1 1 auto; position: relative; overflow: hidden;
+  display: grid; place-items: center;
+  touch-action: none;             /* the browser's own pinch and scroll would fight the viewer's */
+  cursor: grab;
+}
+.viewer__stage img {
+  max-width: 100%; max-height: 100%;
+  display: block; transform-origin: center center;
+  user-select: none; -webkit-user-drag: none;
+}
+/* Veiled here as everywhere else, only heavier: a full-size photo needs more blur than a thumbnail. */
+.viewer__stage.is-veiled img { filter: blur(30px) saturate(.6); }
+.viewer__stage.is-veiled::after { left: 8px; top: 8px; }
 
 /* ─────────────────────────────────────────────────────────────
    Mode line and key panel
@@ -825,7 +886,8 @@ mark { background: var(--hot-w); color: var(--ink); padding: 0 1px; }
         <h3>Items</h3>
         <div class="keys">
           <kbd>Enter</kbd><span>Open in the reader (<kbd>o</kbd> too). On a lens: narrow.</span>
-          <kbd>O</kbd><span>Open the full-size file in a new tab (or click the preview). In the reader, the photo, video or keyframe under the cursor.</span>
+          <kbd>i</kbd><span>Look at the image under the cursor, in a viewer over the page: pinch or scroll to zoom, double-tap or double-click to zoom in and out, drag or one finger to pan. A post's photos are one list — swipe, <kbd>← →</kbd> or <kbd>, .</kbd> step through them and the corner says which (“2 of 5”). A veiled photo opens blurred; tap it (or <kbd>x</kbd>) to reveal it. <kbd>Esc</kbd>, Close, or a tap beside the photo closes it; <kbd>O</kbd> or <b>file ↗</b> opens the raw file in a new tab. Tapping a result's thumbnail, the reader's preview, or the ⤢ corner on a post photo or keyframe opens the same viewer; tapping the rest of a result card still opens it in the reader.</span>
+          <kbd>O</kbd><span>Open the full-size file in a new tab. In the reader, the photo, video or keyframe under the cursor.</span>
           <kbd>l</kbd><span>Into the reader, then <kbd>j k</kbd> down through the post's photos and videos, the preview, keyframes and similar items, and <kbd>h l</kbd> along each row: <kbd>Enter</kbd> swaps a thumbnail into the preview, or opens the preview itself in a new tab</span>
           <kbd>x</kbd><span>Reveal / veil the item under the cursor · <kbd>X</kbd> cycles the veil threshold</span>
           <kbd>y y</kbd><span>Copy a citation: title — date — source — link</span>
@@ -840,8 +902,8 @@ mark { background: var(--hot-w); color: var(--ink); padding: 0 1px; }
         <div class="keys">
           <kbd>g s</kbd><span>Search</span>
           <kbd>g t</kbd><span>Timeline. With the chart focused, <kbd>h l</kbd> move by month, <kbd>H L</kbd> by year, <kbd>v</kbd> marks a range (or drag across the bars), <kbd>&gt;</kbd> narrows to it. Scroll or <kbd>+ -</kbd> to zoom; shift-scroll, shift-drag or middle-drag to pan; <kbd>Z</kbd> or double-click shows every month.</span>
-          <kbd>g r</kbd><span>Graph (<kbd>g n</kbd> too), for exploring how tags connect: tags that appear together, tags related in meaning, or entities that appear together — <kbd>T</kbd> cycles. Thicker, darker lines are stronger links. With the chart focused, <kbd>h l</kbd> step through nodes (orange = cursor), <kbd>w</kbd> follows the cursor's strongest link (<kbd>2w</kbd> the second, as numbered under the graph), <kbd>b</kbd> steps back, <kbd>space</kbd> picks the cursor node, <kbd>&gt;</kbd> narrows to the picked nodes (any of them) or else the cursor node, <kbd>Esc</kbd> clears the picks, then the preview, <kbd>+ -</kbd> zoom, <kbd>0</kbd> resets. Moving the cursor previews its items below (the dashed chip) without narrowing. Click a node to preview it, shift-click (or ctrl-click) to pick it, double-click to narrow; scroll to zoom, drag to pan, double-click empty space to reset.</span>
-          <kbd>g m</kbd><span>Map of the whole archive by meaning; your scope lights up. With the chart focused, <kbd>h l</kbd> step through topics (<kbd>T</kbd> for themes), <kbd>z</kbd> zooms to one, <kbd>+ -</kbd> zoom, <kbd>0</kbd> resets, <kbd>space</kbd> picks the cursor topic (orange), <kbd>&gt;</kbd> narrows to the picked topics and netted dots (or the cursor topic), <kbd>Esc</kbd> clears them, <kbd>f</kbd> finds a tag or entity (arrows preview it, <kbd>Enter</kbd> narrows). Scroll to zoom, drag to pan, click a dot to open it, shift-click (or ctrl-click) a dot or label to pick its topic, shift-drag to net the dots inside. Close in, dots show their titles.</span>
+          <kbd>g r</kbd><span>Graph (<kbd>g n</kbd> too), for exploring how tags connect: tags that appear together, tags related in meaning, or entities that appear together — <kbd>T</kbd> cycles. Thicker, darker lines are stronger links. With the chart focused, <kbd>h l</kbd> step through nodes (orange = cursor), <kbd>w</kbd> follows the cursor's strongest link (<kbd>2w</kbd> the second, as numbered under the graph), <kbd>b</kbd> steps back, <kbd>space</kbd> picks the cursor node, <kbd>&gt;</kbd> narrows to the picked nodes (any of them) or else the cursor node, <kbd>Esc</kbd> clears the picks, then the preview, <kbd>+ -</kbd> zoom, <kbd>0</kbd> resets. Nothing is orange until you move or tap: an untouched graph has no special node. Moving the cursor previews its items below (the dashed chip) without narrowing. Click a node to preview it, shift-click (or ctrl-click) to pick it, double-click to narrow; scroll to zoom, drag to pan, double-click empty space to reset. <b>By touch:</b> one finger pans, two pinch to zoom, a tap follows a node, and a long press picks one or drops it again — the line under the graph says how many are picked, and the <b>pick · clear · narrow</b> row under it does the same by thumb.</span>
+          <kbd>g m</kbd><span>Map of the whole archive by meaning; your scope lights up. With the chart focused, <kbd>h l</kbd> step through topics (<kbd>T</kbd> for themes), <kbd>z</kbd> zooms to one, <kbd>+ -</kbd> zoom, <kbd>0</kbd> resets, <kbd>space</kbd> picks the cursor topic (orange), <kbd>&gt;</kbd> narrows to the picked topics and netted dots (or the cursor topic), <kbd>Esc</kbd> clears them, <kbd>f</kbd> finds a tag or entity (arrows preview it, <kbd>Enter</kbd> narrows). Nothing is orange until you move or tap. Scroll to zoom, drag to pan, click a dot to open it, shift-click (or ctrl-click) a dot or label to pick its topic, shift-drag to net the dots inside. Close in, dots show their titles. <b>By touch:</b> one finger pans, two pinch to zoom, a tap opens the dot or moves the cursor to a label, and a long press picks that topic or drops it again. The <b>net · pick · clear · narrow</b> row under the map does the rest: <b>net</b> turns one-finger drag into the lasso until you tap it again (<kbd>Esc</kbd> too), and <b>clear</b> counts what is picked.</span>
           <kbd>E</kbd><span>In Ask: <b>sample</b> reads what fits the model's context at the chosen depth; <b>read all</b> reads every candidate item (keyword matches from each search, the closest in meaning, and a small scope in full) in batches, then answers from the notes. Each answer shows how many candidates it read and cited.</span>
           <kbd>M</kbd><span>In Ask: switch to Argue, where a steelman makes the strongest case for a claim and a skeptic tests it, each researching and citing the archive; each turn ends with where that side stands. <kbd>P</kbd> watches both sides or lets you play the steelman or the skeptic. While watching, Enter runs the next round and anything typed goes to both as a moderator's note. A finished Ask answer's <b>argue this</b> starts a debate from it.</span>
           <kbd>D</kbd><span>Discuss the item under the cursor: a new Ask conversation with its full record attached, and related items (near in time or meaning) if <b>+ related</b> is on. Depth sets how much is read; period and topics narrow it.</span>
@@ -869,6 +931,23 @@ mark { background: var(--hot-w); color: var(--ink); padding: 0 1px; }
     </div>
   </footer>
   <div class="whichkey" id="whichkey" hidden></div>
+
+  <div class="viewer" id="viewer" role="dialog" aria-modal="true" aria-label="Photo" hidden>
+    <div class="viewer__bar">
+      <span class="label tnum" id="vwCount"></span>
+      <span class="viewer__title" id="vwTitle"></span>
+      <a class="btn" id="vwRaw" target="_blank" rel="noopener" title="Open the raw file in a new tab (O)">file ↗</a>
+      <button class="btn" data-vw="out" title="Zoom out (−)" aria-label="Zoom out">−</button>
+      <button class="btn" data-vw="in" title="Zoom in (+)" aria-label="Zoom in">+</button>
+      <button class="btn" data-vw="close" title="Close (Esc)">Close</button>
+    </div>
+    <div class="viewer__stage" id="vwStage"><img id="vwImg" alt="" draggable="false"></div>
+    <div class="viewer__foot">
+      <button class="btn" data-vw="prev" title="Previous photo (, or ←)" aria-label="Previous photo">‹</button>
+      <span class="viewer__hint" id="vwHint"></span>
+      <button class="btn" data-vw="next" title="Next photo (. or →)" aria-label="Next photo">›</button>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -931,15 +1010,19 @@ const S = {
   count: "",
   pending: "",
   tl: { data: null, cursor: -1, mark: null, view: null, picked: false },  // view: {start, count} in months, null = all; picked: the list shows the cursor month (or marked range)
+  vw: { open: false, items: [], i: 0, s: 1, x: 0, y: 0 },   // the image viewer: the photos it steps through, and its pan and zoom
   gr: { data: null, kind: store("graphKind") || "tag", cursor: 0, order: [], pos: null, hover: -1, view: { s: 1, tx: 0, ty: 0 },
+        cursorOn: false,     // nothing is orange until you move or tap: an untouched graph has no special node
         sel: new Set(),      // picked node ids
         preview: false,      // the list shows the cursor node (or the picked nodes) rather than the scope
         trail: [],           // node ids the cursor came from, newest last, for b
         adj: [], idx: new Map(), key: "" },
   mp: { data: null, level: "topic", order: [], cursor: 0, scope: null, view: { s: 1, x: 0, y: 0 }, hover: -1,
+        cursorOn: false,     // as in the graph: no orange topic until you step to one or tap one
         sel: new Set(),      // picked topic or theme ids
         picked: new Set(),   // netted point indices
         find: null,          // the find box's previewed tag or entity, with the points it lights
+        netMode: false,      // touch: one finger draws a net instead of panning, until it is switched off
         titles: new Map(), sugg: [], suggI: 0, net: null, boxes: [] },
   ask: { session: null, turns: [], mode: store("askMode") || "informed", sessions: [],
          live: new Map(),   // run id -> turn, for turns still running on the server
@@ -1440,7 +1523,8 @@ function galleryHtml(d) {
   if (!post || post.members.length < 2) return "";
   return `<div class="gallery" aria-label="Media in this post">${post.members.map((m, i) =>
     `<button data-r data-open="${m.media_id}" class="${m.media_id === d.media_id ? "is-current" : ""}" title="${escapeHtml(m.role)} ${i}: ${escapeHtml(m.title)}"` +
-    `${m.thumb_url ? ` style="background-image:url('${escapeHtml(m.thumb_url)}')"` : ""}><span>${m.role === "screenshot" ? "post" : m.role === "video" ? "▶ " + i : i}</span></button>`).join("")}</div>`;
+    `${m.thumb_url ? ` style="background-image:url('${escapeHtml(m.thumb_url)}')"` : ""}><span>${m.role === "screenshot" ? "post" : m.role === "video" ? "▶ " + i : i}</span>` +
+    `${m.kind === "image" ? `<i class="zoomdot" data-view="${m.media_id}" title="Look at this photo (i)">⤢</i>` : ""}</button>`).join("")}</div>`;
 }
 function section(title, body) {
   return body ? `<section><h3 class="label">${escapeHtml(title)}</h3>${body}</section>` : "";
@@ -1457,7 +1541,7 @@ function renderReader() {
     preview += `<a class="label" href="${escapeHtml(d.media_url)}" target="_blank" rel="noopener" style="padding:4px 0">open in a new tab ↗</a>`;
   } else if (d.kind === "image" && (d.media_url || d.thumb_url)) {
     const full = escapeHtml(d.media_url || d.thumb_url);
-    preview = `<div class="${veiled(d) ? "is-veiled" : ""}" data-veil><a href="${full}" target="_blank" rel="noopener" title="Open full size in a new tab (Enter or O)" data-zoom data-r><img src="${full}" alt=""></a></div>`;
+    preview = `<div class="${veiled(d) ? "is-veiled" : ""}" data-veil><a href="${full}" target="_blank" rel="noopener" title="Look at it close up (tap, Enter or i) · O opens the raw file in a new tab" data-zoom data-r><img src="${full}" alt=""></a></div>`;
   } else if (d.kind === "pdf" && d.media_url) {
     const page = S.openHit?.page;
     preview = `<a class="btn" target="_blank" rel="noopener" href="${escapeHtml(d.media_url)}${page ? `#page=${page}` : ""}" data-r>Open PDF${page ? ` at page ${page}` : ""}</a>`;
@@ -1473,7 +1557,8 @@ function renderReader() {
   const transcript = (d.docs.transcript || []).map((t) =>
     `<button class="tline" data-r data-seek="${t.start_s}"><span>${fmtTime(t.start_s)}</span><span>${escapeHtml(t.text)}</span></button>`).join("");
   const frames = d.keyframes.length ? `<div class="frames">${d.keyframes.map((k) =>
-    `<button data-r data-seek="${k.t_s}" data-href="${escapeHtml(k.url)}"><img src="${escapeHtml(k.url)}" alt="" loading="lazy"><span>${fmtTime(k.t_s)}</span></button>`).join("")}</div>` : "";
+    `<button data-r data-seek="${k.t_s}" data-href="${escapeHtml(k.url)}"><img src="${escapeHtml(k.url)}" alt="" loading="lazy"><span>${fmtTime(k.t_s)}</span>` +
+    `<i class="zoomdot" data-viewsrc="${escapeHtml(k.url)}" title="Look at this frame (i)">⤢</i></button>`).join("")}</div>` : "";
   const similar = d.similar.length ? `<div class="sim">${d.similar.map((c) =>
     `<button data-r data-open="${c.media_id}">${thumbHtml(c)}<span class="t">${escapeHtml(c.title)}</span></button>`).join("")}</div>` : "";
 
@@ -2624,6 +2709,73 @@ async function saveSettings() {
   renderSettings();
 }
 
+/* ── Touch on the charts ──────────────────────────────────── */
+/* A phone has no wheel, no modifier to hold while dragging and no second button, so the graph and the
+   map take one finger to pan, two to pinch, a tap where a click went and a long press where a
+   shift-click went. Handlers: { pan(dx, dy), zoom(factor, x, y), tap(x, y), hold(x, y),
+   lassoOn(), lasso(points, done) } — lasso is the map's net, drawn with one finger while it is armed. */
+const touchMid = (ts) => [(ts[0].clientX + ts[1].clientX) / 2, (ts[0].clientY + ts[1].clientY) / 2];
+const touchSpan = (ts) => Math.hypot(ts[0].clientX - ts[1].clientX, ts[0].clientY - ts[1].clientY);
+const HOLD_MS = 550;
+/* Touch also fires pointer and mouse events; the mouse handlers check this and stand aside. */
+const fromTouch = (el) => Date.now() - (el.__touchAt || 0) < 700;
+function wireChartTouch(canvas, h) {
+  const at = (x, y) => { const r = canvas.getBoundingClientRect(); return [x - r.left, y - r.top]; };
+  let g = null, holdTimer = 0;
+  canvas.addEventListener("touchstart", (e) => {
+    e.preventDefault();
+    canvas.__touchAt = Date.now();
+    clearTimeout(holdTimer);
+    const ts = e.touches;
+    if (ts.length === 1) {
+      const p = at(ts[0].clientX, ts[0].clientY);
+      g = { one: true, x: ts[0].clientX, y: ts[0].clientY, dist: 0, p, net: h.lassoOn?.() ? [p] : null };
+      if (h.hold && !g.net) holdTimer = setTimeout(() => { if (g && g.dist <= 6) { g.spent = true; h.hold(...p); } }, HOLD_MS);
+    } else if (ts.length >= 2) {
+      clearTimeout(holdTimer);
+      g = { one: false, span: touchSpan(ts), mid: touchMid(ts) };
+    }
+  }, { passive: false });
+  canvas.addEventListener("touchmove", (e) => {
+    e.preventDefault();
+    canvas.__touchAt = Date.now();
+    if (!g) return;
+    const ts = e.touches;
+    if (g.one && ts.length === 1) {
+      const dx = ts[0].clientX - g.x, dy = ts[0].clientY - g.y;
+      g.x = ts[0].clientX; g.y = ts[0].clientY;
+      g.dist += Math.abs(dx) + Math.abs(dy);
+      if (g.dist > 6) clearTimeout(holdTimer);
+      if (g.dist <= 6 || g.spent) return;
+      if (g.net) {
+        const p = at(g.x, g.y), last = g.net[g.net.length - 1];
+        if ((p[0] - last[0]) ** 2 + (p[1] - last[1]) ** 2 > 9) { g.net.push(p); h.lasso(g.net, false); }
+        return;
+      }
+      h.pan(dx, dy);
+    } else if (!g.one && ts.length >= 2) {
+      // Zoom about the fingers' midpoint, and let the midpoint's own drift pan the view.
+      const sp = touchSpan(ts), m = touchMid(ts);
+      h.pan(m[0] - g.mid[0], m[1] - g.mid[1]);
+      if (g.span > 10) h.zoom(sp / g.span, ...at(m[0], m[1]));
+      g.span = sp; g.mid = m;
+    }
+  }, { passive: false });
+  const end = (e) => {
+    e.preventDefault();
+    canvas.__touchAt = Date.now();
+    clearTimeout(holdTimer);
+    const was = g;
+    if (e.touches.length) { g = null; return; }   // still a finger down: this gesture is over, another goes on
+    g = null;
+    if (!was || was.spent) return;
+    if (was.net) { if (was.dist > 6) h.lasso(was.net, true); return; }
+    if (was.one && was.dist <= 6) h.tap(...was.p);
+  };
+  canvas.addEventListener("touchend", end, { passive: false });
+  canvas.addEventListener("touchcancel", end, { passive: false });
+}
+
 /* ── Map ──────────────────────────────────────────────────── */
 let mpReq = 0;
 async function loadMap() {
@@ -2691,15 +2843,57 @@ function renderMap() {
     host.innerHTML = `<div class="mp"><div class="mp__top"><label class="mp__find"><input id="mpFind" placeholder="find a tag, person, place…" autocomplete="off" spellcheck="false" aria-label="Find a tag or entity on the map"><kbd>f</kbd></label>` +
       `<div class="mp__hover" id="mpHover"></div><ul class="mp__sugg" id="mpSugg" role="listbox" hidden></ul></div>` +
       `<canvas id="mpCanvas" aria-label="Map of the archive by meaning"></canvas>` +
+      `<div class="chart-tools" id="mpTools">` +
+      `<button class="btn" data-tool="net" aria-pressed="false" title="Draw round dots with one finger instead of panning">net</button>` +
+      `<button class="btn" data-tool="pick" title="Add the cursor topic to the selection (space)">pick</button>` +
+      `<button class="btn" data-tool="clear" title="Drop the selection (Esc)">clear</button>` +
+      `<button class="btn" data-tool="narrow" title="Narrow the search to the selection (&gt;)">narrow ›</button></div>` +
       `<div class="mp__bar"><span class="label" id="mpCur"></span><span class="meta" id="mpInfo"></span></div></div>`;
     const canvas = $("#mpCanvas");
     let drag = null;
     const at = (e) => { const r = canvas.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+    $("#mpTools").addEventListener("click", (e) => {
+      const act = e.target.closest("[data-tool]")?.dataset.tool;
+      if (!act) return;
+      S.onChart = true; setFocus("results");
+      if (act === "net") mpSetNet(!S.mp.netMode);
+      else if (act === "pick") mpToggleCursor();
+      else if (act === "clear") { if (!mpClear()) say("Nothing picked to clear."); }
+      else mpNarrow();
+    });
     canvas.addEventListener("wheel", (e) => {
       e.preventDefault();
       mpZoom(e.deltaY < 0 ? 1.25 : 0.8, ...at(e));
     }, { passive: false });
+    wireChartTouch(canvas, {
+      pan: (dx, dy) => {
+        const P = mpProject(canvas.clientWidth, canvas.clientHeight);
+        S.mp.view.x -= dx / P.sw / S.mp.view.s;
+        S.mp.view.y -= dy / P.sh / S.mp.view.s;
+        drawMap();
+      },
+      zoom: (f, x, y) => mpZoom(f, x, y),
+      lassoOn: () => S.mp.netMode,
+      lasso: (pts, done) => { if (!done) { S.mp.net = pts; return drawMap(); } S.mp.net = null; mpNetSelect(pts); },
+      tap: (x, y) => {
+        S.onChart = true; setFocus("results");
+        const box = mpLabelAt(x, y);
+        if (box) return mpGoTo(box.id);
+        mpHover(x, y);   // a finger cannot hover: the tap itself says what is under it
+        if (S.mp.hover >= 0) return openItem(S.mp.data.ids[S.mp.hover]);
+        say("Nothing there. Hold a dot or a label to pick its topic.");
+      },
+      hold: (x, y) => {
+        const box = mpLabelAt(x, y);
+        let id = box ? box.id : null;
+        if (!id) { mpHover(x, y); id = S.mp.hover >= 0 ? mpClusterOf(S.mp.hover) : null; }
+        if (!id) return say("Nothing there to pick.");
+        S.onChart = true; setFocus("results");
+        mpToggle(id);
+      },
+    });
     canvas.addEventListener("pointerdown", (e) => {
+      if (e.pointerType === "touch") return;   // touch has its own gestures
       // Shift (or alt) drag draws a net; a plain drag pans.
       const net = e.shiftKey || e.altKey;
       drag = { x: e.clientX, y: e.clientY, moved: false, view: { ...S.mp.view }, net: net ? [at(e)] : null,
@@ -2707,6 +2901,7 @@ function renderMap() {
       canvas.setPointerCapture(e.pointerId);
     });
     canvas.addEventListener("pointermove", (e) => {
+      if (e.pointerType === "touch") return;
       if (drag) {
         const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
         if (Math.abs(dx) + Math.abs(dy) > 3) drag.moved = true;
@@ -2725,6 +2920,7 @@ function renderMap() {
       mpHover(...at(e));
     });
     canvas.addEventListener("pointerup", (e) => {
+      if (e.pointerType === "touch") return;
       const d = drag; drag = null;
       if (!d) return;
       S.onChart = true; setFocus("results");
@@ -2735,14 +2931,10 @@ function renderMap() {
         const id = box ? box.id : S.mp.hover >= 0 ? mpClusterOf(S.mp.hover) : null;
         return id ? mpToggle(id) : undefined;
       }
-      if (box) {
-        const j = S.mp.order.findIndex((o) => o.id === box.id);
-        if (j >= 0) { S.mp.cursor = j; drawMap(); mpListCluster(); }
-        return;
-      }
+      if (box) return mpGoTo(box.id);
       if (S.mp.hover >= 0) openItem(S.mp.data.ids[S.mp.hover]);
     });
-    canvas.addEventListener("pointerleave", () => { if (drag) return; S.mp.hover = -1; $("#mpHover").textContent = ""; drawMap(); });
+    canvas.addEventListener("pointerleave", (e) => { if (drag || e.pointerType === "touch") return; S.mp.hover = -1; $("#mpHover").textContent = ""; drawMap(); });
     new ResizeObserver(() => drawMap()).observe(canvas);
     mpWireFind();
     paintCursor("results", false);
@@ -2760,7 +2952,9 @@ function drawMap() {
   g.scale(dpr, dpr);
   g.clearRect(0, 0, w, h);
   const P = mpProject(w, h);
-  const cur = S.mp.order[S.mp.cursor];
+  // Nothing is orange until the reader has moved the cursor or tapped: on a fresh map an orange
+  // topic reads as "this one is special", which it is not — it is only the biggest.
+  const cur = S.mp.cursorOn ? S.mp.order[S.mp.cursor] : null;
   const inCur = (t) => cur && (S.mp.level === "topic" ? t === cur.id : S.mp.byId.get(t)?.parent === cur.id);
   const ink = cssVar("--ink"), ink3 = cssVar("--ink-3"), blue = cssVar("--blue"), hot = cssVar("--hot");
   const r = Math.max(1.2, Math.min(3.2, 1.3 * Math.sqrt(S.mp.view.s)));
@@ -2860,19 +3054,50 @@ function drawMap() {
   }
   const nScope = S.mp.scope ? S.mp.scope.size : d.x.length;
   $("#mpInfo").textContent = `${fmtN(d.x.length)} items mapped · ${fmtN(nScope)} in scope · zoom ${S.mp.view.s.toFixed(1)}× · ` +
-    `orange = cursor ${S.mp.level} · shift-click or space picks ${S.mp.level}s · shift-drag nets items · T ${S.mp.level === "topic" ? "themes" : "topics"}`;
+    `${cur ? `orange = the ${S.mp.level} you are on · ` : ""}shift-click, hold or space picks ${S.mp.level}s · shift-drag or net draws round dots · T ${S.mp.level === "topic" ? "themes" : "topics"}`;
   $("#mpCur").textContent = mpStatus(curCluster, cur);
+  mpPaintTools();
+}
+/* The touch tools say what is picked, so "clear" is visibly about something. */
+function mpPaintTools() {
+  const tools = $("#mpTools");
+  if (!tools) return;
+  const n = S.mp.sel.size + S.mp.picked.size;
+  $('[data-tool="clear"]', tools).textContent = n ? `clear (${fmtN(n)})` : "clear";
+  $('[data-tool="net"]', tools).setAttribute("aria-pressed", String(S.mp.netMode));
+}
+/* Arming the net turns a one-finger drag into a lasso, which is what shift-drag does with a mouse. */
+function mpSetNet(on) {
+  S.mp.netMode = on;
+  S.mp.net = null;
+  mpPaintTools();
+  drawMap();
+  say(on ? "Net armed: drag round the dots you want. Tap net again to go back to panning." : "Net off: one finger pans again.");
+}
+/* The cursor lands on a topic: from a tap on its label, or a click. */
+function mpGoTo(id) {
+  const j = S.mp.order.findIndex((o) => o.id === id);
+  // Zoomed out the labels name themes while the cursor steps through topics; T swaps which.
+  if (j < 0) {
+    const c = S.mp.byId.get(id);
+    return say(`${c ? mpShort(c.label) : "That"} is a ${c?.level || "cluster"} — T steps through ${c?.level || "cluster"}s. A long press picks it either way.`);
+  }
+  S.mp.cursor = j; S.mp.cursorOn = true;
+  drawMap();
+  mpListCluster();
 }
 /* What > would do, in words. */
 function mpStatus(curCluster, cur) {
   const nSel = S.mp.sel.size, nPicked = S.mp.picked.size;
   const lvl = S.mp.level;
-  if (nPicked) return `${fmtN(nPicked)} items selected${nSel ? ` + ${nSel} ${lvl}${nSel === 1 ? "" : "s"}` : ""} · listed below · > narrows to them · Esc clears`;
-  if (nSel) return `${nSel} ${nSel === 1 ? "cluster" : "clusters"} selected · listed below · > narrows to any of them · Esc clears`;
+  const clear = `Esc, or “clear”, drops the selection`;
+  if (nPicked) return `${fmtN(nPicked)} items selected${nSel ? ` + ${nSel} ${lvl}${nSel === 1 ? "" : "s"}` : ""} · listed below · > narrows to them · ${clear}`;
+  if (nSel) return `${nSel} ${nSel === 1 ? "cluster" : "clusters"} selected (ticked labels) · listed below · > narrows to any of them · ${clear}`;
   if (S.mp.find) return `Previewing ${S.mp.find.type} “${S.mp.find.name}”` +
     `${S.mp.find.lit ? ` · ${fmtN(S.mp.find.lit.size)} lit` : ""} · listed below · > narrows to it · Esc clears`;
-  if (!curCluster) return "";
-  return `Cursor ${lvl} (orange) ${S.mp.cursor + 1}/${S.mp.order.length}: ${curCluster.label} · ${fmtN(cur.n)} in scope, listed below · > narrows · z zooms`;
+  if (!curCluster) return S.mp.order.length ? "Nothing picked. Tap a dot to open it, tap a label or press h l to walk the topics, hold one to pick it." : "";
+  return `Orange is the ${lvl} you are on, ${S.mp.cursor + 1}/${S.mp.order.length}: ${curCluster.label} · ${fmtN(cur.n)} in scope, listed below · ` +
+    `> narrows · z zooms · space or a long press picks it · ${clear}`;
 }
 function mpLabelAt(mx, my) {
   return (S.mp.boxes || []).find(({ box }) => mx >= box[0] && mx <= box[0] + box[2] && my >= box[1] && my <= box[1] + box[3]);
@@ -2936,8 +3161,8 @@ function mpZoom(factor, mx, my) {
   drawMap();
 }
 function mpZoomToCursor() {
-  const cur = S.mp.order[S.mp.cursor], d = S.mp.data;
-  if (!cur || !d) return;
+  const cur = S.mp.cursorOn && S.mp.order[S.mp.cursor], d = S.mp.data;
+  if (!cur || !d) return say("No topic under the cursor yet: tap a label, or step with h l.");
   const pts = [];
   d.topic.forEach((t, i) => {
     const id = S.mp.level === "topic" ? t : S.mp.byId.get(t)?.parent;
@@ -2954,7 +3179,9 @@ function mpZoomToCursor() {
 let mpListTimer = 0;
 function mpMove(delta) {
   if (!S.mp.order.length) return;
-  S.mp.cursor = Math.max(0, Math.min(S.mp.order.length - 1, S.mp.cursor + delta));
+  // The first step only reveals the cursor where it rests; the next one moves it.
+  if (S.mp.cursorOn) S.mp.cursor = Math.max(0, Math.min(S.mp.order.length - 1, S.mp.cursor + delta));
+  S.mp.cursorOn = true;
   drawMap();
   clearTimeout(mpListTimer);
   // While something is selected the list shows the selection, not the cursor.
@@ -2963,12 +3190,17 @@ function mpMove(delta) {
 
 /* ── Map selection: picked clusters, netted items, find preview ── */
 function mpToggle(id) {
-  if (S.mp.sel.has(id)) S.mp.sel.delete(id); else S.mp.sel.add(id);
+  const on = !S.mp.sel.has(id);
+  if (on) S.mp.sel.add(id); else S.mp.sel.delete(id);
+  const label = mpShort(S.mp.byId.get(id)?.label || "that topic");
+  const n = S.mp.sel.size;
+  say(`${on ? "Picked" : "Dropped"} ${label}. ${n ? `${n} picked — > narrows to any of them, Esc or “clear” drops them.` : "Nothing picked now."}`);
   drawMap();
   clearTimeout(mpListTimer);
   mpListTimer = setTimeout(mpListCluster, 160);
 }
 function mpToggleCursor() {
+  if (!S.mp.cursorOn) return say("No topic under the cursor yet: tap a label, or step with h l, then pick it.");
   const cur = S.mp.order[S.mp.cursor];
   if (cur) mpToggle(cur.id);
 }
@@ -3024,7 +3256,7 @@ async function mpTarget() {
     return { scope: `cluster:${cs.map((c) => c.id).join(",")}`, label };
   }
   if (S.mp.find) return { scope: S.mp.find.scope, label: S.mp.find.name };
-  const cur = S.mp.order[S.mp.cursor];
+  const cur = S.mp.cursorOn && S.mp.order[S.mp.cursor];
   const c = cur && S.mp.byId.get(cur.id);
   return c ? { scope: `cluster:${c.id}`, label: c.label } : null;
 }
@@ -3045,7 +3277,7 @@ async function mpListCluster() {
 }
 async function mpNarrow() {
   const target = await mpTarget();
-  if (!target) return;
+  if (!target) return say("Nothing to narrow to yet: tap a topic's label, or hold dots to pick topics.");
   mpClear(true);
   pushScope(target.scope, target.label);
 }
@@ -3143,7 +3375,7 @@ async function loadGraph() {
   S.gr.idx = new Map(data.nodes.map((nd, i) => [nd.id, i]));
   S.gr.adj = grAdjacency(data);
   S.gr.order = data.nodes.map((_, i) => i).sort((a, b) => data.nodes[b].n - data.nodes[a].n);
-  if (fresh) { S.gr.sel.clear(); S.gr.trail = []; S.gr.preview = false; S.gr.cursor = 0; }
+  if (fresh) { S.gr.sel.clear(); S.gr.trail = []; S.gr.preview = false; S.gr.cursor = 0; S.gr.cursorOn = false; }
   else for (const id of S.gr.sel) if (!S.gr.idx.has(id)) S.gr.sel.delete(id);
   S.gr.cursor = Math.min(S.gr.cursor, Math.max(0, S.gr.order.length - 1));
   S.gr.pos = layoutGraph(data);
@@ -3214,8 +3446,20 @@ function renderGraph() {
   const host = $("#graph");
   if (!host.firstChild) {
     host.innerHTML = `<div class="gr"><canvas id="grCanvas" aria-label="Co-occurrence graph"></canvas>` +
+      `<div class="chart-tools" id="grTools">` +
+      `<button class="btn" data-tool="pick" title="Add the node under the cursor to the selection (space)">pick</button>` +
+      `<button class="btn" data-tool="clear" title="Drop the selection (Esc)">clear</button>` +
+      `<button class="btn" data-tool="narrow" title="Narrow the search to the selection (&gt;)">narrow ›</button></div>` +
       `<div class="gr__bar"><span class="label" id="grCur"></span><span class="meta" id="grInfo"></span></div>` +
       `<div class="gr__foot" id="grFoot"></div></div>`;
+    $("#grTools").addEventListener("click", (e) => {
+      const act = e.target.closest("[data-tool]")?.dataset.tool;
+      if (!act) return;
+      S.onChart = true; setFocus("results");
+      if (act === "pick") grToggleCursor();
+      else if (act === "clear") { if (!grClear(true)) say("Nothing picked to clear."); }
+      else grNarrow();
+    });
     $("#grFoot").addEventListener("click", (e) => {
       const el = e.target.closest("[data-gr]");
       if (!el) return;
@@ -3226,8 +3470,7 @@ function renderGraph() {
     });
     const canvas = $("#grCanvas");
     const at = (e) => { const r = canvas.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
-    const pick = (e) => {
-      const [mx, my] = at(e);
+    const pickAt = (mx, my) => {
       let best = -1, bestD = 18 * 18;
       (S.gr.screen || []).forEach((p, i) => {
         const d = (p.x - mx) ** 2 + (p.y - my) ** 2;
@@ -3235,14 +3478,33 @@ function renderGraph() {
       });
       return best;
     };
+    const pick = (e) => pickAt(...at(e));
     let drag = null, dragged = false;
     canvas.addEventListener("wheel", (e) => { e.preventDefault(); grZoom(e.deltaY < 0 ? 1.25 : 0.8, ...at(e)); }, { passive: false });
+    wireChartTouch(canvas, {
+      pan: (dx, dy) => { S.gr.view.tx += dx; S.gr.view.ty += dy; drawGraph(); },
+      zoom: (f, x, y) => grZoom(f, x, y),
+      tap: (x, y) => {
+        S.onChart = true; setFocus("results");
+        const i = pickAt(x, y);
+        if (i >= 0) return grGo(i);
+        say("Tap a node to follow it; hold one to add it to the selection.");
+      },
+      hold: (x, y) => {
+        const i = pickAt(x, y);
+        if (i < 0) return say("Nothing there to pick.");
+        S.onChart = true; setFocus("results");
+        grToggle(i);
+      },
+    });
     canvas.addEventListener("pointerdown", (e) => {
+      if (e.pointerType === "touch") return;   // touch has its own gestures
       drag = { x: e.clientX, y: e.clientY, tx: S.gr.view.tx, ty: S.gr.view.ty, moved: false };
       dragged = false;
       canvas.setPointerCapture(e.pointerId);
     });
     canvas.addEventListener("pointermove", (e) => {
+      if (e.pointerType === "touch") return;
       if (drag) {
         const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
         if (Math.abs(dx) + Math.abs(dy) > 3) drag.moved = true;
@@ -3253,19 +3515,19 @@ function renderGraph() {
       canvas.style.cursor = i >= 0 ? "pointer" : "grab";
       if (i !== S.gr.hover) { S.gr.hover = i; drawGraph(); }
     });
-    canvas.addEventListener("pointerup", () => { dragged = !!drag?.moved; drag = null; canvas.style.cursor = "grab"; });
-    canvas.addEventListener("pointerleave", () => { if (drag) return; S.gr.hover = -1; drawGraph(); });
+    canvas.addEventListener("pointerup", (e) => { if (e.pointerType === "touch") return; dragged = !!drag?.moved; drag = null; canvas.style.cursor = "grab"; });
+    canvas.addEventListener("pointerleave", (e) => { if (drag || e.pointerType === "touch") return; S.gr.hover = -1; drawGraph(); });
     canvas.addEventListener("click", (e) => {
-      if (dragged) return;   // the end of a pan is not a click
+      if (dragged || fromTouch(canvas)) return;   // the end of a pan is not a click, and a tap has already been handled
       const i = pick(e); if (i < 0) return;
       S.onChart = true; setFocus("results");
       if (e.shiftKey || e.ctrlKey || e.metaKey) grToggle(i); else grGo(i);
     });
     canvas.addEventListener("dblclick", (e) => {
-      if (e.shiftKey || e.ctrlKey || e.metaKey) return;   // two quick picks, not a narrow
+      if (e.shiftKey || e.ctrlKey || e.metaKey || fromTouch(canvas)) return;   // two quick picks, not a narrow
       const i = pick(e);
       // Double-click narrows to the node under the pointer, even with others picked.
-      if (i >= 0) { S.gr.cursor = S.gr.order.indexOf(i); grNarrow(true); } else grReset();
+      if (i >= 0) { S.gr.cursor = S.gr.order.indexOf(i); S.gr.cursorOn = true; grNarrow(true); } else grReset();
     });
     new ResizeObserver(() => drawGraph()).observe(canvas);
     paintCursor("results", false);
@@ -3302,8 +3564,8 @@ function drawGraph() {
   const links = data.kind === "related" ? "linked when the model rates them related" : "linked when they share 3+ items";
   $("#grInfo").textContent = `${whole} ${scoped ? "in the current scope" : "in the whole archive (no scope)"}` +
     `${data.kind === "related" ? "" : ", each on 2+ items"}, ${links} · ${fmtN(data.edges.length)} links · ${fmtN(data.n_items)} items · ` +
-    `zoom ${S.gr.view.s.toFixed(1)}× · thicker line = stronger link · scroll zooms, drag pans, 0 or double-click empty space resets · ` +
-    `shift-click or space picks nodes · T switches`;
+    `zoom ${S.gr.view.s.toFixed(1)}× · thicker line = stronger link · scroll or pinch zooms, drag pans, 0 or double-click empty space resets · ` +
+    `${S.gr.cursorOn ? "orange = the node you are on · " : ""}shift-click, a long press or space picks nodes · T switches`;
   if (!data.nodes.length) {
     $("#grCur").textContent = data.kind === "entity" ? "No entities here yet — they arrive as the vision model reads images. T for tags." :
       data.kind === "related" ? "No relatedness scores yet: run scripts/tag_relations.sh. T for entities." : "No tags here. T for tags related in meaning.";
@@ -3320,12 +3582,15 @@ function drawGraph() {
   }));
   S.gr.screen = screen;
   const idx = S.gr.idx;
-  const cur = S.gr.order[S.gr.cursor];
+  // Nothing is orange until the reader moves the cursor or taps a node: on a graph nobody has touched
+  // yet, an orange node reads as "this one matters", and it is only the one with the most items.
+  const cur = S.gr.cursorOn ? S.gr.order[S.gr.cursor] : -1;
   const hover = S.gr.hover;
   const picked = (i) => S.gr.sel.has(data.nodes[i].id);
   // The node whose links stand out: the hovered one, else the cursor.
   const focus = hover >= 0 ? hover : cur;
   const neighbors = new Set((S.gr.adj[focus] || []).map((l) => l.j));
+  const dim = focus >= 0;   // with no node in focus nothing is faded: the whole graph is the subject
   const ink = cssVar("--ink"), ink3 = cssVar("--ink-3"), blue = cssVar("--blue"), hot = cssVar("--hot");
   // Orange only ever means the cursor; hovering another node traces its links in ink.
   const focusInk = focus === cur ? hot : ink;
@@ -3348,7 +3613,7 @@ function drawGraph() {
   const ring = (p, r, color, width) => { g.strokeStyle = color; g.lineWidth = width; g.beginPath(); g.arc(p.x, p.y, r, 0, Math.PI * 2); g.stroke(); };
   data.nodes.forEach((nd, i) => {
     const p = screen[i], isSel = picked(i);
-    g.globalAlpha = i === focus || i === cur || isSel || neighbors.has(i) ? 1 : 0.3;
+    g.globalAlpha = !dim || i === focus || i === cur || isSel || neighbors.has(i) ? 1 : 0.3;
     // Picked nodes are ink with a blue ring; the cursor stays orange even when picked.
     g.fillStyle = i === cur ? hot : isSel ? ink : blue;
     g.beginPath(); g.arc(p.x, p.y, p.r, 0, Math.PI * 2); g.fill();
@@ -3360,8 +3625,8 @@ function drawGraph() {
   // Labels. The cursor, hovered and picked nodes are always named, drawn last so nothing covers them; then
   // the focus node's neighbours, strongest link first; then the biggest nodes, more as you zoom in.
   // The cursor's links carry the number w follows them by, and the node b returns to says so.
-  const follow = new Map(focus === cur ? grFollowable().slice(0, 9).map((l, r) => [l.j, r + 1]) : []);
-  const back = focus === cur ? grBackIndex() : -1;
+  const follow = new Map(S.gr.cursorOn && focus === cur ? grFollowable().slice(0, 9).map((l, r) => [l.j, r + 1]) : []);
+  const back = S.gr.cursorOn && focus === cur ? grBackIndex() : -1;
   const forced = [cur, hover, ...[...S.gr.sel].map((id) => idx.get(id))].filter((i, j, arr) => i != null && i >= 0 && arr.indexOf(i) === j);
   const wanted = [...neighbors, ...S.gr.order.slice(0, Math.round(28 * v.s))].filter((i) => !forced.includes(i));
   const mono = cssVar("--font-mono"), card = cssVar("--stock-card");
@@ -3407,7 +3672,7 @@ function drawGraph() {
 const grHash = () => (S.gr.data?.kind === "entity" ? "" : "#");
 /* What > would do, in words. */
 function grStatus() {
-  const data = S.gr.data, cur = S.gr.order[S.gr.cursor], nd = data.nodes[cur], hover = S.gr.hover;
+  const data = S.gr.data, cur = S.gr.cursorOn ? S.gr.order[S.gr.cursor] : -1, nd = data.nodes[cur], hover = S.gr.hover;
   const typeName = (x) => (x.type && x.type !== "tag" ? ` (${x.type})` : data.kind === "entity" ? "" : " (tag)");
   if (hover >= 0 && hover !== cur) {
     const hv = data.nodes[hover];
@@ -3415,10 +3680,11 @@ function grStatus() {
       `click previews it, shift-click picks it, double-click narrows`;
   }
   const nSel = S.gr.sel.size, kind = data.kind === "entity" ? ["entity", "entities"] : ["tag", "tags"];
-  if (nSel) return `${nSel} ${kind[nSel === 1 ? 0 : 1]} picked (blue rings) · listed below · > narrows to any of them · Esc clears`;
-  if (!nd) return "";
-  return `Cursor (orange) ${S.gr.cursor + 1}/${S.gr.order.length}: ${nd.name}${typeName(nd)} · on ${fmtN(nd.n)} items · ` +
-    `${S.gr.adj[cur].length} linked` + (S.gr.preview ? " · listed below · > narrows · space picks it" : " — h l or a click previews its items · > narrows · space picks it");
+  if (nSel) return `${nSel} ${kind[nSel === 1 ? 0 : 1]} picked (ticked, blue rings) · listed below · > narrows to any of them · ` +
+    `hold a picked node again to drop it · Esc, or “clear”, drops them all`;
+  if (!nd) return data.nodes.length ? "Nothing picked. Tap a node (or h l) to see its items, hold one to pick several." : "";
+  return `Orange is the node you are on, ${S.gr.cursor + 1}/${S.gr.order.length}: ${nd.name}${typeName(nd)} · on ${fmtN(nd.n)} items · ` +
+    `${S.gr.adj[cur].length} linked` + (S.gr.preview ? " · listed below · > narrows · space or a long press picks it" : " — h l or a click previews its items · > narrows · space picks it");
 }
 /* Under the graph: the preview chip, then the cursor's strongest links, which w follows by number. */
 function grPaintFoot() {
@@ -3431,7 +3697,7 @@ function grPaintFoot() {
     `<button type="button" data-gr="narrow" title="Narrow to ${target.many ? "any of them" : "it"} (>)">${escapeHtml(target.shown)}` +
     `${target.n != null ? ` · ${fmtN(target.n)} items` : ""} <i>— &gt; narrows${target.many ? " to any" : ""}, Esc clears</i></button>` +
     `<button type="button" class="preview-chip__x" data-gr="clear" title="Clear the preview (Esc)" aria-label="Clear the preview">×</button></span>`;
-  const cur = S.gr.order[S.gr.cursor];
+  const cur = S.gr.cursorOn ? S.gr.order[S.gr.cursor] : null;
   let links = "";
   if (cur != null) {
     const all = S.gr.adj[cur], follow = grFollowable(), back = grBackIndex();
@@ -3446,6 +3712,8 @@ function grPaintFoot() {
   const html = `${chip}<span class="gr__links">${links}</span>`;
   // Hovering redraws the canvas constantly; leave the buttons alone unless they change.
   if (foot.innerHTML !== html) foot.innerHTML = html;
+  const tools = $("#grTools");
+  if (tools) $('[data-tool="clear"]', tools).textContent = S.gr.sel.size ? `clear (${S.gr.sel.size})` : "clear";
 }
 
 let grListTimer = 0;
@@ -3459,6 +3727,7 @@ function grGo(i, trail = true) {
     if (S.gr.trail.length > 200) S.gr.trail.shift();
   }
   S.gr.cursor = at;
+  S.gr.cursorOn = true;
   S.gr.preview = true;
   drawGraph();
   clearTimeout(grListTimer);
@@ -3467,7 +3736,9 @@ function grGo(i, trail = true) {
 }
 function grMove(delta) {
   if (!S.gr.order.length) return;
-  grGo(S.gr.order[Math.max(0, Math.min(S.gr.order.length - 1, S.gr.cursor + delta))]);
+  // The first step only reveals the cursor where it rests; the next one moves it.
+  const to = S.gr.cursorOn ? Math.max(0, Math.min(S.gr.order.length - 1, S.gr.cursor + delta)) : S.gr.cursor;
+  grGo(S.gr.order[to]);
 }
 /* The node b returns to, as an index into the nodes, or -1. */
 function grBackIndex() {
@@ -3480,6 +3751,7 @@ function grFollowable() {
   return (S.gr.adj[S.gr.order[S.gr.cursor]] || []).filter((l) => l.j !== back);
 }
 function grFollow(nth) {
+  if (!S.gr.cursorOn) return say("No node under the cursor yet: tap one, or step with h l.");
   const links = grFollowable();
   if (!links.length) return say(grBackIndex() >= 0 ? "No links onward from here; b goes back." : "No links from this node in this scope.");
   if (nth > links.length) say(`Only ${links.length} ${links.length === 1 ? "link" : "links"} onward; following the last.`);
@@ -3495,22 +3767,26 @@ function grBackStep(steps) {
   grGo(i, false);
 }
 function grToggle(i) {
-  const id = S.gr.data.nodes[i].id;
-  if (S.gr.sel.has(id)) S.gr.sel.delete(id); else S.gr.sel.add(id);
+  const nd = S.gr.data.nodes[i], on = !S.gr.sel.has(nd.id);
+  if (on) S.gr.sel.add(nd.id); else S.gr.sel.delete(nd.id);
+  const n = S.gr.sel.size;
+  say(`${on ? "Picked" : "Dropped"} ${grHash()}${nd.name}. ${n ? `${n} picked — > narrows to any of them, Esc or “clear” drops them.` : "Nothing picked now."}`);
   S.gr.preview = true;
   drawGraph();
   clearTimeout(grListTimer);
   grListTimer = setTimeout(grList, 160);
 }
 function grToggleCursor() {
-  if (S.gr.order.length) grToggle(S.gr.order[S.gr.cursor]);
+  if (!S.gr.order.length) return;
+  if (!S.gr.cursorOn) return say("No node under the cursor yet: tap one, or step with h l, then pick it.");
+  grToggle(S.gr.order[S.gr.cursor]);
 }
 /* What the list previews and > narrows to: the picked nodes as one any-of scope (tag:a,b), else the cursor node. */
 function grTarget(cursorOnly = false) {
   const data = S.gr.data;
   if (!data) return null;
   const nds = S.gr.sel.size && !cursorOnly ? [...S.gr.sel].map((id) => data.nodes[S.gr.idx.get(id)]).filter(Boolean)
-    : [data.nodes[S.gr.order[S.gr.cursor]]].filter(Boolean);
+    : S.gr.cursorOn ? [data.nodes[S.gr.order[S.gr.cursor]]].filter(Boolean) : [];
   if (!nds.length) return null;
   const or = (names) => (names.length <= 2 ? names.join(" or ") : `${names[0]} or ${names[1]} or ${names.length - 2} more`);
   return { scope: `${nds[0].scope.split(":")[0]}:${nds.map((nd) => nd.id).join(",")}`,
@@ -3545,7 +3821,7 @@ async function grListScope() {
 }
 function grNarrow(cursorOnly = false) {
   const target = grTarget(cursorOnly);
-  if (!target) return;
+  if (!target) return say("Nothing to narrow to yet: tap a node, or hold nodes to pick several.");
   if (S.scopes.includes(target.scope)) return say("Already narrowed to that.");
   clearTimeout(grListTimer);
   S.gr.sel.clear(); S.gr.preview = false;
@@ -3700,6 +3976,127 @@ function openOriginal() {
   window.open(url, "_blank", "noopener");
 }
 
+/* ── Image viewer ─────────────────────────────────────────── */
+/* A sheet over the page rather than a new tab: on a phone, opening the raw file loses your place in
+   the archive and the browser's own viewer knows nothing about posts or the veil. Items are
+   { id, src, thumb, title, sens }; a post's photos are one list the viewer steps along. */
+function vwVeiled(it) {
+  return S.veil != null && it.sens != null && it.sens >= S.veil && !S.revealed.has(it.id);
+}
+/* The photos a card or a reader item offers, in post order, and which of them to start on. */
+function vwListFor(d, at = null) {
+  const members = (d.post?.members || []).filter((m) => m.kind === "image" && (m.status ?? "READY") === "READY");
+  const items = (members.length ? members : [d]).map((m) => ({
+    id: m.media_id,
+    src: m.media_url || `/media/${m.media_id}/file`,
+    thumb: m.thumb_url || null,
+    // A post member from a search result carries no title or sensitivity of its own; its post's stand in.
+    title: m.title || `${m.role || d.kind} ${m.seq ?? ""}`.trim(),
+    sens: m.sensitivity ?? d.sensitivity ?? null,
+  }));
+  const want = at ?? d.media_id;
+  return { items, i: Math.max(0, items.findIndex((it) => it.id === want)) };
+}
+function vwOpen(items, i = 0) {
+  items = items.filter((it) => it.src);
+  if (!items.length) return say("No photo to show here.");
+  S.vw = { open: true, items, i: Math.min(Math.max(0, i), items.length - 1), s: 1, x: 0, y: 0 };
+  $("#viewer").hidden = false;
+  document.body.style.overflow = "hidden";   // the page must not scroll under the sheet
+  vwPaint();
+}
+function vwClose() {
+  if (!S.vw.open) return false;
+  S.vw.open = false;
+  $("#viewer").hidden = true;
+  $("#vwImg").removeAttribute("src");        // stop a large photo decoding once it is out of sight
+  $("#vwImg").dataset.src = "";
+  document.body.style.overflow = "";
+  return true;
+}
+function vwGo(delta) {
+  const n = S.vw.items.length;
+  if (n < 2) return say("Only the one photo here.");
+  S.vw.i = (S.vw.i + (delta % n) + n) % n;
+  S.vw.s = 1; S.vw.x = 0; S.vw.y = 0;
+  vwPaint();
+}
+function vwFit() { S.vw.s = 1; S.vw.x = 0; S.vw.y = 0; vwPaintTransform(); }
+function vwZoom(factor, cx, cy) {
+  const r = $("#vwStage").getBoundingClientRect();
+  // Keep whatever is under the fingers still: it sits at (point − pan) / scale in the photo's own frame.
+  const mx = (cx ?? r.width / 2) - r.width / 2, my = (cy ?? r.height / 2) - r.height / 2;
+  const bx = (mx - S.vw.x) / S.vw.s, by = (my - S.vw.y) / S.vw.s;
+  S.vw.s = Math.max(1, Math.min(14, S.vw.s * factor));
+  S.vw.x = mx - bx * S.vw.s; S.vw.y = my - by * S.vw.s;
+  if (S.vw.s === 1) { S.vw.x = 0; S.vw.y = 0; }
+  vwPaintTransform();
+}
+function vwPaintTransform() {
+  $("#vwImg").style.transform = `translate(${S.vw.x.toFixed(1)}px, ${S.vw.y.toFixed(1)}px) scale(${S.vw.s.toFixed(3)})`;
+}
+function vwPaint() {
+  const it = S.vw.items[S.vw.i], n = S.vw.items.length, img = $("#vwImg");
+  if (img.dataset.src !== it.src) {
+    img.dataset.src = it.src;
+    img.onerror = () => { img.onerror = null; if (it.thumb) img.src = it.thumb; };   // offline or thumbnail-only: the thumbnail is all there is
+    img.src = it.src;
+  }
+  const veil = vwVeiled(it);
+  $("#vwStage").classList.toggle("is-veiled", veil);
+  $("#vwCount").textContent = n > 1 ? `${S.vw.i + 1} of ${n}` : "";
+  $("#vwTitle").textContent = it.title;
+  $("#vwRaw").href = it.src;
+  $("#vwHint").textContent = veil ? "Veiled — tap the photo to reveal it (x)" :
+    n > 1 ? "swipe or ‹ › for the next · pinch or double-tap zooms · Esc closes" :
+            "pinch or double-tap zooms · drag pans · Esc, or a tap beside the photo, closes";
+  vwPaintTransform();
+}
+function vwReveal() {
+  const it = S.vw.items[S.vw.i];
+  if (it.id == null) return;
+  if (S.revealed.has(it.id)) S.revealed.delete(it.id); else S.revealed.add(it.id);
+  renderResults();
+  if (S.item) { const box = $("#reader [data-veil]"); if (box) box.classList.toggle("is-veiled", veiled(S.item)); }
+  vwPaint();
+}
+/* A keyframe has no media id of its own; it borrows the video's title, time and sensitivity. */
+function vwFrame(btn, src) {
+  const t = $("span", btn)?.textContent || "";
+  return [{ id: null, src, thumb: null, title: `${S.item?.title || "Video"} — frame at ${t}`, sens: S.item?.sensitivity ?? null }];
+}
+/* i: whatever image the cursor is on. In the reader that is the keyframe, post photo or preview under
+   the reader cursor; elsewhere it is the result card's photos. */
+function viewHere() {
+  if (S.focus === "reader" && S.item) {
+    const row = rowsOf("reader")[S.cursor.reader];
+    if (row && row.tagName !== "VIDEO" && row.dataset.href && !row.dataset.open) {
+      return vwOpen(vwFrame(row, row.dataset.href));
+    }
+    const at = row?.dataset.open ? Number(row.dataset.open) : null;
+    const { items, i } = vwListFor(S.item, at);
+    return vwOpen(items, i);
+  }
+  const card = currentCard();
+  if (!card) return say("Nothing under the cursor.");
+  const { items, i } = vwListFor(card, card.hit?.member_id ?? null);
+  vwOpen(items, i);
+}
+/* The viewer swallows the keys it uses while it is open, so the page underneath stays put. */
+function vwKey(e) {
+  const k = e.key;
+  const hit = (fn) => { e.preventDefault(); fn(); };
+  if (k === "Escape" || k === "q") return hit(vwClose);
+  if (k === "ArrowRight" || k === ".") return hit(() => vwGo(1));
+  if (k === "ArrowLeft" || k === ",") return hit(() => vwGo(-1));
+  if (k === "+" || k === "=") return hit(() => vwZoom(1.5));
+  if (k === "-") return hit(() => vwZoom(1 / 1.5));
+  if (k === "0") return hit(vwFit);
+  if (k === "x") return hit(vwReveal);
+  if (k === "O" || k === "Enter" || k === "o") return hit(() => window.open($("#vwRaw").href, "_blank", "noopener"));
+  if (k === "?") return hit(() => toggleHelp());
+}
+
 /* ── Caption review ───────────────────────────────────────── */
 /* g c lists images captioned with the current prompt, newest first. While that scope is active the
    progress line polls the server, and new captions stream into the list without moving the cursor. */
@@ -3772,6 +4169,7 @@ function onKey(e) {
     return;
   }
   if (t instanceof Element && t.matches("input, textarea, select")) return;
+  if (S.vw.open) return vwKey(e);   // the viewer is modal: its keys, not the page's
 
   const k = e.key;
   if (k === "Escape") {
@@ -3781,6 +4179,7 @@ function onKey(e) {
     if (S.tl.mark != null) { S.tl.mark = null; drawTimeline(); if (S.tl.picked) tlListMonth(); return; }
     if (closeReader()) return;
     if (S.mode === "timeline" && S.tl.picked) return tlDeselect();
+    if (S.mode === "map" && S.mp.netMode) return mpSetNet(false);
     if (S.mode === "map" && mpClear()) return;
     if (S.mode === "graph" && grClear()) return;
     if (S.q) { S.q = ""; $("#q").value = ""; say("Query cleared."); return navigate(); }
@@ -3843,6 +4242,7 @@ function onKey(e) {
     case "S": return done(cycleSort);
     case "R": return done(() => { reviewNew = 0; scheduleSearch(0); pollReview(); say("Refreshed."); });
     case "O": return done(openOriginal);
+    case "i": return done(viewHere);
     case ",": return done(() => stepMember(-n));
     case ".": return done(() => stepMember(n));
     case "j": case "ArrowDown": return done(() => move(n));
@@ -3935,6 +4335,8 @@ function toggleHelp(force) {
 
 /* ── Wiring ───────────────────────────────────────────────── */
 document.addEventListener("keydown", onKey);
+/* The chart tools are for fingers. (hover: none) catches most phones; a first real touch catches the rest. */
+addEventListener("touchstart", () => document.documentElement.classList.add("is-touch"), { once: true, passive: true });
 $("#q").addEventListener("input", (e) => { S.q = e.target.value; renderSort(); writeHash(true); scheduleSearch(); });
 $("#q").addEventListener("focus", paintMode);
 $("#q").addEventListener("blur", paintMode);
@@ -3975,6 +4377,8 @@ $("#list").addEventListener("click", (e) => {
   setFocus("results");
   const card = S.hits[S.cursor.results];
   if (e.target.closest(".is-veiled") && veiled(card)) return toggleVeil();
+  // The thumbnail is the picture; the rest of the card is the item.
+  if (e.target.closest(".thumb")) { const { items, i } = vwListFor(card, card.hit?.member_id ?? null); return vwOpen(items, i); }
   openCard(card);
 });
 $("#reader").addEventListener("click", (e) => {
@@ -3985,6 +4389,19 @@ $("#reader").addEventListener("click", (e) => {
   if (e.target.closest("[data-recap-go]")) return submitRecaption();
   if (e.target.closest("[data-recap-cancel]")) return closeRecaption();
   if (e.target.closest("[data-veil].is-veiled")) { e.preventDefault(); return toggleVeil(); }
+  // The viewer, from the preview or from a thumbnail's corner handle.
+  const dot = e.target.closest("[data-view], [data-viewsrc]");
+  if (dot) {
+    e.preventDefault(); e.stopPropagation();
+    if (dot.dataset.viewsrc) return vwOpen(vwFrame(dot.closest("button"), dot.dataset.viewsrc));
+    const { items, i } = vwListFor(S.item, Number(dot.dataset.view));
+    return vwOpen(items, i);
+  }
+  if (e.target.closest("[data-zoom]")) {
+    e.preventDefault();
+    const { items, i } = vwListFor(S.item);
+    return vwOpen(items, i);
+  }
   const row = e.target.closest("[data-r]");
   if (!row || row.tagName === "A" || row.tagName === "VIDEO") return;  // links and video controls work natively
   S.cursor.reader = rowsOf("reader").indexOf(row);
@@ -3997,6 +4414,92 @@ $("#reader").addEventListener("keydown", (e) => {
   if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); submitRecaption(); }
   else if (e.key === "Escape") { e.preventDefault(); closeRecaption(); }
 });
+$("#viewer").addEventListener("click", (e) => {
+  const act = e.target.closest("[data-vw]")?.dataset.vw;
+  if (!act) return;
+  if (act === "close") vwClose();
+  else if (act === "prev") vwGo(-1);
+  else if (act === "next") vwGo(1);
+  else vwZoom(act === "in" ? 1.5 : 1 / 1.5);
+});
+/* Viewer gestures. Touch is handled apart from the pointer events because a pinch needs both
+   fingers at once, and the pointer handlers step aside for it. */
+(function wireViewer() {
+  const stage = $("#vwStage"), img = $("#vwImg");
+  const at = (x, y) => { const r = stage.getBoundingClientRect(); return [x - r.left, y - r.top]; };
+  stage.addEventListener("wheel", (e) => { e.preventDefault(); vwZoom(e.deltaY < 0 ? 1.25 : 0.8, ...at(e.clientX, e.clientY)); }, { passive: false });
+  let drag = null;
+  stage.addEventListener("pointerdown", (e) => {
+    if (e.pointerType === "touch") return;
+    drag = { x: e.clientX, y: e.clientY, ox: S.vw.x, oy: S.vw.y, moved: false, onImg: e.target === img };
+    stage.setPointerCapture(e.pointerId);
+  });
+  stage.addEventListener("pointermove", (e) => {
+    if (!drag) return;
+    const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+    if (Math.abs(dx) + Math.abs(dy) > 3) drag.moved = true;
+    if (!drag.moved) return;
+    S.vw.x = drag.ox + dx; S.vw.y = drag.oy + dy;
+    vwPaintTransform();
+  });
+  stage.addEventListener("pointerup", (e) => {
+    const d = drag; drag = null;
+    if (!d || d.moved || e.pointerType === "touch") return;
+    if (!d.onImg) return vwClose();                                  // a click beside the photo closes
+    if (vwVeiled(S.vw.items[S.vw.i])) vwReveal();
+  });
+  stage.addEventListener("dblclick", (e) => { e.preventDefault(); if (S.vw.s > 1) vwFit(); else vwZoom(2.5, ...at(e.clientX, e.clientY)); });
+
+  // One finger pans a zoomed photo and swipes between a post's photos; two fingers pinch.
+  let t = null, tapAt = 0;
+  stage.addEventListener("touchstart", (e) => {
+    e.preventDefault();
+    const ts = e.touches;
+    if (ts.length === 1) t = { one: true, x: ts[0].clientX, y: ts[0].clientY, x0: ts[0].clientX, y0: ts[0].clientY, ox: S.vw.x, oy: S.vw.y, dist: 0, onImg: e.target === img };
+    else if (ts.length >= 2) t = { one: false, span: touchSpan(ts), mid: touchMid(ts) };
+  }, { passive: false });
+  stage.addEventListener("touchmove", (e) => {
+    e.preventDefault();
+    if (!t) return;
+    const ts = e.touches;
+    if (t.one && ts.length === 1) {
+      const dx = ts[0].clientX - t.x0, dy = ts[0].clientY - t.y0;
+      t.x = ts[0].clientX; t.y = ts[0].clientY;
+      t.dist = Math.abs(dx) + Math.abs(dy);
+      if (t.dist <= 8) return;
+      // Fitted, a horizontal drag is a swipe to the next photo; the photo follows the finger a little so it answers.
+      if (S.vw.s > 1.01) { S.vw.x = t.ox + dx; S.vw.y = t.oy + dy; } else { S.vw.x = dx * 0.35; S.vw.y = 0; }
+      vwPaintTransform();
+    } else if (!t.one && ts.length >= 2) {
+      const sp = touchSpan(ts), m = touchMid(ts);
+      S.vw.x += m[0] - t.mid[0]; S.vw.y += m[1] - t.mid[1];
+      if (t.span > 10) vwZoom(sp / t.span, ...at(m[0], m[1]));
+      else vwPaintTransform();
+      t.span = sp; t.mid = m;
+    }
+  }, { passive: false });
+  const end = (e) => {
+    e.preventDefault();
+    const was = t;
+    if (e.touches.length) { t = null; return; }   // still a finger down: this gesture is over, another goes on
+    t = null;
+    if (!was || !was.one) return;
+    if (was.dist > 8) {
+      if (S.vw.s > 1.01) return;
+      const dx = was.x - was.x0 || 0;             // x is the last move's position, x0 where the finger went down
+      vwFit();
+      if (Math.abs(dx) > 45) vwGo(dx < 0 ? 1 : -1);
+      return;
+    }
+    if (!was.onImg) return vwClose();
+    if (vwVeiled(S.vw.items[S.vw.i])) return vwReveal();
+    const now = Date.now();
+    if (now - tapAt < 320) { tapAt = 0; return S.vw.s > 1 ? vwFit() : vwZoom(2.5, ...at(was.x0, was.y0)); }
+    tapAt = now;
+  };
+  stage.addEventListener("touchend", end, { passive: false });
+  stage.addEventListener("touchcancel", end, { passive: false });
+})();
 $("#moreBtn").addEventListener("click", loadMore);
 $("#composer").addEventListener("submit", (e) => { e.preventDefault(); if (askBusy()) stopTurn(); else sendQuestion(); });
 $("#askMode").addEventListener("click", toggleAskMode);
