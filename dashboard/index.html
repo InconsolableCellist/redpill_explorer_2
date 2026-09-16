@@ -847,7 +847,7 @@ mark { background: var(--hot-w); color: var(--ink); padding: 0 1px; }
           <textarea id="askInput" rows="2" placeholder="Ask about the archive…  (Enter sends, Shift-Enter new line, Esc leaves)" aria-label="Question"></textarea>
           <div class="composer__side">
             <button class="btn drawer-btn" type="button" data-drawer title="The conversations so far">Chats</button>
-            <button class="btn" type="submit" id="askSend">Ask</button>
+            <button class="btn" type="submit" id="askSend">Send</button>
             <button class="btn" type="button" id="askMode" title="m: informed uses general knowledge too; archive answers only from the archive">informed</button>
             <button class="btn" type="button" id="askReach" title="E: sample reads what fits the context at this depth; read all reads every candidate item in batches (minutes)">sample</button>
             <button class="btn" type="button" id="askKind" title="M: Ask answers a question; Argue has a steelman and a skeptic debate a claim">ask</button>
@@ -2312,7 +2312,8 @@ function renderComposer() {
   $("#argueRole").hidden = !argue;
   $("#argueRole").textContent = role ? `you: ${role}` : "watch";
   const busy = askBusy();
-  $("#askSend").textContent = busy ? "Stop" : !argue ? "Ask" : !started ? "Argue" : role ? "Reply" : "Next round";
+  // "Send" rather than "Ask": the button beside it switches ask/argue and would read the same.
+  $("#askSend").textContent = busy ? "Stop" : !argue ? "Send" : !started ? "Start" : role ? "Reply" : "Next round";
   $("#askSend").title = busy ? "Stop this answer" : "Send (Enter)";
   // The key hints only help where there are keys; narrow, the box is already small.
   $("#askInput").placeholder = !argue ? (narrowQ.matches ? "Ask about the archive…" : "Ask about the archive…  (Enter sends, Shift-Enter new line, Esc leaves)")
