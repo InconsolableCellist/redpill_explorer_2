@@ -238,6 +238,13 @@ def extract_job(client: httpx.Client, cfg, job: Job, max_tokens: int | None = No
     return result
 
 
+CONSECUTIVE_TRANSIENT_STOP = 10   # a dead vision server should stop the run, not plough through the queue
+
+
+class ServiceDown(Exception):
+    """The vision server failed this many times in a row with nothing to do with the images."""
+
+
 CLAIM_LEASE_S = 1800.0   # longer than the slowest single image; a crashed run's items free up after this
 
 
@@ -300,6 +307,7 @@ def run(conn: sqlite3.Connection, cfg, limit: int | None = None, include_thumbna
     clients: list[httpx.Client] = []
     lock = threading.Lock()
     owner = run_owner(cfg)
+    consecutive = 0
 
     def claimed(queue: list[Job]):
         # Several runs (cube, another GPU host) can work through the same list: each takes an image only when
@@ -319,6 +327,8 @@ def run(conn: sqlite3.Connection, cfg, limit: int | None = None, include_thumbna
         return extract_job(client, cfg, job, max_tokens)
 
     def on_result(job: Job, result: dict) -> None:
+        nonlocal consecutive
+        consecutive = 0
         db.release(conn, STAGE, job.media_id, owner)
         if owner_captioned(conn, job.media_id):
             # Recaptioned from the dashboard with the owner's note while this job waited in the queue.
@@ -342,8 +352,9 @@ def run(conn: sqlite3.Connection, cfg, limit: int | None = None, include_thumbna
 
     def on_error(job: Job, exc: BaseException) -> None:
         db.release(conn, STAGE, job.media_id, owner)
+        text = f"{type(exc).__name__}: {exc}"
         with conn:
-            db.upsert_failure(conn, STAGE, job.media_id, None, f"{type(exc).__name__}: {exc}"[:2000])
+            db.upsert_failure(conn, STAGE, job.media_id, None, text[:2000])
         save_raw(cfg, job.media_id, exc)
         if isinstance(exc, vlm.VLMLengthError) and not job.long_output:
             job.long_output = True
@@ -353,6 +364,10 @@ def run(conn: sqlite3.Connection, cfg, limit: int | None = None, include_thumbna
             return
         stats.failed += 1
         log.warning("media %s failed: %s", job.media_id, exc)
+        nonlocal consecutive
+        consecutive = consecutive + 1 if db.failure_kind(text) == "transient" else 0
+        if consecutive >= CONSECUTIVE_TRANSIENT_STOP:
+            raise ServiceDown(f"{consecutive} requests in a row failed to reach {cfg.base_url}: {exc}")
 
     try:
         finished = runner.run_jobs(claimed(normal), work, on_result, on_error, cfg.vision_concurrency,
@@ -362,6 +377,10 @@ def run(conn: sqlite3.Connection, cfg, limit: int | None = None, include_thumbna
             finished = runner.run_jobs(claimed(long_jobs), lambda j: work(j, cfg.vision_max_tokens_tall), on_result,
                                        on_error, 1, total=len(long_jobs), desc="extract-images (long)")
         stats.interrupted = not finished
+    except ServiceDown as exc:
+        # Those images keep their claim-free, transient failure rows; the next run picks them up again.
+        log.error("stopping: %s", exc)
+        stats.interrupted = True
     finally:
         for client in clients:
             client.close()

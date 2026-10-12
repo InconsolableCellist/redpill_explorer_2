@@ -35,3 +35,28 @@ def test_failure_helpers():
     assert db.pending_failures(conn, "thumb") == {7}
     db.clear_failure(conn, "thumb", 7)
     assert db.pending_failures(conn, "thumb") == set()
+
+
+def test_a_service_being_down_never_retires_an_item():
+    conn = db.connect(":memory:")
+    db.init_schema(conn)
+    conn.execute("INSERT INTO media(id, uid, kind, status) VALUES (1, 'a', 'image', 'READY'), (2, 'b', 'image', 'READY')")
+    # The vision server was refused three times for item 1; item 2's own file is unreadable.
+    for _ in range(3):
+        db.upsert_failure(conn, "vlm_image", 1, None, "VLMError: ConnectError: [Errno 111] Connection refused")
+        db.upsert_failure(conn, "vlm_image", 2, None, "OSError: [Errno 5] Input/output error")
+    kinds = dict(conn.execute("SELECT media_id, kind FROM failure WHERE stage='vlm_image'"))
+    assert kinds == {1: "transient", 2: "item"}
+    assert db.pending_failures(conn, "vlm_image") == {2}
+    # Rows written before failures were classified are labelled on the next migration.
+    conn.execute("UPDATE failure SET kind=NULL")
+    assert db.classify_failures(conn) == 2
+    assert db.pending_failures(conn, "vlm_image") == {2}
+    # Each kind in turn, so the pattern list keeps covering what the services actually say.
+    for text, kind in [("VLMError: ReadTimeout", "transient"),
+                       ("HTTPStatusError: Server error '500 Internal Server Error'", "transient"),
+                       ("{\"message\":\"Context size has been exceeded.\"}", "transient"),
+                       ("AskError: chat model unavailable: connect", "transient"),
+                       ("VLMLengthError: unparseable response (finish_reason=length)", "item"),
+                       ("HTTPStatusError: Client error '400 Bad Request'", "item")]:
+        assert db.failure_kind(text) == kind, text

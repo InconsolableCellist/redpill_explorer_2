@@ -243,3 +243,25 @@ def test_parallel_runs_claim_images_so_none_is_read_twice(tmp_path):
     assert captioned == set(ids[1:])
     # Finished items give their claims back; the other run's claim is untouched.
     assert [r[0] for r in conn.execute("SELECT media_id FROM work_claim")] == [ids[0]]
+
+
+def test_a_dead_vision_server_stops_the_run_and_retires_nothing(tmp_path):
+    root = tmp_path / "corpus"
+    root.mkdir()
+    for shade in range(30):
+        Image.new("RGB", (500, 400), (shade * 8, 0, 0)).save(root / f"{shade}.png")
+    conn = db.connect(":memory:")
+    db.init_schema(conn)
+    cfg = SimpleNamespace(corpus_root=root, base_url="http://down.test/v1", vision_model="gemma-test",
+                          vision_max_tokens=100, vision_max_side=1024, vision_concurrency=1,
+                          vision_max_tiles=6, vision_max_tokens_tall=300, data_dir=tmp_path / "data")
+    scan.scan(conn, cfg)
+
+    def refused(request):
+        raise httpx.ConnectError("[Errno 111] Connection refused")
+
+    stats = extract_images.run(conn, cfg, client_factory=lambda: httpx.Client(transport=httpx.MockTransport(refused)))
+    # It gives up early instead of walking the whole queue, and every failure is retryable.
+    assert stats.interrupted and stats.failed == extract_images.CONSECUTIVE_TRANSIENT_STOP
+    assert db.pending_failures(conn, extract_images.STAGE) == set()
+    assert len(extract_images.select_jobs(conn, cfg, None, True)) == 30

@@ -1,6 +1,7 @@
 """SQLite connection, schema and small shared helpers."""
 from __future__ import annotations
 
+import re
 import sqlite3
 import time
 from pathlib import Path
@@ -277,8 +278,16 @@ ADDED_COLUMNS = [
     ("chat_log", "trace_json", "TEXT"),       # the agent's steps: action, args, result size, timing
     ("chat_log", "context_json", "TEXT"),     # what the user attached: items, related, depth
     ("chat_session", "kind", "TEXT"),         # NULL or 'ask' | 'argue'
-    ("chat_session", "seed_json", "TEXT"),    # argue: the Ask question and answer a debate started from
+    ("chat_session", "seed_json", "TEXT"),
+    ("failure", "kind", "TEXT"),              # item | transient (the service was down, not the item's fault)    # argue: the Ask question and answer a debate started from
 ]
+
+
+def classify_failures(conn: sqlite3.Connection) -> int:
+    """Label rows written before failures were classified, so old outages stop retiring items."""
+    rows = conn.execute("SELECT id, error FROM failure WHERE kind IS NULL").fetchall()
+    conn.executemany("UPDATE failure SET kind=? WHERE id=?", [(failure_kind(e), i) for i, e in rows])
+    return len(rows)
 
 
 def init_schema(conn: sqlite3.Connection) -> None:
@@ -286,6 +295,7 @@ def init_schema(conn: sqlite3.Connection) -> None:
     for table, column, sql_type in ADDED_COLUMNS:
         if column not in {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}:
             conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {sql_type}")
+    classify_failures(conn)
     conn.commit()
 
 
@@ -310,27 +320,43 @@ def kv_set(conn: sqlite3.Connection, key: str, value: str) -> None:
 # UNIQUE(stage, media_id, doc_id) does not dedupe rows where one column is NULL,
 # so failures are looked up with IS comparisons rather than ON CONFLICT.
 
+# A failure that says nothing about the item: the service was down, timed out, hung up, was out of
+# context or returned a server error. Retrying these forever is right; counting them against the item
+# is not, and it is how a few hours of a dead vision server used to retire images for good.
+TRANSIENT = re.compile(
+    r"ConnectError|ConnectTimeout|ReadTimeout|WriteTimeout|PoolTimeout|ReadError|WriteError|"
+    r"RemoteProtocolError|ProxyError|Connection refused|Server disconnected|Temporary failure in name resolution|"
+    r"Name or service not known|Server error '5\d\d|HTTP 5\d\d|Context size has been exceeded|"
+    r"server_error|model unavailable|Errno 111|Errno 104|Errno 110",
+    re.IGNORECASE)
+
+
+def failure_kind(error: str) -> str:
+    return "transient" if TRANSIENT.search(error or "") else "item"
+
+
 def upsert_failure(conn: sqlite3.Connection, stage: str, media_id: int | None,
                    doc_id: int | None, error: str, attempts: int | None = None) -> None:
     row = conn.execute(
         "SELECT id FROM failure WHERE stage=? AND media_id IS ? AND doc_id IS ?",
         (stage, media_id, doc_id),
     ).fetchone()
+    kind = failure_kind(error)
     if row:
         if attempts is None:
             conn.execute(
-                "UPDATE failure SET attempts=attempts+1, error=?, updated_at=datetime('now') WHERE id=?",
-                (error, row[0]),
+                "UPDATE failure SET attempts=attempts+1, error=?, kind=?, updated_at=datetime('now') WHERE id=?",
+                (error, kind, row[0]),
             )
         else:
             conn.execute(
-                "UPDATE failure SET attempts=?, error=?, updated_at=datetime('now') WHERE id=?",
-                (attempts, error, row[0]),
+                "UPDATE failure SET attempts=?, error=?, kind=?, updated_at=datetime('now') WHERE id=?",
+                (attempts, error, kind, row[0]),
             )
     else:
         conn.execute(
-            "INSERT INTO failure(stage, media_id, doc_id, attempts, error) VALUES (?, ?, ?, ?, ?)",
-            (stage, media_id, doc_id, attempts or 1, error),
+            "INSERT INTO failure(stage, media_id, doc_id, attempts, error, kind) VALUES (?, ?, ?, ?, ?, ?)",
+            (stage, media_id, doc_id, attempts or 1, error, kind),
         )
 
 
@@ -343,11 +369,13 @@ def clear_failure(conn: sqlite3.Connection, stage: str, media_id: int | None,
 
 
 def pending_failures(conn: sqlite3.Connection, stage: str, column: str = "media_id") -> set[int]:
-    """Ids (media_id or doc_id) that have failed MAX_ATTEMPTS times and should be skipped."""
+    """Ids (media_id or doc_id) that have failed MAX_ATTEMPTS times for their own reasons and should be
+    skipped. Failures from a service being down or overloaded are retried however often they happen."""
     if column not in ("media_id", "doc_id"):
         raise ValueError(column)
     rows = conn.execute(
-        f"SELECT {column} FROM failure WHERE stage=? AND attempts>=? AND {column} IS NOT NULL",
+        f"""SELECT {column} FROM failure WHERE stage=? AND attempts>=? AND {column} IS NOT NULL
+            AND coalesce(kind, 'item') != 'transient'""",
         (stage, MAX_ATTEMPTS),
     )
     return {r[0] for r in rows}
