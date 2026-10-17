@@ -363,12 +363,28 @@ def extract(client: httpx.Client, cfg, images: bytes | list[bytes], schema: dict
                     f"max_tokens={payload['max_tokens']}): {exc}", raw=content) from exc
     if not isinstance(data, dict):
         raise VLMError(f"response is not an object: {type(data).__name__}")
+    data = scrub(data)
     missing = [k for k in schema["required"] if k not in data]
     if missing:
         raise VLMError(f"response missing fields: {missing}")
     data["_usage"] = body.get("usage") or {}
     data["_elapsed_s"] = round(time.monotonic() - started, 2)
     return data
+
+
+_LONE_SURROGATE = re.compile(r"[\ud800-\udfff]")
+
+
+def scrub(value):
+    """Drop lone surrogates from model output. Half an emoji ("\ud83d" with no partner) parses as JSON
+    but cannot be encoded as UTF-8, so SQLite refuses the whole caption."""
+    if isinstance(value, str):
+        return _LONE_SURROGATE.sub("", value)
+    if isinstance(value, list):
+        return [scrub(v) for v in value]
+    if isinstance(value, dict):
+        return {k: scrub(v) for k, v in value.items()}
+    return value
 
 
 @dataclass

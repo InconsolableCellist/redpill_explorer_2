@@ -265,3 +265,28 @@ def test_a_dead_vision_server_stops_the_run_and_retires_nothing(tmp_path):
     assert stats.interrupted and stats.failed == extract_images.CONSECUTIVE_TRANSIENT_STOP
     assert db.pending_failures(conn, extract_images.STAGE) == set()
     assert len(extract_images.select_jobs(conn, cfg, None, True)) == 30
+
+
+def test_half_an_emoji_does_not_end_the_run(tmp_path):
+    root = tmp_path / "corpus"
+    root.mkdir()
+    Image.new("RGB", (500, 400), "gray").save(root / "a.png")
+    Image.new("RGB", (500, 401), "blue").save(root / "b.png")
+    conn = db.connect(":memory:")
+    db.init_schema(conn)
+    cfg = SimpleNamespace(corpus_root=root, base_url="http://vlm.test/v1", vision_model="gemma-test",
+                          vision_max_tokens=100, vision_max_side=1024, vision_concurrency=1,
+                          vision_max_tiles=6, vision_max_tokens_tall=300, data_dir=tmp_path / "data")
+    scan.scan(conn, cfg)
+
+    def handler(request):
+        result = sample_result()
+        # llama.cpp can emit a lone surrogate: JSON parses, UTF-8 encoding does not.
+        result["description"] = "a post \ud83d ending"
+        result["tags"] = ["emoji \udccc tag"]
+        return httpx.Response(200, json={"choices": [{"message": {"content": json.dumps(result)}}]})
+
+    stats = extract_images.run(conn, cfg, client_factory=lambda: httpx.Client(transport=httpx.MockTransport(handler)))
+    assert stats.done == 2 and stats.failed == 0
+    saved = json.loads(conn.execute("SELECT json FROM doc WHERE kind='caption' LIMIT 1").fetchone()[0])
+    assert saved["description"] == "a post  ending" and saved["tags"] == ["emoji  tag"]

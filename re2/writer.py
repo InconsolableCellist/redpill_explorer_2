@@ -57,7 +57,9 @@ def complete(client: httpx.Client, cfg, body: dict) -> str:
         text = "".join(ask._stream_chat(client, _as_chat(cfg), body, None))
     except httpx.HTTPError as exc:
         raise WriterError(f"{type(exc).__name__}: {exc}") from exc
-    return re.sub(r"^\s*<think>.*?</think>", "", text, flags=re.DOTALL).strip()
+    from re2.vlm import scrub
+
+    return scrub(re.sub(r"^\s*<think>.*?</think>", "", text, flags=re.DOTALL).strip())
 
 
 def complete_json(client: httpx.Client, cfg, body: dict) -> dict:

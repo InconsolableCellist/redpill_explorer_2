@@ -698,6 +698,13 @@ def similar(conn: sqlite3.Connection, cfg, media_id: int, k: int = 12) -> list[i
     return out
 
 
+def scrub_text(text: str) -> str:
+    """Lone surrogates from a model cannot be encoded as UTF-8; SQLite would refuse the row."""
+    from re2.vlm import scrub
+
+    return scrub(text)
+
+
 def dumps(obj) -> str:
     return json.dumps(obj, ensure_ascii=False, separators=(",", ":"))
 

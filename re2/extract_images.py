@@ -334,7 +334,15 @@ def run(conn: sqlite3.Connection, cfg, limit: int | None = None, include_thumbna
             # Recaptioned from the dashboard with the owner's note while this job waited in the queue.
             log.info("media %s was recaptioned with the owner's context meanwhile; keeping that", job.media_id)
             return
-        store_image_result(conn, cfg, job.media_id, result, job.low_res)
+        try:
+            store_image_result(conn, cfg, job.media_id, result, job.low_res)
+        except Exception as exc:  # noqa: BLE001 - one unstorable caption must not end a long run
+            log.warning("media %s could not be stored: %s", job.media_id, exc)
+            save_raw(cfg, job.media_id, exc)
+            with conn:
+                db.upsert_failure(conn, STAGE, job.media_id, None, f"store: {type(exc).__name__}: {exc}"[:2000])
+            stats.failed += 1
+            return
         usage = result.get("_usage") or {}
         stats.done += 1
         stats.redone += job.redo

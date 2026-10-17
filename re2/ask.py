@@ -847,7 +847,7 @@ def run(conn: sqlite3.Connection, cfg, question: str, scopes: list[str] | None =
         yield "error", {"msg": str(exc)}
         return
 
-    answer = cites.text.strip()
+    answer = search.scrub_text(cites.text.strip())
     latency = int((time.monotonic() - started) * 1000)
     conn.commit()
     if stopped:
