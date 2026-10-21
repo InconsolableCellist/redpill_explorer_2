@@ -1,10 +1,10 @@
 [paths]
-corpus_root = "/home/offipso/Downloads/redpills"
+corpus_root = "/home/offipso/Downloads/redpills"   # RE2_CORPUS_ROOT, or [paths] in config.local.toml, overrides it
 data_dir = "data"
 legacy_dir = "legacy"
 thumbs_dir = "public/thumbnails"
-archive_metadata = "/home/offipso/Downloads/redpills/archive_metadata.json"
-legacy_output_json = "/home/offipso/Downloads/redpills/output.json"
+archive_metadata = "archive_metadata.json"        # relative: inside corpus_root
+legacy_output_json = "output.json"
 
 [llm]
 base_url = "https://cube.tail99c274.ts.net:5000/v1"

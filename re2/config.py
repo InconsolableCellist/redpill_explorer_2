@@ -1,6 +1,7 @@
 """Load config.toml into a typed Config object."""
 from __future__ import annotations
 
+import os
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
@@ -81,13 +82,14 @@ def load(path: Path | str | None = None) -> Config:
     chat_base_url = chat.get("base_url", llm["base_url"]).rstrip("/")
     chat_model = chat.get("model", llm["chat_model"])
     chat_context_tokens = int(chat.get("context_tokens", 32000))
+    corpus_root = _resolve(os.environ.get("RE2_CORPUS_ROOT") or p["corpus_root"])
     return Config(
-        corpus_root=_resolve(p["corpus_root"]),
+        corpus_root=corpus_root,
         data_dir=_resolve(p["data_dir"]),
         legacy_dir=_resolve(p["legacy_dir"]),
         thumbs_dir=_resolve(p["thumbs_dir"]),
-        archive_metadata=_resolve(p["archive_metadata"]),
-        legacy_output_json=_resolve(p["legacy_output_json"]),
+        archive_metadata=corpus_root / Path(p["archive_metadata"]).expanduser(),
+        legacy_output_json=corpus_root / Path(p["legacy_output_json"]).expanduser(),
         base_url=llm["base_url"].rstrip("/"),
         vision_model=llm["vision_model"],
         vision_concurrency=0 if str(llm["vision_concurrency"]).lower() == "auto" else int(llm["vision_concurrency"]),
