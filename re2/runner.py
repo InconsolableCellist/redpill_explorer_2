@@ -24,7 +24,11 @@ PROGRESS_EVERY_S = 2.0
 # Set by the CLI (jobreport.Report) so every stage's run shows live progress on the Pipeline page:
 # progress_hook(done, failed, total), on the calling thread, at most every PROGRESS_EVERY_S and once at the end.
 progress_hook: Callable[[int, int, int | None], None] | None = None
-interrupted = False   # True once any run_jobs in this process was stopped with Ctrl-C
+interrupted = False   # True once any run_jobs in this process was stopped with Ctrl-C, or by the guard
+# Set by the CLI for stages on a shared model server (routerguard): asked before each new job is started;
+# a reason stops the run as if Ctrl-C was pressed once, so the model it would load back is left alone.
+guard: Callable[[], str | None] | None = None
+stopped_reason: str | None = None
 
 J = TypeVar("J")
 R = TypeVar("R")
@@ -43,11 +47,13 @@ def run_jobs(
 
     Returns True if every job was attempted, False if interrupted.
     """
+    global interrupted, stopped_reason
     pool = ThreadPoolExecutor(concurrency)
     it = iter(jobs)
     pending: dict[Future, J] = {}
     bar = tqdm(total=total, desc=desc, unit="item", dynamic_ncols=True)
     exhausted = False
+    stopped = False
     counts = {"done": 0, "failed": 0, "at": 0.0}
 
     def report(force: bool = False) -> None:
@@ -72,17 +78,23 @@ def run_jobs(
     try:
         while True:
             while not exhausted and len(pending) < concurrency * 2:
+                reason = guard() if guard else None
+                if reason:
+                    stopped_reason, stopped, exhausted = reason, True, True
+                    log.warning("stopping after the %d in flight: %s; re-run to resume", len(pending), reason)
+                    break
                 job = next(it, None)
                 if job is None:
                     exhausted = True
                     break
                 pending[pool.submit(work, job)] = job
             if not pending:
-                return True
+                if stopped:
+                    interrupted = True
+                return not stopped
             done, _ = wait(list(pending), return_when=FIRST_COMPLETED)
             collect(done)
     except KeyboardInterrupt:
-        global interrupted
         interrupted = True
         in_flight = [f for f in pending if not f.cancel()]
         for f in list(pending):

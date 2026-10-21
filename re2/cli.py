@@ -209,6 +209,11 @@ def cmd_video_probe(cfg: config.Config, args: argparse.Namespace) -> int:
 def cmd_asr(cfg: config.Config, args: argparse.Namespace) -> int:
     from re2 import asr
 
+    if args.redo:
+        conn = db.open_db(cfg)
+        n = asr.mark_redo(conn, [i for what in args.redo for i in asr.redo_candidates(conn, what)])
+        print(f"asr: {n} videos queued to transcribe again; start Speech to text to do them")
+        return 0
     try:
         stats = asr.run(db.open_db(cfg), cfg, limit=args.limit)
     except asr.Busy as exc:
@@ -422,6 +427,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("asr", help="transcribe videos with Parakeet on this machine's GPU, when it has room")
     p.add_argument("--limit", type=int, help="transcribe at most N videos")
+    p.add_argument("--redo", action="append", metavar="WHAT",
+                   help="only queue videos to transcribe again, then exit: no_speech (earlier no-speech verdicts) "
+                        "or a language code an earlier engine recorded, e.g. cy; repeatable")
     p.set_defaults(func=cmd_asr)
 
     p = sub.add_parser("pdfs", help="index PDF text layers and queue scanned pages (local)")
@@ -538,14 +546,17 @@ def run_reported(cfg: config.Config, args: argparse.Namespace) -> int:
     from re2 import jobreport, runner, stages
 
     stage = stages.BY_COMMAND.get(args.command)
-    if stage is None or getattr(args, "check", False):
+    if stage is None or getattr(args, "check", False) or getattr(args, "redo", None):
         return args.func(cfg, args)
     target: dict = {"argv": sys.argv[1:]}
     if stage.service in ("vision", "wiki", "chat"):
         from re2 import presets
 
+        from re2 import routerguard
+
         cur = presets.of_service(cfg, stage.service)
         target.update(base_url=cur["base_url"].rstrip("/"), model=cur["model"])
+        runner.guard = routerguard.Guard(target["base_url"], target["model"])
     elif stage.service == "embed":
         target.update(base_url=cfg.embed_url, model=cfg.embed_model)
     elif stage.service == "asr":
@@ -560,7 +571,8 @@ def run_reported(cfg: config.Config, args: argparse.Namespace) -> int:
     except BaseException as exc:
         report.finish("failed", f"{type(exc).__name__}: {exc}")
         raise
-    report.finish("interrupted" if runner.interrupted else "finished" if rc == 0 else "failed")
+    report.finish("interrupted" if runner.interrupted else "finished" if rc == 0 else "failed",
+                  f"stopped: {runner.stopped_reason}" if runner.stopped_reason else None)
     return rc
 
 

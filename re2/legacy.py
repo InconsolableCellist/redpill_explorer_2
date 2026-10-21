@@ -160,9 +160,10 @@ class SourceStats:
         return " ".join(f"{k}={v}" for k, v in self.__dict__.items())
 
 
-def reconcile_sources(conn: sqlite3.Connection, cfg) -> SourceStats:
-    """Attach archive_metadata.json URLs and dates to media via folder/filename."""
-    stats = SourceStats()
+def source_rows(conn: sqlite3.Connection, cfg, stats: SourceStats | None = None) -> list[tuple]:
+    """(media_id, url, date, folder, restricted, role) for every archive_metadata.json file in the manifest,
+    in file order, matched by folder/filename and else by a unique basename."""
+    stats = stats or SourceStats()
     entries = _load_json(Path(cfg.archive_metadata))
     path_to_media = {
         r["rel_path"]: r["media_id"] for r in conn.execute("SELECT rel_path, media_id FROM media_path")
@@ -196,7 +197,23 @@ def reconcile_sources(conn: sqlite3.Connection, cfg) -> SourceStats:
             stats.linked += 1
             rows.append((media_id, e.get("url"), e.get("date"), e.get("folder"),
                          int(bool(e.get("restricted"))), role))
+    return rows
 
+
+def sources_pending(conn: sqlite3.Connection, cfg) -> int:
+    """Files whose link to their post is new, changed or gone since the last reconcile_sources: the
+    "Link tweets" stage's work. archive_metadata.json grows as tweets are saved."""
+    if not Path(cfg.archive_metadata).is_file():
+        return 0
+    want = set(source_rows(conn, cfg))
+    have = set(map(tuple, conn.execute("SELECT media_id, url, date, folder, restricted, role FROM source")))
+    return len(want ^ have)
+
+
+def reconcile_sources(conn: sqlite3.Connection, cfg) -> SourceStats:
+    """Attach archive_metadata.json URLs and dates to media via folder/filename, and rebuild the posts."""
+    stats = SourceStats()
+    rows = source_rows(conn, cfg, stats)
     with conn:
         conn.execute("DELETE FROM source")
         conn.executemany(

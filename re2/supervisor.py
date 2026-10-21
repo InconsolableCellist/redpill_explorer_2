@@ -78,6 +78,7 @@ class Supervisor:
         self.scan_counted_at = 0.0
         self.chain: list[str] = []         # auto or "run local" stages still to consider, in order
         self.chain_current: str | None = None
+        self.waiting: dict[str, str] = {}  # queued model stages that did not start on their own, and why
         self.next_auto = time.monotonic() + 60
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
@@ -306,6 +307,25 @@ class Supervisor:
         finally:
             conn.close()
 
+    def auto_blocker(self, stage: stages.Stage) -> str | None:
+        """Why a queued model stage should not start on its own now (None: go ahead). Started by hand, it
+        is not asked: the Pipeline page already says what a start would unload."""
+        if stage.service == "asr":
+            from re2 import asr
+
+            try:
+                asr.pick_card(config.load())
+            except asr.Busy as exc:
+                return str(exc)
+            except (OSError, subprocess.SubprocessError) as exc:
+                return f"nvidia-smi: {exc}"
+        elif stage.service in SERVICE_STAGES:
+            from re2 import routerguard
+
+            target = self.service_target(stage, None)
+            return routerguard.may_start(target["base_url"], target["model"])
+        return None
+
     def _advance_chain(self) -> None:
         with self.lock:
             if not self.chain:
@@ -316,6 +336,12 @@ class Supervisor:
                 name = self.chain.pop(0)
                 pending = self.refresh_counts([name]).get(name, {}).get("pending")
                 if pending:
+                    blocker = self.auto_blocker(stages.BY_NAME[name])
+                    if blocker:
+                        log.info("pipeline: queued %s waits: %s", name, blocker)
+                        self.waiting[name] = blocker
+                        continue
+                    self.waiting.pop(name, None)
                     try:
                         self.start(name)
                     except (Refused, OSError) as exc:
@@ -376,6 +402,7 @@ class Supervisor:
                     "running": s.name in live, "run": run,
                     "last_finished": (history.get(s.name) or {}).get("last_finished"),
                     "failures": stages.failures(conn, s), "queued": s.name in self.chain,
+                    "waiting": self.waiting.get(s.name),
                 })
         finally:
             conn.close()

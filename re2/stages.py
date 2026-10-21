@@ -95,6 +95,12 @@ def _ocr_pending(conn, cfg) -> int:
     return sum(1 for r in conn.execute("SELECT media_id, page FROM pdf_ocr_queue") if (r[0], r[1]) not in failed)
 
 
+def _sources_pending(conn, cfg) -> int:
+    from re2 import legacy
+
+    return legacy.sources_pending(conn, cfg)
+
+
 def _asr_pending(conn, cfg) -> int:
     from re2 import asr
 
@@ -150,6 +156,10 @@ STAGES: list[Stage] = [
     Stage("scan", "Find new files", "scan", "files", None, True, ("scan",), scan_changes,
           lambda c, cfg: _one(c, "SELECT COUNT(*) FROM media_path WHERE readable=1"),
           help="Reads the corpus folder and records new, changed and missing files. Nothing else sees a file until this has run."),
+    Stage("sources", "Link tweets", "reconcile-sources", "files", None, True, (),
+          lambda c, cfg: _sources_pending(c, cfg),
+          lambda c, cfg: _one(c, "SELECT COUNT(*) FROM post"), after=("scan",), options=(),
+          help="Groups each saved tweet's screenshot, photos and videos into one post, from archive_metadata.json."),
     Stage("thumbs", "Thumbnails", "thumbs", "images", None, True, ("thumb",),
           lambda c, cfg: _without_failures(c, "thumb", f"""SELECT m.id FROM media m WHERE m.kind='image'
               AND m.status='READY' AND m.thumb_path IS NULL AND m.sha256 IS NOT NULL AND {READABLE}"""),

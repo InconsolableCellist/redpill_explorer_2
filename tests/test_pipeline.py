@@ -175,7 +175,7 @@ def test_queued_stages_run_in_order_when_they_have_work(setup, monkeypatch):
         n: {"pending": {"scan": 1, "thumbs": 0, "video_probe": 2}.get(n, 0), "done": 0, "error": None}
         for n in (names or stages.BY_NAME)})
     sup.set_auto({"stages": {"dates": False}})
-    assert sup.run_local() == ["scan", "thumbs", "video_probe", "pdfs"]
+    assert sup.run_local() == ["scan", "sources", "thumbs", "video_probe", "pdfs"]
     sup._advance_chain()
     assert set(sup.children) == {"scan"}
     sup._advance_chain()                                   # scan still running: nothing else starts
