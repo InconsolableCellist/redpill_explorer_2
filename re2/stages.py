@@ -120,15 +120,19 @@ def _embed_pending(conn, cfg) -> int:
 
 
 def _recluster_pending(conn, cfg) -> int:
-    run = db.kv_get(conn, "cluster_run")
+    """Items with vectors that the last recluster did not take in. Items it left out of every topic count as
+    taken in, or this never reaches 0 and the supervisor reruns it every cycle."""
+    from re2 import cluster
+
     have = _index_ids(cfg)
     if not have:
         return 0
-    embedded = {mid for did, mid in conn.execute("SELECT id, media_id FROM doc") if did in have}
-    clustered = {r[0] for r in conn.execute(
-        "SELECT cm.media_id FROM cluster_member cm JOIN cluster c ON c.id=cm.cluster_id WHERE c.run_id=?",
-        (run,))} if run else set()
-    return len(embedded - clustered)
+    path = Path(cfg.data_dir) / "index" / "items_ids.npy"
+    try:
+        done = set(np.load(path).tolist()) if db.kv_get(conn, "cluster_run") else set()
+    except (OSError, ValueError):
+        done = set()
+    return len(set(cluster.item_rows(conn, sorted(have))) - done)
 
 
 def _digest_pending(conn, cfg) -> int:

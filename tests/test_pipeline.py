@@ -69,6 +69,25 @@ def test_counts_on_an_empty_archive(setup):
     assert counts["extract_images"]["pending"] == 0
 
 
+def test_recluster_pending_counts_new_items_not_unclustered_ones(setup):
+    import numpy as np
+
+    cfg, conn, _ = setup
+    conn.executemany("INSERT INTO media(id, uid, kind, status) VALUES (?, ?, 'image', ?)",
+                     [(1, "a", "READY"), (2, "b", "READY"), (3, "c", "EXCLUDED")])
+    conn.executemany("INSERT INTO doc(id, media_id, kind, text) VALUES (?, ?, 'caption', 't')", [(10, 1), (20, 2), (30, 3)])
+    conn.commit()
+    index = cfg.data_dir / "index"
+    index.mkdir(parents=True, exist_ok=True)
+    np.save(index / "docs_ids.npy", np.array([10, 30]))
+    assert stages._recluster_pending(conn, cfg) == 1         # item 1; the excluded item 3 never counts
+    np.save(index / "items_ids.npy", np.array([1]))          # the run took item 1 in but put it in no topic
+    db.kv_set(conn, "cluster_run", "r1")
+    assert stages._recluster_pending(conn, cfg) == 0
+    np.save(index / "docs_ids.npy", np.array([10, 20, 30]))
+    assert stages._recluster_pending(conn, cfg) == 1         # item 2 was embedded after the run
+
+
 def test_scan_changes_sees_new_changed_and_gone_files(setup):
     cfg, conn, _ = setup
     from re2 import scan

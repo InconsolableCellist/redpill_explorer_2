@@ -64,20 +64,26 @@ class ClusterStats:
                 f"elapsed={self.seconds:.0f}s")
 
 
+def item_rows(conn: sqlite3.Connection, doc_ids: list[int]) -> dict[int, list[int]]:
+    """Item id -> rows of doc_ids that belong to it: post members fold into their post, excluded media drop out."""
+    to_primary, _ = search.post_maps(conn)
+    doc_media = dict(conn.execute("SELECT id, media_id FROM doc").fetchall())
+    groups: dict[int, list[int]] = defaultdict(list)
+    for row, doc_id in enumerate(doc_ids):
+        media_id = doc_media.get(doc_id)
+        if media_id is not None:
+            groups[to_primary.get(media_id, media_id)].append(row)
+    excluded = {r[0] for r in conn.execute("SELECT id FROM media WHERE status IN ('EXCLUDED', 'UNSUPPORTED')")}
+    return {m: rows for m, rows in groups.items() if m not in excluded}
+
+
 def item_vectors(conn: sqlite3.Connection, cfg) -> tuple[np.ndarray, np.ndarray]:
     """(item ids, L2-normalized mean doc vectors) for items with at least one indexed doc."""
     vecs, doc_ids = embed.get_index(cfg, "docs").load()
     if len(doc_ids) == 0:
         return np.zeros(0, dtype=np.int64), np.zeros((0, cfg.embed_dims), dtype=np.float32)
-    to_primary, _ = search.post_maps(conn)
-    doc_media = dict(conn.execute("SELECT id, media_id FROM doc").fetchall())
-    groups: dict[int, list[int]] = defaultdict(list)
-    for row, doc_id in enumerate(doc_ids.tolist()):
-        media_id = doc_media.get(doc_id)
-        if media_id is not None:
-            groups[to_primary.get(media_id, media_id)].append(row)
-    excluded = {r[0] for r in conn.execute("SELECT id FROM media WHERE status IN ('EXCLUDED', 'UNSUPPORTED')")}
-    ids = np.array(sorted(m for m in groups if m not in excluded), dtype=np.int64)
+    groups = item_rows(conn, doc_ids.tolist())
+    ids = np.array(sorted(groups), dtype=np.int64)
     out = np.zeros((len(ids), vecs.shape[1]), dtype=np.float32)
     for i, media_id in enumerate(ids.tolist()):
         out[i] = vecs[groups[media_id]].mean(axis=0)
