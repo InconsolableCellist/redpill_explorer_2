@@ -538,6 +538,50 @@ mark { background: var(--hot-w); color: var(--ink); padding: 0 1px; }
 .session .del:hover { color: var(--hot); }
 .session .live { color: var(--hot); }
 .settings { display: flex; flex-direction: column; gap: 14px; margin-bottom: 14px; }
+/* Pipeline: one card per stage, in order. Live parts are refilled every few seconds; the controls are not. */
+.pipeline { display: flex; flex-direction: column; gap: 10px; margin-bottom: 14px; }
+.pipeline > p { color: var(--ink-2); font-size: 13px; margin: 0; }
+.pl-auto { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; background: var(--stock-card); border: 1px solid var(--rule-soft); box-shadow: var(--shadow); padding: 10px 14px; font-size: 13px; }
+.pl-auto input[type=number] { width: 4.5em; }
+.pl-auto .grow { flex: 1 1 auto; }
+.stage { background: var(--stock-card); border: 1px solid var(--rule-soft); border-left: 3px solid transparent; box-shadow: var(--shadow); padding: 10px 14px 10px 12px; }
+.stage.is-cursor { border-left-color: var(--hot); }
+.stage.is-running { border-left-color: var(--focus); }
+.stage__head { display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: baseline; }
+.stage__title { font-family: var(--font-display); font-size: 17px; font-weight: 600; }
+.stage__svc { font-family: var(--font-mono); font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3); border: 1px solid var(--rule); padding: 1px 5px; margin-left: 8px; vertical-align: 2px; }
+.stage__svc.is-model { color: var(--blue); border-color: var(--blue); }
+.stage__count { font-family: var(--font-mono); font-size: 12px; color: var(--ink-2); text-align: right; }
+.stage__count b { color: var(--ink); font-weight: 600; }
+.stage__count b.is-hot { color: var(--hot); }
+.dot { width: 9px; height: 9px; border-radius: 50%; background: var(--rule); display: inline-block; align-self: center; }
+.dot.is-running { background: var(--focus); box-shadow: 0 0 0 3px color-mix(in srgb, var(--focus) 25%, transparent); animation: pulse 1.6s ease-in-out infinite; }
+.dot.is-done { background: var(--blue); }
+.dot.is-pending { background: var(--hot); }
+.dot.is-bad { background: var(--hot); outline: 2px solid var(--hot-w); }
+@keyframes pulse { 50% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--focus) 0%, transparent); } }
+@media (prefers-reduced-motion: reduce) { .dot.is-running { animation: none; } }
+.bar { height: 5px; background: var(--stock-well); margin: 8px 0 6px; position: relative; overflow: hidden; }
+.bar > i { position: absolute; inset: 0 auto 0 0; background: var(--blue); }
+.stage.is-running .bar > i { background: var(--focus); }
+.stage__run { font-family: var(--font-mono); font-size: 11px; color: var(--ink-3); overflow-wrap: anywhere; }
+.stage__run .ok { color: var(--focus); }
+.stage__run .bad { color: var(--hot); }
+.stage__help { font-size: 12.5px; color: var(--ink-3); margin: 2px 0 0; }
+.stage__ctl { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; margin-top: 8px; }
+.stage__ctl select, .stage__ctl input, .pl-auto input { font-family: var(--font-mono); font-size: 11.5px; padding: 4px 6px; border: 1px solid var(--rule); background: var(--stock); color: var(--ink); min-width: 0; }
+.stage__ctl select { max-width: 100%; }
+.stage__ctl input { width: 5.5em; }
+.stage__ctl .btn.is-go { color: var(--focus); border-color: var(--focus); }
+.stage__ctl .btn.is-stop { color: var(--hot); border-color: var(--hot); }
+.stage__ctl .spacer { flex: 1 1 auto; }
+.stage__ctl label.chk, .pl-auto label.chk { display: inline-flex; gap: 5px; align-items: center; font-size: 12px; color: var(--ink-2); }
+.stage__more { margin-top: 8px; }
+.stage__more pre { font-family: var(--font-mono); font-size: 11px; line-height: 1.45; background: var(--stock-well); color: var(--ink-2); padding: 8px 10px; max-height: 260px; overflow: auto; margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.stage__more table { width: 100%; border-collapse: collapse; font-size: 11.5px; }
+.stage__more td { border-top: 1px solid var(--rule-soft); padding: 4px 6px 4px 0; vertical-align: top; }
+.stage__more td.err { font-family: var(--font-mono); font-size: 10.5px; color: var(--ink-3); overflow-wrap: anywhere; }
+@media (max-width: 560px) { .stage__head { grid-template-columns: auto 1fr; } .stage__count { grid-column: 1 / -1; text-align: left; } }
 /* A long config path used to push the page sideways on a phone; it may break anywhere instead. */
 .settings > p { color: var(--ink-2); font-size: 13px; margin: 0; overflow-wrap: anywhere; }
 .svc { background: var(--stock-card); border: 1px solid var(--rule-soft); box-shadow: var(--shadow); padding: 12px 14px 14px; }
@@ -894,6 +938,7 @@ html.is-touch .mp canvas, html.is-touch .gr canvas { height: min(52vh, 520px); }
         <button class="btn mode-btn" data-mode="graph" title="Graph (g r)">Graph<span class="hint">gr</span></button>
         <button class="btn mode-btn" data-mode="map" title="Map (g m)">Map<span class="hint">gm</span></button>
         <button class="btn mode-btn" data-mode="ask" title="Ask (g a, or a to ask within the current scopes)">Ask<span class="hint">ga</span></button>
+        <button class="btn mode-btn" data-mode="pipeline" title="Pipeline (g p): new files and every stage they go through">Pipeline<span class="hint">gp</span></button>
         <button class="btn mode-btn" data-mode="settings" aria-label="Settings" title="Settings: the model servers this uses (g ,)"><span aria-hidden="true">⚙</span></button>
         <button class="btn" id="themeBtn" title="Theme">◐</button>
         <button class="btn" id="helpBtn" aria-expanded="false" aria-controls="panel" title="Keys (?)">?</button>
@@ -934,6 +979,7 @@ html.is-touch .mp canvas, html.is-touch .gr canvas { height: min(52vh, 520px); }
       </div>
       <div id="wiki" class="wiki" hidden></div>
       <div id="settings" class="settings" hidden></div>
+      <div id="pipeline" class="pipeline" hidden></div>
       <div class="results__head"><span class="label" id="resultsLabel"></span><span class="review" id="review" hidden></span><button class="btn reopen-btn" id="reopenBtn" hidden title="Open the last item you read again">↩ reopen</button><span><button class="sort-btn" id="sortBtn" title="Change sort (S)">sort <b id="sortName">relevance</b></button> <span class="label tnum" id="resultsCount"></span></span></div>
       <div class="list" id="list"></div>
       <button class="btn more-btn" id="moreBtn" hidden>Load more</button>
@@ -1001,6 +1047,7 @@ html.is-touch .mp canvas, html.is-touch .gr canvas { height: min(52vh, 520px); }
           <kbd>D</kbd><span>Discuss the item under the cursor: a new Ask conversation with its full record attached, and related items (near in time or meaning) if <b>+ related</b> is on. Depth sets how much is read; period and topics narrow it.</span>
           <kbd>d d</kbd><span>On a conversation in Ask's left column: delete it</span>
           <kbd>g ,</kbd><span>Settings: which model servers Ask, captions, embeddings and speech-to-text use</span>
+          <kbd>g p</kbd><span>Pipeline: new files and every stage they go through. On a stage: <kbd>s</kbd> start or stop, <kbd>x</kbd> kill, <kbd>f</kbd> failures, <kbd>L</kbd> log, <kbd>r</kbd> refresh</span>
           <kbd>g a</kbd><span>Ask a question; the agent searches the archive and answers with numbered sources. <kbd>a</kbd> asks within your current scopes. In ask mode <kbd>/</kbd> focuses the question, <kbd>m</kbd> switches informed / archive-only, <kbd>j k</kbd> walk the citations, <kbd>Enter</kbd> opens one.</span>
           <kbd>g c</kbd><span>Caption review: images captioned with the current prompt, newest first, updating live while an extraction runs. <kbd>R</kbd> refreshes by hand.</span>
           <kbd>g w</kbd><span>Wiki: pages compiled from the archive, overview › themes › topics › events, and people and places. On the left, each page is marked written (green), stale (half orange) or not yet (hollow), themes and topics show how many pages below them are written, and <kbd>W</kbd> shows all pages, only written or only unwritten ones (with their parents); <kbd>j k</kbd> walk the page tree and <kbd>Enter</kbd> opens a page; in the page, <kbd>j k</kbd> walk its links, citations, child pages and items, and <kbd>Enter</kbd> follows one (a citation opens the item in the reader). <kbd>&gt;</kbd> narrows search to the page's items. The line under the title says how many of the page's items its writer read and whether newer captions have made it stale.</span>
@@ -1030,6 +1077,7 @@ html.is-touch .mp canvas, html.is-touch .gr canvas { height: min(52vh, 520px); }
         <button class="btn" data-mode="graph">Graph</button>
         <button class="btn" data-mode="map">Map</button>
         <button class="btn" data-mode="ask">Ask</button>
+        <button class="btn" data-mode="pipeline">Pipe</button>
       </nav>
     </div>
   </footer>
@@ -1168,7 +1216,7 @@ function readHash() {
   let mode = parts[0] || "search";
   let open = p.get("open");
   if (mode === "item") { mode = "search"; open = parts[1]; }
-  if (!["search", "timeline", "graph", "map", "ask", "settings", "wiki"].includes(mode)) mode = "search";
+  if (!["search", "timeline", "graph", "map", "ask", "settings", "wiki", "pipeline"].includes(mode)) mode = "search";
   const sort = SORTS.includes(p.get("sort")) ? p.get("sort") : "relevance";
   return { mode, q: p.get("q") || "", scopes: p.getAll("s"), sort, open: open ? Number(open) : null,
            session: p.get("session"), slug: mode === "wiki" ? parts.slice(1).join("/") || null : null };
@@ -1386,6 +1434,7 @@ function navigate(replace = false) {
   pollReview();
   if (S.mode === "ask") return renderAskMode();
   if (S.mode === "settings") return renderSettings();
+  if (S.mode === "pipeline") return renderPipeline();
   if (S.mode === "wiki") return renderWikiMode();
   scheduleSearch(0);
 }
@@ -1553,6 +1602,7 @@ function renderResults() {
 /* ── Cursor ───────────────────────────────────────────────── */
 function rowsOf(col) {
   if (col === "lenses") return S.mode === "ask" ? $$(".session", $("#lenses")) : S.mode === "wiki" ? $$(".wrow", $("#lenses")) : $$(".lens", $("#lenses"));
+  if (col === "results" && S.mode === "pipeline") return $$(".stage", $("#pipeline"));
   if (col === "results") return S.mode === "ask" ? $$("#askLog .cite, #askLog .source") : S.mode === "wiki" ? wikiRows() : $$(".hit", $("#list"));
   return $$("[data-r]", $("#reader"));
 }
@@ -2945,6 +2995,200 @@ async function saveSettings() {
   renderSettings();
 }
 
+/* ── Pipeline ─────────────────────────────────────────────── */
+/* New files go through every stage in order. Local stages (no model) can run on their own every few
+   minutes; model stages wait for Start, on the configured server or a preset chosen here. The page asks
+   /api/pipeline every 3 s while it is open and refills only the live parts, so a half-typed limit or an
+   open log survives the refresh. */
+S.pl = { data: null, timer: 0, open: {} };   // open: stage -> "log" | "failures"
+const PL_WRITE = { "Content-Type": "application/json", "X-RE2-Settings": "1" };
+const plTime = (s) => s ? new Date(s.replace(" ", "T") + "Z") : null;
+function plAgo(s) {
+  const t = plTime(s);
+  if (!t) return "";
+  const sec = Math.max(0, (Date.now() - t) / 1000);
+  return sec < 60 ? "just now" : sec < 3600 ? `${Math.round(sec / 60)} min ago` : sec < 86400 ? `${Math.round(sec / 3600)} h ago` : `${Math.round(sec / 86400)} d ago`;
+}
+function plDur(min) {
+  if (!isFinite(min) || min <= 0) return "";
+  return min < 60 ? `${Math.ceil(min)} min` : min < 1440 ? `${Math.floor(min / 60)} h ${Math.round(min % 60)} min` : `${(min / 1440).toFixed(1)} days`;
+}
+async function renderPipeline() {
+  clearInterval(S.pl.timer);
+  S.pl.timer = setInterval(() => { if (S.mode === "pipeline" && !document.hidden) refreshPipeline(); else if (S.mode !== "pipeline") clearInterval(S.pl.timer); }, 3000);
+  await refreshPipeline(true);
+}
+async function refreshPipeline(build = false) {
+  const el = $("#pipeline");
+  const resp = await fetch("/api/pipeline").catch(() => null);
+  if (!resp?.ok) { if (build) el.innerHTML = `<div class="empty">Could not read the pipeline.</div>`; return; }
+  const d = S.pl.data = await resp.json();
+  if (build || !$(".stage", el)) buildPipeline(d);
+  for (const st of d.stages) fillStage(st, d);
+  fillAuto(d);
+}
+function presetOptions(st, d) {
+  const cur = d.services?.[st.service] || {};
+  const curModel = cur.vision_model || cur.model || "";
+  const names = Object.entries(d.presets || {});
+  return `<option value="">configured: ${escapeHtml(curModel)}</option>` +
+    names.map(([n, p]) => `<option value="${escapeHtml(n)}">${escapeHtml(n)}${n === p.model ? "" : ` · ${escapeHtml(p.model)}`}</option>`).join("");
+}
+function buildPipeline(d) {
+  const el = $("#pipeline");
+  el.innerHTML = `<p>New files go through these stages in order. Local stages need no model and can run on their own; ` +
+    `stages that call a model run when you start them, on the configured server or a preset. Runs started in a terminal show here too.</p>` +
+    `<div class="pl-auto"><label class="chk"><input type="checkbox" data-auto-on> Run the ticked stages on their own every</label>` +
+    `<input type="number" min="1" max="1440" data-auto-every aria-label="Minutes between automatic runs"><span>min</span>` +
+    `<span class="meta grow" data-auto-note></span><button class="btn" type="button" data-run-local>Run ticked stages now</button></div>` +
+    d.stages.map((st) => {
+      const model = !st.local;
+      const ctl = [];
+      if (st.service === "vision" || st.service === "wiki")
+        ctl.push(`<select data-preset aria-label="Server for ${escapeHtml(st.label)}">${presetOptions(st, d)}</select>`);
+      if (st.options.includes("limit")) ctl.push(`<input data-limit inputmode="numeric" placeholder="limit" aria-label="At most this many">`);
+      if (st.options.includes("concurrency")) ctl.push(`<input data-conc inputmode="numeric" placeholder="at once" aria-label="Requests at once">`);
+      return `<section class="stage" data-stage="${st.name}">` +
+        `<div class="stage__head"><span class="dot" data-dot></span><span><span class="stage__title">${escapeHtml(st.label)}</span>` +
+        `<span class="stage__svc ${model ? "is-model" : ""}">${escapeHtml(st.service || "local")}</span></span>` +
+        `<span class="stage__count" data-count></span></div>` +
+        (st.help ? `<p class="stage__help">${escapeHtml(st.help)}</p>` : "") +
+        `<div class="bar"><i data-bar></i></div><div class="stage__run" data-run></div>` +
+        `<div class="stage__ctl">${ctl.join("")}<button class="btn" type="button" data-go></button>` +
+        `<button class="btn is-stop" type="button" data-kill hidden title="End it now; items in flight are redone next time">Kill</button>` +
+        `<span class="spacer"></span><label class="chk" title="Run this stage in the automatic runs when it has work"><input type="checkbox" data-auto-stage> auto</label>` +
+        `<button class="btn" type="button" data-fails hidden></button><button class="btn" type="button" data-log>log</button></div>` +
+        `<div class="stage__more" data-more hidden></div></section>`;
+    }).join("");
+  paintCursor("results", false);
+}
+function fillStage(st, d) {
+  const box = $(`.stage[data-stage="${st.name}"]`);
+  if (!box) return;
+  const run = st.run || {};
+  const running = st.running;
+  const pending = st.pending, done = st.done;
+  box.classList.toggle("is-running", running);
+  const dot = $("[data-dot]", box);
+  dot.className = "dot " + (running ? "is-running" : st.count_error || ["failed", "lost"].includes(run.state) ? "is-bad" : pending ? "is-pending" : "is-done");
+  const count = $("[data-count]", box);
+  if (st.count_error) count.innerHTML = `<b class="is-hot">count failed</b>`;
+  else if (st.name === "scan") count.innerHTML = pending ? `<b class="is-hot">${fmtN(pending)}</b> new or changed files` : `up to date · ${fmtN(done)} files`;
+  else count.innerHTML = (pending ? `<b class="is-hot">${fmtN(pending)}</b> to do` : `<b>nothing</b> to do`) +
+    (done != null ? ` · ${fmtN(done)} done` : "") + ` <span class="weak">${escapeHtml(st.unit)}</span>`;
+  const total = (done || 0) + (pending || 0);
+  $("[data-bar]", box).style.width = total ? `${(100 * (done || 0) / total).toFixed(1)}%` : (pending === 0 ? "100%" : "0");
+  const bits = [];
+  if (running) {
+    bits.push(`<span class="ok">${run.state === "starting" ? "starting" : "running"}</span>` + (run.pid ? ` pid ${run.pid}` : "") + (run.host && run.host !== location.hostname ? ` on ${escapeHtml(run.host)}` : ""));
+    if (run.selected != null) bits.push(`${fmtN(run.done)} of ${fmtN(run.selected)}` + (run.failed ? `, <span class="bad">${fmtN(run.failed)} failed</span>` : ""));
+    if (run.rate_per_min) bits.push(`${run.rate_per_min.toFixed(1)}/min`, `about ${plDur(((run.selected ?? pending ?? 0) - run.done) / run.rate_per_min)} left`);
+    if (run.args?.model) bits.push(escapeHtml(run.args.model) + (run.args.base_url ? ` at ${escapeHtml(run.args.base_url.replace(/^https?:\/\//, "").replace(/[:/].*$/, ""))}` : ""));
+    bits.push(`started ${plAgo(run.started_at)}`);
+  } else if (run.state) {
+    const cls = run.state === "finished" ? "" : "bad";
+    bits.push(`last run <span class="${cls}">${escapeHtml(run.state)}</span> ${plAgo(run.finished_at || run.started_at)}`);
+    if (run.selected != null) bits.push(`${fmtN(run.done)} of ${fmtN(run.selected)}`);
+    if (run.args?.model) bits.push(escapeHtml(run.args.model));
+    if (run.last_error) bits.push(`<span class="bad">${escapeHtml(run.last_error.split("\n").pop().slice(0, 200))}</span>`);
+  } else bits.push("not run from here yet");
+  if (st.queued) bits.push("queued");
+  if (st.count_error) bits.push(`<span class="bad">${escapeHtml(st.count_error)}</span>`);
+  $("[data-run]", box).innerHTML = bits.join(" · ");
+  const go = $("[data-go]", box);
+  go.textContent = running ? "Stop" : "Start";
+  go.className = "btn " + (running ? "is-stop" : "is-go");
+  go.title = running ? "Ctrl-C: finish the items in flight, save them, exit (s)" : "Start this stage (s)";
+  go.disabled = !running && !pending && st.name !== "scan";
+  $("[data-kill]", box).hidden = !running || run.state === "starting";
+  const auto = $("[data-auto-stage]", box);
+  if (document.activeElement !== auto) auto.checked = !!d.auto.stages[st.name];
+  const fails = $("[data-fails]", box);
+  fails.hidden = !st.failures.total;
+  fails.textContent = `${fmtN(st.failures.total)} failed`;
+  fails.title = `${fmtN(st.failures.gave_up)} gave up after repeated attempts and are skipped (f)`;
+  if (S.pl.open[st.name] === "log") loadStageMore(st.name, "log", true);
+}
+function fillAuto(d) {
+  const on = $("[data-auto-on]"), every = $("[data-auto-every]");
+  if (!on) return;
+  if (document.activeElement !== on) on.checked = d.auto.enabled;
+  if (document.activeElement !== every) every.value = d.auto.interval_min;
+  const n = d.auto.next_in_s;
+  $("[data-auto-note]").textContent = d.auto.enabled ? `next check in ${n < 60 ? `${n} s` : `${Math.round(n / 60)} min`}` : "off: only what you start runs";
+}
+async function plPost(path, body) {
+  const resp = await fetch(path, { method: "POST", headers: PL_WRITE, body: JSON.stringify(body || {}) });
+  const d = await resp.json().catch(() => ({}));
+  if (!resp.ok) { say(d.detail || `HTTP ${resp.status}`, true); return null; }
+  return d;
+}
+async function startStage(name) {
+  const box = $(`.stage[data-stage="${name}"]`);
+  const st = S.pl.data?.stages.find((s) => s.name === name);
+  if (!box || !st) return;
+  if (st.running) {
+    const d = await plPost(`/api/pipeline/${name}/stop`);
+    if (d) say(`Stopping ${st.label}: it finishes the items in flight first.`);
+  } else {
+    const num = (sel) => { const v = $(sel, box)?.value.trim(); return v ? Number(v) : null; };
+    const body = { preset: $("[data-preset]", box)?.value || null, limit: num("[data-limit]"), concurrency: num("[data-conc]") };
+    const d = await plPost(`/api/pipeline/${name}/start`, body);
+    if (d) say(`Started ${st.label}${d.model ? ` on ${d.model}` : ""}.`);
+  }
+  refreshPipeline();
+}
+async function loadStageMore(name, what, quiet = false) {
+  const box = $(`.stage[data-stage="${name}"]`);
+  const more = $("[data-more]", box);
+  if (!quiet && S.pl.open[name] === what) { delete S.pl.open[name]; more.hidden = true; return; }
+  S.pl.open[name] = what;
+  if (what === "log") {
+    const d = await (await fetch(`/api/pipeline/${name}/log?lines=80`)).json();
+    const atEnd = more.firstElementChild ? more.firstElementChild.scrollHeight - more.firstElementChild.scrollTop - more.firstElementChild.clientHeight < 20 : true;
+    more.innerHTML = `<pre>${escapeHtml(d.lines.join("\n")) || "(no log yet)"}</pre>`;
+    if (atEnd) more.firstElementChild.scrollTop = more.firstElementChild.scrollHeight;
+  } else {
+    const d = await (await fetch(`/api/pipeline/${name}/failures`)).json();
+    more.innerHTML = `<div class="stage__ctl" style="margin:0 0 6px"><span class="meta">${fmtN(d.failures.length)} shown, newest first</span><span class="spacer"></span>` +
+      `<button class="btn" type="button" data-retry>Retry all</button></div><table>` +
+      d.failures.map((f) => `<tr><td class="tnum">${f.media_id != null ? `<a href="#/search?open=${f.media_id}">${f.media_id}</a>` : f.doc_id ?? ""}</td>` +
+        `<td>${escapeHtml(f.rel_path || f.stage)}<br><span class="meta">${f.attempts}× · ${escapeHtml(f.kind || "")} · ${plAgo(f.updated_at)}</span></td>` +
+        `<td class="err">${escapeHtml((f.error || "").slice(0, 300))}</td></tr>`).join("") + `</table>`;
+  }
+  more.hidden = false;
+}
+function pipelineKey(k, name) {
+  if (k === "s") return startStage(name);
+  if (k === "x") { const st = S.pl.data?.stages.find((s) => s.name === name); if (st?.running && confirm(`Kill ${st.label} now?`)) plPost(`/api/pipeline/${name}/kill`).then(refreshPipeline); return; }
+  if (k === "f") return loadStageMore(name, "failures");
+  if (k === "L") return loadStageMore(name, "log");
+  if (k === "r") return refreshPipeline().then(() => say("Refreshed."));
+}
+$("#pipeline").addEventListener("click", async (e) => {
+  const box = e.target.closest("[data-stage]"), name = box?.dataset.stage;
+  if (e.target.closest("[data-run-local]")) { if (await plPost("/api/pipeline-auto", { run_now: true })) say("Queued the ticked stages; each starts in turn if it has work."); return refreshPipeline(); }
+  if (!name) return;
+  if (S.mode === "pipeline") { S.cursor.results = rowsOf("results").indexOf(box); S.focus = "results"; paintCursor("results", false); }
+  if (e.target.closest("[data-go]")) return startStage(name);
+  if (e.target.closest("[data-kill]")) return pipelineKey("x", name);
+  if (e.target.closest("[data-fails]")) return loadStageMore(name, "failures");
+  if (e.target.closest("[data-log]")) return loadStageMore(name, "log");
+  if (e.target.closest("[data-retry]")) {
+    const d = await plPost(`/api/pipeline/${name}/retry`);
+    if (d) { say(`Cleared ${fmtN(d.cleared)} failures; the next run tries them again.`); delete S.pl.open[name]; $("[data-more]", box).hidden = true; refreshPipeline(); }
+  }
+});
+$("#pipeline").addEventListener("change", async (e) => {
+  if (e.target.matches("[data-auto-on], [data-auto-every]")) {
+    const d = await plPost("/api/pipeline-auto", { enabled: $("[data-auto-on]").checked, interval_min: Number($("[data-auto-every]").value) || 10 });
+    if (d) say(d.enabled ? `Ticked stages run on their own every ${d.interval_min} min.` : "Automatic runs are off.");
+  } else if (e.target.matches("[data-auto-stage]")) {
+    const name = e.target.closest("[data-stage]").dataset.stage;
+    await plPost("/api/pipeline-auto", { stages: { [name]: e.target.checked } });
+  }
+});
+
 /* ── Touch on the charts ──────────────────────────────────── */
 /* A phone has no wheel, no modifier to hold while dragging and no second button, so the graph and the
    map take one finger to pan, two to pinch, a tap where a click went and a long press where a
@@ -4087,7 +4331,7 @@ function grCycleKind() {
 
 /* ── Modes ────────────────────────────────────────────────── */
 function setMode(mode) {
-  if (!["search", "timeline", "graph", "map", "ask", "settings", "wiki"].includes(mode)) return say(`${mode[0].toUpperCase() + mode.slice(1)} arrives in a later phase.`);
+  if (!["search", "timeline", "graph", "map", "ask", "settings", "wiki", "pipeline"].includes(mode)) return say(`${mode[0].toUpperCase() + mode.slice(1)} arrives in a later phase.`);
   S.mode = mode;
   S.onChart = true;
   navigate();
@@ -4099,9 +4343,10 @@ function renderModes() {
   $("#graph").hidden = S.mode !== "graph";
   $("#map").hidden = S.mode !== "map";
   paintCursor("results", false);
-  const asking = S.mode === "ask", setting = S.mode === "settings", reading = S.mode === "wiki";
+  const asking = S.mode === "ask", setting = S.mode === "settings" || S.mode === "pipeline", reading = S.mode === "wiki";
   $("#ask").hidden = !asking;
-  $("#settings").hidden = !setting;
+  $("#settings").hidden = S.mode !== "settings";
+  $("#pipeline").hidden = S.mode !== "pipeline";
   $("#wiki").hidden = !reading;
   $(".results__head").hidden = asking || setting || reading;
   $("#list").hidden = asking || setting || reading;
@@ -4389,7 +4634,7 @@ function paintMode() {
 }
 const WHICH_KEY = {
   g: ["Go to", [["g", "top of the column"], ["s", "search"], ["t", "timeline"], ["r", "graph"], ["m", "map"], ["a", "ask"],
-                ["c", "caption review (live)"], [",", "settings"], ["w", "wiki"]]],
+                ["c", "caption review (live)"], [",", "settings"], ["w", "wiki"], ["p", "pipeline"]]],
   y: ["Copy", [["y", "citation for the item under the cursor"]]],
 };
 function showWhichKey(prefix) {
@@ -4464,6 +4709,7 @@ function onKey(e) {
     else if (k === "a") setMode("ask");
     else if (k === "c") startReview();
     else if (k === ",") setMode("settings");
+    else if (k === "p") setMode("pipeline");
   });
   if (seq === "d") return done(() => {
     const row = rowsOf("lenses")[S.cursor.lenses];
@@ -4477,6 +4723,10 @@ function onKey(e) {
   const mapAxis = axis && S.mode === "map";
   const inReaderVideo = S.focus === "reader" && $("#reader video");
 
+  if (S.mode === "pipeline" && S.focus === "results" && "sxfLr".includes(k)) {
+    const row = rowsOf("results")[S.cursor.results];
+    if (row) return done(() => pipelineKey(k, row.dataset.stage));
+  }
   switch (k) {
     case "g": case "y": e.preventDefault(); S.pending = k; paintMode(); showWhichKey(k); return;
     case "d": if (S.mode === "ask" && S.focus === "lenses") { e.preventDefault(); S.pending = "d"; paintMode(); return; } break;
@@ -4901,6 +5151,8 @@ function fromHash() {
     renderAskMode();
   } else if (S.mode === "settings") {
     renderSettings();
+  } else if (S.mode === "pipeline") {
+    renderPipeline();
   } else if (S.mode === "wiki") {
     if (h.slug) S.wiki.slug = h.slug;
     renderWikiMode();
