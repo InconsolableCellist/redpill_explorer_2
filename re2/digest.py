@@ -298,6 +298,24 @@ def digest_batch(client, cfg, batch: list[ItemText]) -> dict[int, dict]:
     return out
 
 
+def pending(conn: sqlite3.Connection) -> tuple[int, int]:
+    """(items run() would copy from a current caption, items it would send to the model), without writing."""
+    ids = item_ids(conn)
+    texts = gather(conn, ids)
+    conn.commit()
+    skip = db.pending_failures(conn, STAGE)
+    copy = due = 0
+    for m in ids:
+        it = texts.get(m)
+        if it is None or not it.has_text() or (it.digest and it.digest["input_hash"] == input_hash(it)):
+            continue
+        if it.current_caption():
+            copy += 1
+        elif m not in skip:
+            due += 1
+    return copy, due
+
+
 def run(conn: sqlite3.Connection, cfg, limit: int | None = None, client_factory=None,
         concurrency: int | None = None) -> DigestStats:
     import httpx

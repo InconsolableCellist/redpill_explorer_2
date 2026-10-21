@@ -123,6 +123,20 @@ CREATE TABLE IF NOT EXISTS chat_log (
   answer TEXT, citations_json TEXT, model TEXT, latency_ms INTEGER
 );
 CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT);  -- e.g. last_scan_at
+CREATE TABLE IF NOT EXISTS job_run (                -- one run of a pipeline stage, from a terminal or the dashboard
+  id INTEGER PRIMARY KEY,
+  stage TEXT NOT NULL,                              -- stages.STAGES name, e.g. 'extract_images'
+  pid INTEGER, host TEXT,
+  state TEXT NOT NULL,                              -- running | finished | interrupted | failed | lost | killed
+  args_json TEXT NOT NULL DEFAULT '{}',             -- argv, and the service's base_url and model
+  selected INTEGER, done INTEGER NOT NULL DEFAULT 0, failed INTEGER NOT NULL DEFAULT 0,
+  rate_per_min REAL,
+  last_error TEXT,
+  started_at TEXT NOT NULL DEFAULT (datetime('now')),
+  heartbeat_at TEXT,
+  finished_at TEXT
+);
+CREATE INDEX IF NOT EXISTS ix_job_run_stage ON job_run(stage, id);
 CREATE TABLE IF NOT EXISTS work_claim (             -- one batch run per item when several run at once
   stage TEXT NOT NULL, media_id INTEGER NOT NULL,
   owner TEXT NOT NULL,                              -- host:pid:server of the run holding it

@@ -15,7 +15,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Streamin
 from fastapi.staticfiles import StaticFiles
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
-from re2 import config, db, embed, presets, search
+from re2 import config, db, embed, presets, search, stages, supervisor
 from re2.config import REPO_ROOT
 
 log = logging.getLogger(__name__)
@@ -51,6 +51,8 @@ def create_app(cfg: config.Config | None = None) -> FastAPI:
     app = FastAPI(title="Redpill Explorer 2", docs_url="/api/docs", openapi_url="/api/openapi.json")
     embed_client = httpx.Client()
     jinja = Environment(loader=FileSystemLoader(TEMPLATES), autoescape=select_autoescape(["html"]))
+    # `re2 serve` starts its thread; without it (tests) the endpoints still answer and start stages.
+    app.state.supervisor = sup = supervisor.Supervisor(cfg)
 
     def parse_scopes(conn: sqlite3.Connection, scopes: list[str]) -> tuple[set[int] | None, list[dict]]:
         try:
@@ -636,6 +638,71 @@ def create_app(cfg: config.Config | None = None) -> FastAPI:
         except (ValueError, TypeError, OSError) as exc:
             raise HTTPException(400, str(exc)) from exc
         return settings_body()
+
+    # ── Pipeline ──────────────────────────────────────────────────────────
+
+    def writer_only(request: Request) -> None:
+        if request.headers.get("x-re2-settings") != "1":
+            raise HTTPException(403, "missing X-RE2-Settings header")
+
+    def known_stage(name: str) -> stages.Stage:
+        if name not in stages.BY_NAME:
+            raise HTTPException(404, f"no stage {name!r}")
+        return stages.BY_NAME[name]
+
+    @app.get("/api/pipeline")
+    def pipeline():
+        return sup.status()
+
+    @app.post("/api/pipeline/{name}/start")
+    def pipeline_start(name: str, request: Request, body: dict = Body(default={})):
+        writer_only(request)
+        known_stage(name)
+        try:
+            return sup.start(name, preset=body.get("preset") or None, limit=body.get("limit") or None,
+                             concurrency=body.get("concurrency") or None)
+        except supervisor.Refused as exc:
+            raise HTTPException(409, str(exc)) from exc
+        except (ValueError, TypeError) as exc:
+            raise HTTPException(400, str(exc)) from exc
+
+    @app.post("/api/pipeline/{name}/{action}")
+    def pipeline_action(name: str, action: str, request: Request):
+        writer_only(request)
+        known_stage(name)
+        try:
+            if action == "stop":
+                return sup.stop(name)
+            if action == "kill":
+                return sup.kill(name)
+            if action == "retry":
+                return {"stage": name, "cleared": sup.retry(name)}
+        except supervisor.Refused as exc:
+            raise HTTPException(409, str(exc)) from exc
+        except ProcessLookupError as exc:
+            raise HTTPException(409, "that run has already ended") from exc
+        raise HTTPException(404, f"no action {action!r}")
+
+    @app.get("/api/pipeline/{name}/failures")
+    def pipeline_failures(name: str):
+        known_stage(name)
+        return {"failures": supervisor.failure_list(cfg, name)}
+
+    @app.get("/api/pipeline/{name}/log")
+    def pipeline_log(name: str, lines: int = Query(60, ge=1, le=500)):
+        known_stage(name)
+        return {"lines": supervisor.log_tail(cfg, name, lines)}
+
+    @app.post("/api/pipeline-auto")
+    def pipeline_auto(request: Request, body: dict = Body(...)):
+        writer_only(request)
+        try:
+            auto = sup.set_auto(body)
+        except (ValueError, TypeError) as exc:
+            raise HTTPException(400, str(exc)) from exc
+        if body.get("run_now"):
+            sup.run_local()
+        return auto
 
     # ── Items ─────────────────────────────────────────────────────────────
 

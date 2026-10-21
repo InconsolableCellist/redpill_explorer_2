@@ -140,6 +140,41 @@ def cmd_embed(cfg: config.Config, args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_pipeline(cfg: config.Config, args: argparse.Namespace) -> int:
+    """Each stage's pending and done counts and its last run; --run-local runs the auto stages that have work."""
+    import subprocess
+
+    from re2 import stages, supervisor
+
+    conn = db.open_db(cfg)
+    if args.run_local:
+        auto = supervisor.Supervisor(cfg).auto()
+        for s in stages.STAGES:
+            if not auto["stages"].get(s.name):
+                continue
+            pending = stages.counts(conn, cfg, [s.name])[s.name]["pending"]
+            if not pending:
+                continue
+            print(f"\n── {s.label}: {pending:,} {s.unit} ──", flush=True)
+            argv = [sys.executable, "-m", "re2.cli", s.command] + (["--no-pick"] if s.service else [])
+            if subprocess.run(argv, cwd=config.REPO_ROOT).returncode != 0:
+                print(f"{s.command} failed; stopping", file=sys.stderr)
+                return 1
+    counts = stages.counts(conn, cfg)
+    history = stages.runs(conn)
+    rows = []
+    for s in stages.STAGES:
+        c, h = counts[s.name], history.get(s.name) or {}
+        latest = h.get("latest") or {}
+        fails = stages.failures(conn, s)
+        rows.append((s.label, s.service or "local", "" if c["pending"] is None else f"{c['pending']:,}",
+                     "" if c["done"] is None else f"{c['done']:,}", fails["gave_up"] or "",
+                     f"{latest.get('state', '')} {latest.get('finished_at') or latest.get('started_at') or ''}".strip(),
+                     c["error"] or ""))
+    _table("Pipeline", rows, ("stage", "runs on", "pending", "done", "gave up", "last run", ""))
+    return 0
+
+
 def cmd_serve(cfg: config.Config, args: argparse.Namespace) -> int:
     import uvicorn
 
@@ -148,7 +183,9 @@ def cmd_serve(cfg: config.Config, args: argparse.Namespace) -> int:
     db.open_db(cfg).close()  # create or migrate the schema before read-only connections open it
     embed.ensure_local_server(cfg)
     # Ask streams stay open while a tab watches a run, so don't wait on them at shutdown; runs don't survive it anyway.
-    uvicorn.run(api.create_app(cfg), host=args.host or cfg.server_host, port=args.port or cfg.server_port,
+    app = api.create_app(cfg)
+    app.state.supervisor.start_thread()
+    uvicorn.run(app, host=args.host or cfg.server_host, port=args.port or cfg.server_port,
                 log_level="info", timeout_graceful_shutdown=3)
     return 0
 
@@ -447,6 +484,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--depth", type=float, default=None, help="research depth 0..1 (default 0.35)")
     p.set_defaults(func=cmd_ask_coverage)
 
+    p = sub.add_parser("pipeline", help="what each ingestion stage still has to do, and its last run")
+    p.add_argument("--run-local", action="store_true", help="first run the auto (local) stages that have work")
+    p.set_defaults(func=cmd_pipeline)
+
     p = sub.add_parser("serve", help="run the dashboard and API server")
     p.add_argument("--host", help="bind address (default from config.toml)")
     p.add_argument("--port", type=int, help="port (default from config.toml)")
@@ -485,7 +526,38 @@ def main(argv: list[str] | None = None) -> int:
             service = presets.COMMAND_SERVICE[args.command]
             cur = presets.of_service(cfg, service)
             logging.getLogger(__name__).info("%s: %s at %s", service, cur["model"], cur["base_url"])
-    return args.func(cfg, args)
+    return run_reported(cfg, args)
+
+
+def run_reported(cfg: config.Config, args: argparse.Namespace) -> int:
+    """Run the command; a pipeline stage records itself in job_run so the Pipeline page sees it."""
+    from re2 import jobreport, runner, stages
+
+    stage = stages.BY_COMMAND.get(args.command)
+    if stage is None or getattr(args, "check", False):
+        return args.func(cfg, args)
+    target: dict = {"argv": sys.argv[1:]}
+    if stage.service in ("vision", "wiki", "chat"):
+        from re2 import presets
+
+        cur = presets.of_service(cfg, stage.service)
+        target.update(base_url=cur["base_url"].rstrip("/"), model=cur["model"])
+    elif stage.service == "embed":
+        target.update(base_url=cfg.embed_url, model=cfg.embed_model)
+    elif stage.service == "asr":
+        target.update(model=cfg.asr_model)
+    db.open_db(cfg).close()   # job_run exists before the report writes to it
+    report = jobreport.Report(cfg, stage.name, target)
+    try:
+        rc = args.func(cfg, args)
+    except KeyboardInterrupt:
+        report.finish("interrupted")
+        return 130
+    except BaseException as exc:
+        report.finish("failed", f"{type(exc).__name__}: {exc}")
+        raise
+    report.finish("interrupted" if runner.interrupted else "finished" if rc == 0 else "failed")
+    return rc
 
 
 if __name__ == "__main__":

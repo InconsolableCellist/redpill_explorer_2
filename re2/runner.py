@@ -19,6 +19,12 @@ from tqdm import tqdm
 log = logging.getLogger(__name__)
 
 DOUBLE_PRESS_S = 1.0  # a second Ctrl-C sooner than this is treated as the same keypress
+PROGRESS_EVERY_S = 2.0
+
+# Set by the CLI (jobreport.Report) so every stage's run shows live progress on the Pipeline page:
+# progress_hook(done, failed, total), on the calling thread, at most every PROGRESS_EVERY_S and once at the end.
+progress_hook: Callable[[int, int, int | None], None] | None = None
+interrupted = False   # True once any run_jobs in this process was stopped with Ctrl-C
 
 J = TypeVar("J")
 R = TypeVar("R")
@@ -42,6 +48,12 @@ def run_jobs(
     pending: dict[Future, J] = {}
     bar = tqdm(total=total, desc=desc, unit="item", dynamic_ncols=True)
     exhausted = False
+    counts = {"done": 0, "failed": 0, "at": 0.0}
+
+    def report(force: bool = False) -> None:
+        if progress_hook and (force or time.monotonic() - counts["at"] >= PROGRESS_EVERY_S):
+            counts["at"] = time.monotonic()
+            progress_hook(counts["done"], counts["failed"], total)
 
     def collect(done: Iterable[Future]) -> None:
         for fut in done:
@@ -50,9 +62,12 @@ def run_jobs(
                 result = fut.result()
             except Exception as exc:  # noqa: BLE001 - any per-item failure is recorded, never fatal
                 on_error(job, exc)
+                counts["failed"] += 1
             else:
                 on_result(job, result)
+                counts["done"] += 1
             bar.update(1)
+        report()
 
     try:
         while True:
@@ -67,6 +82,8 @@ def run_jobs(
             done, _ = wait(list(pending), return_when=FIRST_COMPLETED)
             collect(done)
     except KeyboardInterrupt:
+        global interrupted
+        interrupted = True
         in_flight = [f for f in pending if not f.cancel()]
         for f in list(pending):
             if f.cancelled():
@@ -88,5 +105,6 @@ def run_jobs(
                 os._exit(130)  # worker threads may be blocked in HTTP calls; do not wait for them
         return False
     finally:
+        report(force=True)
         bar.close()
         pool.shutdown(wait=False, cancel_futures=True)
