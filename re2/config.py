@@ -34,7 +34,10 @@ class Config:
 
     asr_model: str
     asr_device: str
-    asr_compute_type: str
+    asr_python: str
+    asr_chunk_s: float
+    asr_need_gb: float
+    asr_floor_gb: float
 
     server_host: str
     server_port: int
@@ -103,7 +106,10 @@ def load(path: Path | str | None = None) -> Config:
         embed_max_chars=int(emb["max_chars"]),
         asr_model=asr["model"],
         asr_device=asr["device"],
-        asr_compute_type=asr["compute_type"],
+        asr_python=asr["python"],
+        asr_chunk_s=float(asr.get("chunk_s", 120)),
+        asr_need_gb=float(asr.get("need_gb", 4.5)),
+        asr_floor_gb=float(asr.get("floor_gb", 1.0)),
         server_host=srv["host"],
         server_port=int(srv["port"]),
         chat_base_url=chat_base_url,
@@ -126,7 +132,7 @@ SERVICE_FIELDS = {
     "vision": [("llm", "base_url", "base_url"), ("llm", "vision_model", "vision_model"),
                ("llm", "vision_concurrency", "vision_concurrency")],
     "embed": [("embed", "url", "embed_url"), ("embed", "model", "embed_model")],
-    "asr": [("asr", "model", "asr_model"), ("asr", "device", "asr_device"), ("asr", "compute_type", "asr_compute_type")],
+    "asr": [("asr", "model", "asr_model"), ("asr", "device", "asr_device"), ("asr", "python", "asr_python")],
 }
 INT_KEYS = {"context_tokens", "vision_concurrency", "concurrency"}
 

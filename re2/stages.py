@@ -173,7 +173,7 @@ STAGES: list[Stage] = [
           after=("pdfs",), options=("limit", "preset")),
     Stage("asr", "Speech to text", "asr", "videos", "asr", False, ("asr",), _asr_pending,
           lambda c, cfg: _one(c, "SELECT COUNT(DISTINCT media_id) FROM doc WHERE kind='transcript'"),
-          after=("video_probe",), help="faster-whisper on this machine's GPU."),
+          after=("video_probe",), help="Parakeet on this machine's GPU, when the router leaves room. Other languages are skipped."),
     Stage("dates", "Item dates", "dates", "items", None, True, (),
           lambda c, cfg: _one(c, f"""SELECT COUNT(*) FROM media m WHERE {ITEMS}
               AND NOT EXISTS (SELECT 1 FROM media_meta mm WHERE mm.media_id=m.id AND mm.date_source IS NOT NULL)"""),

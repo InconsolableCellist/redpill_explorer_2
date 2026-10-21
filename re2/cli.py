@@ -209,7 +209,11 @@ def cmd_video_probe(cfg: config.Config, args: argparse.Namespace) -> int:
 def cmd_asr(cfg: config.Config, args: argparse.Namespace) -> int:
     from re2 import asr
 
-    stats = asr.run(db.open_db(cfg), cfg, limit=args.limit)
+    try:
+        stats = asr.run(db.open_db(cfg), cfg, limit=args.limit)
+    except asr.Busy as exc:
+        print(f"asr: not started: {exc}", file=sys.stderr)
+        raise
     print(f"asr: {stats.summary()}")
     return 0
 
@@ -416,7 +420,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--limit", type=int, help="process at most N videos")
     p.set_defaults(func=cmd_video_probe)
 
-    p = sub.add_parser("asr", help="transcribe videos with faster-whisper on the local GPU")
+    p = sub.add_parser("asr", help="transcribe videos with Parakeet on this machine's GPU, when it has room")
     p.add_argument("--limit", type=int, help="transcribe at most N videos")
     p.set_defaults(func=cmd_asr)
 

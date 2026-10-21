@@ -54,39 +54,110 @@ def test_probe_and_keyframes(env):
     assert video.run(conn, cfg).selected == 0
 
 
+class FakeWorker:
+    """Stands in for asr.Worker: long.mp4 speaks English, short.mp4 is in a language Parakeet skips."""
+
+    def __init__(self):
+        self.files = []
+
+    def transcribe(self, wav):
+        assert wav.suffix == ".wav" and wav.exists()
+        self.files.append(wav.name)
+        if len(self.files) == 2:
+            return "ja", 0.99, [asr.Segment(0.0, 2.0, "So partying a meeting")]
+        return "en", 0.95, [asr.Segment(0.0, 2.5, "Hello there."), asr.Segment(70.0, 72.0, "Later words")]
+
+
+def asr_cfg(cfg):
+    return SimpleNamespace(**vars(cfg), asr_model="nvidia/parakeet-tdt-0.6b-v3", asr_device="cuda",
+                           asr_need_gb=4.5, asr_floor_gb=1.0, base_url="http://127.0.0.1:5000/v1",
+                           chat_base_url="http://127.0.0.1:5000/v1", wiki_base_url="http://127.0.0.1:5000/v1")
+
+
 def test_asr_windows_and_storage(env):
     conn, cfg, ids = env
+    cfg = asr_cfg(cfg)
     video.run(conn, cfg)
     segs = [asr.Segment(i * 10.0, i * 10.0 + 9, f"sentence number {i}") for i in range(14)]
     wins = asr.windows(segs)
     assert all(w.end - w.start <= asr.WINDOW_S for w in wins)
     assert " ".join(w.text for w in wins) == " ".join(s.text for s in segs)
 
-    class FakeModel:
-        def transcribe(self, wav, beam_size, vad_filter):
-            assert wav.endswith(".wav") and beam_size == 1 and vad_filter
-            info = SimpleNamespace(language="en")
-            if "static" in self.current:
-                return iter([]), info
-            return iter([SimpleNamespace(start=0.0, end=2.5, text=" Hello there. "),
-                         SimpleNamespace(start=70.0, end=72.0, text="Later words")]), info
-
-    model = FakeModel()
-    real = asr.transcribe
-
-    def transcribe(m, c, media_id, path):
-        model.current = path.name
-        return real(m, c, media_id, path)
-
-    asr.transcribe = transcribe
-    try:
-        # static.mp4 has no audio stream, so only the two clips with audio are selected.
-        stats = asr.run(conn, cfg, model=model)
-    finally:
-        asr.transcribe = real
-    assert (stats.selected, stats.done, stats.failed) == (2, 2, 0)
-    docs = conn.execute("SELECT seq, start_s, end_s, text FROM doc WHERE kind='transcript' AND media_id=? ORDER BY seq",
+    # static.mp4 has no audio stream, so only the two clips with audio are selected.
+    stats = asr.run(conn, cfg, worker=FakeWorker())
+    assert (stats.selected, stats.done, stats.other_language, stats.failed) == (2, 1, 1, 0)
+    docs = conn.execute("SELECT seq, start_s, end_s, text, model FROM doc WHERE kind='transcript' AND media_id=? ORDER BY seq",
                         (ids["long.mp4"],)).fetchall()
-    assert [tuple(d) for d in docs] == [(0, 0.0, 2.5, "Hello there."), (1, 70.0, 72.0, "Later words")]
+    assert [tuple(d) for d in docs] == [(0, 0.0, 2.5, "Hello there.", "parakeet-tdt-0.6b-v3"),
+                                        (1, 70.0, 72.0, "Later words", "parakeet-tdt-0.6b-v3")]
+    skipped = conn.execute("SELECT error FROM failure WHERE stage='asr' AND media_id=?", (ids["short.mp4"],)).fetchone()
+    assert skipped[0] == "language:ja"
+    assert conn.execute("SELECT language FROM media_meta WHERE media_id=?", (ids["short.mp4"],)).fetchone()[0] == "ja"
     assert not list((cfg.data_dir / "audio").glob("*.wav"))  # temp audio removed
-    assert asr.select_jobs(conn, None) == []
+    assert asr.select_jobs(conn, None) == []                 # the skipped language is not selected again
+
+
+def test_asr_stops_to_make_room(env, monkeypatch):
+    conn, cfg, ids = env
+    cfg = asr_cfg(cfg)
+    video.run(conn, cfg)
+    reasons = iter([None, "GPU 1 is down to 0.6 GB free"])
+    monkeypatch.setattr(asr, "why_stop", lambda c, card: next(reasons))
+    monkeypatch.setattr(asr.runner, "interrupted", False)
+    stats = asr.run(conn, cfg, worker=FakeWorker())
+    assert stats.done == 1 and stats.stopped == "GPU 1 is down to 0.6 GB free"
+    assert asr.runner.interrupted                            # recorded as interrupted: resumable
+    assert len(asr.select_jobs(conn, None)) == 1             # the other video waits for the next run
+
+
+def test_asr_judge_language():
+    assert asr.judge_language("ja", 0.99) == ("ja", True)       # sure, and not a Parakeet language
+    assert asr.judge_language("iw", 1.0) == ("he", True)        # AmberNet's code for Hebrew
+    assert asr.judge_language("war", 0.4) == (None, False)      # a guess: transcribe, record nothing
+    assert asr.judge_language("cy", 0.99) == (None, False)      # British English, as AmberNet hears it
+    assert asr.judge_language("de", 0.97) == ("de", False)
+    assert asr.judge_language(None, 0.0) == (None, False)
+
+
+def test_asr_pick_card(monkeypatch):
+    cfg = asr_cfg(SimpleNamespace())
+    monkeypatch.setattr(asr, "router_loading", lambda c: [])
+    monkeypatch.setattr(asr, "gpu_free_gb", lambda: {0: 6.0, 1: 7.0})
+    assert asr.pick_card(cfg) == 1
+    cfg.asr_device = "cuda:0"
+    assert asr.pick_card(cfg) == 0
+    cfg.asr_need_gb = 6.5
+    with pytest.raises(asr.Busy, match="GPU 0 has 6.0 GB free"):
+        asr.pick_card(cfg)
+    cfg.asr_device = "cpu"
+    assert asr.pick_card(cfg) is None
+    cfg.asr_device = "cuda"
+    monkeypatch.setattr(asr, "router_loading", lambda c: ["gemma4-31b"])
+    with pytest.raises(asr.Busy, match="loading gemma4-31b"):
+        asr.pick_card(cfg)
+    monkeypatch.setattr(asr, "router_loading", lambda c: [])
+    monkeypatch.setattr(asr, "gpu_free_gb", lambda: {1: 0.5})
+    assert asr.why_stop(cfg, 1).startswith("GPU 1 is down to 0.5 GB")
+    assert asr.why_stop(cfg, None) is None
+
+
+def test_asr_local_routers(monkeypatch):
+    cfg = asr_cfg(SimpleNamespace())
+    monkeypatch.setattr(asr.socket, "gethostname", lambda: "mlboy")
+    cfg.base_url = "https://mlboy.tail99c274.ts.net:5000/v1"
+    cfg.chat_base_url = "https://cube.tail99c274.ts.net:5000/v1"
+    assert asr._local_routers(cfg) == ["http://127.0.0.1:5000", "https://mlboy.tail99c274.ts.net:5000"]
+
+
+def test_asr_worker_cuts():
+    import numpy as np
+
+    from re2 import asr_worker
+
+    sr = asr_worker.SR
+    audio = np.ones(sr * 400, dtype=np.float32)
+    audio[sr * 128: sr * 128 + sr // 10] = 0            # the quiet moment near the 120 s boundary
+    b = asr_worker.cuts(audio, 120)
+    assert b[0] == 0 and b[-1] == len(audio) and abs(b[1] - sr * 128) <= sr // 10
+    assert all(z - a <= (120 + asr_worker.CUT_SEARCH_S) * sr for a, z in zip(b, b[1:]))
+    assert asr_worker.cuts(audio[: sr * 60], 120) == [0, sr * 60]

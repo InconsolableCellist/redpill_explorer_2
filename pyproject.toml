@@ -13,7 +13,6 @@ dependencies = [
   "python-magic>=0.4.27",
   "imagehash>=4.3",
   "pymupdf>=1.24",
-  "faster-whisper==1.2.1",
   "nvidia-cublas-cu12",
   "nvidia-cudnn-cu12",
   "umap-learn>=0.5.12",

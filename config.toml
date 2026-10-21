@@ -25,9 +25,13 @@ dims = 768
 max_chars = 2000
 
 [asr]
-model = "large-v3"
-device = "cuda"
-compute_type = "int8_float32"
+# Parakeet TDT 0.6B v3 (NeMo), run by re2/asr_worker.py in its own env: scripts/setup_asr_env.sh.
+model = "nvidia/parakeet-tdt-0.6b-v3"
+python = "~/ML/micromamba/envs/parakeet/bin/python"
+device = "cuda"     # cuda (the card with the most free memory), cuda:N, or cpu
+chunk_s = 120       # audio per pass; VRAM grows with it (120 s: ~2.7 GB for the whole process on a V100)
+need_gb = 4.5       # free on a card before the model loads: the ~2.7 GB peak plus room for the router
+floor_gb = 1.0      # stop after the current video once the card has less than this free
 
 [server]
 host = "127.0.0.1"

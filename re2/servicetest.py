@@ -13,8 +13,8 @@ import io
 import random
 import re
 import subprocess
-import sys
 import time
+from pathlib import Path
 
 import httpx
 import numpy as np
@@ -143,31 +143,38 @@ def test_embed(cfg, client) -> list[dict]:
     return steps
 
 
-ASR_SCRIPT = """
-import sys, time
-from re2 import asr, config
-cfg = config.load()
-cfg.asr_model, cfg.asr_device, cfg.asr_compute_type = sys.argv[1:4]
-t = time.monotonic()
-model = asr.load_model(cfg)
-loaded = time.monotonic() - t
-import numpy as np
-segments, info = model.transcribe(np.zeros(16000, dtype=np.float32), beam_size=1)
-list(segments)
-print(f"loaded {cfg.asr_model} on {cfg.asr_device} ({cfg.asr_compute_type}) in {loaded:.1f} s, transcribed in {time.monotonic() - t - loaded:.1f} s")
-"""
-
-
 def test_asr(cfg) -> list[dict]:
+    """Room on the GPU, the model loads in its worker, and a second of silence comes back as no speech."""
+    from re2 import asr
+
     try:
-        out = subprocess.run([sys.executable, "-c", ASR_SCRIPT, cfg.asr_model, cfg.asr_device, cfg.asr_compute_type],
-                             cwd=config.REPO_ROOT, capture_output=True, text=True, timeout=TIMEOUT)
-    except subprocess.TimeoutExpired:
-        return [step("loads the model", False, f"no answer in {TIMEOUT:.0f} s")]
-    if out.returncode != 0:
-        lines = [x for x in out.stderr.strip().splitlines() if x.strip()]
-        return [step("loads the model", False, (lines[-1] if lines else f"exit {out.returncode}")[:300])]
-    return [step("loads the model", True, out.stdout.strip().splitlines()[-1])]
+        card = asr.pick_card(cfg)
+    except asr.Busy as exc:
+        return [step("room on the GPU", False, str(exc))]
+    except (OSError, subprocess.SubprocessError) as exc:
+        return [step("room on the GPU", False, f"nvidia-smi: {exc}"[:300])]
+    steps = [step("room on the GPU", True, "CPU" if card is None else
+                  f"GPU {card}, {asr.gpu_free_gb()[card]:.1f} GB free (needs {cfg.asr_need_gb:.1f})")]
+    wav = Path(cfg.data_dir) / "tmp" / "servicetest-silence.wav"
+    wav.parent.mkdir(parents=True, exist_ok=True)
+    subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "anullsrc=r=16000:cl=mono", "-t", "1", str(wav)],
+                   check=True, capture_output=True, timeout=30)
+    worker = None
+    try:
+        worker = asr.Worker(cfg, card)
+        steps.append(step("loads the model", True, f"{cfg.asr_model} in {worker.load_s} s"))
+        t = time.monotonic()
+        _, _, segments = worker.transcribe(wav)
+        steps.append(step("transcribes", not segments,
+                          f"a second of silence: {'no speech' if not segments else segments[0].text!r} "
+                          f"in {time.monotonic() - t:.1f} s; the memory is freed now"))
+    except Exception as exc:  # noqa: BLE001 - any failure is the answer
+        steps.append(step("loads the model" if worker is None else "transcribes", False, f"{type(exc).__name__}: {exc}"[:300]))
+    finally:
+        if worker:
+            worker.close()
+        wav.unlink(missing_ok=True)
+    return steps
 
 
 def run(cfg, service: str, values: dict, client_factory=httpx.Client) -> dict:

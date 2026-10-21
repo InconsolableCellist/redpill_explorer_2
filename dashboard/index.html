@@ -2892,8 +2892,8 @@ const SERVICES = [
     [["base_url", "Server URL", "url"], ["vision_model", "Model", "model"], ["vision_concurrency", "Requests at once (0 fits the server)", "int"]]],
   ["embed", "Embeddings", "Meaning search, similar items and embed.sh. A new URL works at once; a different model needs embed.sh --rebuild.",
     [["url", "Embeddings URL", "url"], ["model", "Model", "model"]]],
-  ["asr", "Speech to text", "faster-whisper on this machine's GPU. asr.sh reads it when next started.",
-    [["model", "Model", "text"], ["device", "Device (cuda or cpu)", "text"], ["compute_type", "Compute type", "text"]]],
+  ["asr", "Speech to text", "Parakeet on this machine's GPU, in its own Python env. Starts only when a card has room and stops to give the router room. asr.sh reads it when next started.",
+    [["model", "Model", "text"], ["device", "Device (cuda, cuda:N or cpu)", "text"], ["python", "Python of the NeMo env", "text"]]],
 ];
 /* A preset is a named server and model; picking one fills a card, Save makes it the default. The batch scripts
    offer the same presets when they start in a terminal. Preset keys that differ from the card's field keys: */
@@ -2935,7 +2935,7 @@ const TEST_TITLE = {
   wiki: "Ask the model for a one-word reply with the values above (saved or not). On a router this loads the model, which may unload another.",
   vision: "Show the model an image with a random number drawn on it and check it reads the number back. On a router this loads the model, which may unload another.",
   embed: "Embed three sentences and check a paraphrase scores closer than an unrelated sentence.",
-  asr: "Load the speech model on this machine's GPU in a separate process and transcribe a second of silence (takes a while; the memory is freed after).",
+  asr: "Check a card has room, load the speech model in its worker and transcribe a second of silence (about 30 s; the memory is freed after).",
 };
 async function testService(box) {
   const name = box.dataset.svc, out = $("[data-test-out]", box), btn = $("[data-test]", box);
