@@ -457,6 +457,55 @@ _DISCLAIMER = re.compile(r"\b(race|gender|ethnicity)\b.*\b(cannot|can't|not|no|u
                          re.IGNORECASE)
 
 
+_STATUS_URL = re.compile(r"https?://(?:www\.|mobile\.)?(?:x|twitter)\.com/([A-Za-z0-9_]{1,15})/status/")
+_HANDLE_LINE = re.compile(r"^@[A-Za-z0-9_]{1,15}$")
+# Where a tweet's text ends in a screenshot of it: the timestamp line, view counts, or a reply box.
+_TWEET_END = re.compile(r"^(\d{1,2}:\d{2}\s?(AM|PM)\b|.*·\s*\w{3} \d{1,2}, \d{4}|[\d.,]+[KM]?\s+Views?$|Post your reply|Translate post$)",
+                        re.I)
+TWEET_TEXT_CHARS = 1200
+
+
+def post_author(url: str | None) -> str | None:
+    """The @handle in an x.com or twitter.com status URL (not the anonymous /i/status/ form)."""
+    m = _STATUS_URL.match(url or "")
+    return m.group(1) if m and m.group(1).lower() != "i" else None
+
+
+def tweet_from_ocr(ocr: str | None) -> tuple[str | None, str | None, str | None]:
+    """(display name, @handle, text) read from the OCR of a tweet screenshot, as X lays it out:
+    "← Post", the name, the @handle, then the text. Any part it cannot find is None."""
+    lines = [ln.strip() for ln in (ocr or "").splitlines() if ln.strip()]
+    while lines and lines[0].lstrip("←").strip().lower() in ("", "post", "tweet"):
+        lines.pop(0)
+    at = next((i for i, ln in enumerate(lines[:6]) if _HANDLE_LINE.match(ln)), None)
+    if at is None:
+        return None, None, None
+    name = lines[at - 1] if at else None
+    body = []
+    for ln in lines[at + 1:]:
+        if _TWEET_END.match(ln):
+            break
+        body.append(ln)
+    text = "\n".join(body).strip()
+    return name, lines[at][1:], (text[:TWEET_TEXT_CHARS] + "…" if len(text) > TWEET_TEXT_CHARS else text) or None
+
+
+def post_header(conn: sqlite3.Connection, post_id: int) -> dict:
+    """Who posted it and what the post says, for the post's header: from its screenshot's caption OCR,
+    and else the handle in its URL."""
+    url, date = conn.execute("SELECT url, date FROM post WHERE id=?", (post_id,)).fetchone()
+    row = conn.execute(
+        """SELECT d.json FROM post_member pm JOIN doc d ON d.media_id=pm.media_id AND d.kind='caption'
+           WHERE pm.post_id=? AND pm.role='screenshot' AND d.json IS NOT NULL ORDER BY pm.seq LIMIT 1""",
+        (post_id,)).fetchone()
+    try:
+        ocr = json.loads(row[0]).get("ocr_text") if row else None
+    except (ValueError, AttributeError):
+        ocr = None
+    name, handle, text = tweet_from_ocr(ocr if isinstance(ocr, str) else None)
+    return {"url": url, "date": date, "author": post_author(url) or handle, "author_name": name, "text": text}
+
+
 def title_from_text(text: str | None, max_len: int = 90) -> str | None:
     if not text:
         return None
@@ -511,7 +560,7 @@ def cards(conn: sqlite3.Connection, media_ids: list[int]) -> dict[int, dict]:
                            m2.duration, m2.status
                     FROM post p JOIN post_member pm ON pm.post_id=p.id JOIN media m2 ON m2.id=pm.media_id
                     WHERE p.primary_media_id IN (SELECT id FROM {table}) ORDER BY p.id, pm.seq"""):
-            post = posts.setdefault(pr[0], {"url": pr[1], "members": []})
+            post = posts.setdefault(pr[0], {"url": pr[1], "author": post_author(pr[1]), "members": []})
             if post["url"] != pr[1]:
                 continue  # a screenshot shared by two posts: keep the first
             post["members"].append({"media_id": pr[2], "role": pr[3], "seq": pr[4], "kind": pr[5],

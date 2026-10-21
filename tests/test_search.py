@@ -165,3 +165,18 @@ def test_lookup_tags_and_entities(conn):
     search._overall_cache.clear()
     assert [r["name"] for r in search.lookup(conn, "georgi")] == ["georgi", "Georgia", "georgia ballots"]
     assert search.lookup(conn, "  ") == [] and search.lookup(conn, "%") == []
+
+
+def test_post_author_and_tweet_from_ocr():
+    from re2 import search
+
+    assert search.post_author("https://x.com/AgroNationalism/status/2016898765425197350") == "AgroNationalism"
+    assert search.post_author("https://twitter.com/jack/status/20") == "jack"
+    assert search.post_author("https://x.com/i/status/2085688589975704030") is None
+    assert search.post_author("https://t.me/somechannel/12") is None
+    ocr = ("← Post\nVanRaalte, Agro-Nationalist\n@AgroNationalism\nThe kids have a snow day.\nYou kiss your wife.\n"
+           "7:40 AM · Jan 29, 2026 · 1.2M Views\n12 replies")
+    assert search.tweet_from_ocr(ocr) == ("VanRaalte, Agro-Nationalist", "AgroNationalism",
+                                          "The kids have a snow day.\nYou kiss your wife.")
+    assert search.tweet_from_ocr("A meme with no tweet in it") == (None, None, None)
+    assert search.tweet_from_ocr(None) == (None, None, None)

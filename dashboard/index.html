@@ -377,6 +377,10 @@ mark { background: var(--hot-w); color: var(--ink); padding: 0 1px; }
 .sort-btn { font-family: var(--font-mono); font-size: 10.5px; letter-spacing: .13em; text-transform: uppercase; color: var(--ink-3); }
 .sort-btn b { color: var(--blue); font-weight: 500; }
 .sort-btn:hover, .sort-btn:hover b { color: var(--hot); }
+.posthead { border-left: 3px solid var(--blue); padding: 2px 0 2px 10px; }
+.posthead__who { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; }
+.posthead__who a { font-weight: 700; }
+.posthead__text { margin: 4px 0 0; white-space: pre-line; max-height: 9.5em; overflow-y: auto; }
 .gallery { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; }
 .gallery button { flex: none; width: 64px; height: 64px; background: var(--stock-well) center/cover no-repeat; border: 1px solid var(--rule); position: relative; }
 .gallery button.is-current { outline: 2px solid var(--blue); outline-offset: 1px; box-shadow: inset 0 -4px 0 var(--blue); }
@@ -1577,7 +1581,7 @@ function stripHtml(card) {
   const matchLabel = match ? ` · match in ${escapeHtml(post.members.find((m) => m.media_id === match)?.role || "member")} ${post.members.findIndex((m) => m.media_id === match)}` : "";
   return `<div class="strip">${shown.map((m) =>
     `<i class="${m.kind === "video" ? "is-video" : ""}${m.media_id === match ? " is-match" : ""}"${m.thumb_url ? ` style="background-image:url('${escapeHtml(m.thumb_url)}')"` : ""}></i>`).join("")}` +
-    `<span>${post.members.length > 7 ? `+${post.members.length - 7} · ` : ""}${counts}${matchLabel}</span></div>`;
+    `<span>${post.author ? `@${escapeHtml(post.author)} · ` : ""}${post.members.length > 7 ? `+${post.members.length - 7} · ` : ""}${counts}${matchLabel}</span></div>`;
 }
 function cardHtml(card, i) {
   const hit = card.hit;
@@ -1772,6 +1776,19 @@ function galleryHtml(d) {
     `${m.thumb_url ? ` style="background-image:url('${escapeHtml(m.thumb_url)}')"` : ""}><span>${m.role === "screenshot" ? "post" : m.role === "video" ? "▶ " + i : i}</span>` +
     `${m.kind === "image" ? `<i class="zoomdot" data-view="${m.media_id}" title="Look at this photo (i)">⤢</i>` : ""}</button>`).join("")}</div>`;
 }
+function postHeadHtml(d) {
+  const post = d.post;
+  if (!post) return "";
+  const photos = post.members.filter((m) => m.role === "photo").length;
+  const videos = post.members.filter((m) => m.role === "video").length;
+  const counts = [photos && `${photos} photo${photos > 1 ? "s" : ""}`, videos && `${videos} video${videos > 1 ? "s" : ""}`].filter(Boolean).join(" · ");
+  return `<div class="posthead" aria-label="The post this came from">` +
+    `<div class="posthead__who">${post.author ? `<a href="${escapeHtml(post.url)}" target="_blank" rel="noopener noreferrer" data-r title="Open the post">@${escapeHtml(post.author)} ↗</a>` :
+      `<a href="${escapeHtml(post.url)}" target="_blank" rel="noopener noreferrer" data-r>post ↗</a>`}` +
+    `${post.author_name ? `<span>${escapeHtml(post.author_name)}</span>` : ""}` +
+    `<span class="meta">${escapeHtml((post.date || "").slice(0, 10))}${counts ? ` · ${counts}` : ""}</span></div>` +
+    (post.text ? `<p class="posthead__text">${escapeHtml(post.text)}</p>` : "") + `</div>`;
+}
 function section(title, body) {
   return body ? `<section><h3 class="label">${escapeHtml(title)}</h3>${body}</section>` : "";
 }
@@ -1817,6 +1834,7 @@ function renderReader() {
     `<button class="btn" data-discuss title="Discuss this item in Ask, with its full record attached (D)">Discuss</button> ` +
     `<button class="btn" data-copy title="Copy citation (yy)">Cite</button></span></span></div>` +
     `<div class="reader__body">` +
+    postHeadHtml(d) +
     galleryHtml(d) +
     `<div class="preview">${preview}</div>` +
     `<h2>${escapeHtml(d.title)}</h2>` +
@@ -3128,9 +3146,10 @@ function fillStage(st, d) {
     bits.push(`last run <span class="${cls}">${escapeHtml(run.state)}</span> ${plAgo(run.finished_at || run.started_at)}`);
     if (run.selected != null) bits.push(`${fmtN(run.done)} of ${fmtN(run.selected)}`);
     if (run.args?.model) bits.push(escapeHtml(run.args.model));
-    if (run.last_error) bits.push(`<span class="bad">${escapeHtml(run.last_error.split("\n").pop().slice(0, 200))}</span>`);
+    if (run.last_error) bits.push(`<span class="${run.last_error.startsWith("stopped:") ? "weak" : "bad"}">${escapeHtml(run.last_error.split("\n").pop().slice(0, 200))}</span>`);
   } else bits.push("not run from here yet");
   if (st.queued) bits.push("queued");
+  if (st.waiting && !running) bits.push(`<span class="weak">waits: ${escapeHtml(st.waiting)}</span>`);
   if (st.count_error) bits.push(`<span class="bad">${escapeHtml(st.count_error)}</span>`);
   $("[data-run]", box).innerHTML = bits.join(" · ");
   const go = $("[data-go]", box);

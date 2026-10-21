@@ -760,10 +760,9 @@ def create_app(cfg: config.Config | None = None) -> FastAPI:
                 member_rows = conn.execute(
                     "SELECT media_id, role, seq FROM post_member WHERE post_id=? ORDER BY seq", (post_row[0],)).fetchall()
                 member_cards = search.cards(conn, [r[0] for r in member_rows])
-                if len(member_rows) > 1:
-                    post = {"url": post_row[1], "date": post_row[2], "primary_media_id": post_row[3],
-                            "members": [{**member_cards[r[0]], "role": r[1], "seq": r[2]}
-                                        for r in member_rows if r[0] in member_cards]}
+                post = {**search.post_header(conn, post_row[0]), "primary_media_id": post_row[3],
+                        "members": [{**member_cards[r[0]], "role": r[1], "seq": r[2]}
+                                    for r in member_rows if r[0] in member_cards]}
             pages = []
             if search._has_table(conn, "wiki_member"):
                 # Pages hold posts by their primary item, so a photo inside a post finds the post's pages.
