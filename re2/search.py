@@ -459,8 +459,9 @@ _DISCLAIMER = re.compile(r"\b(race|gender|ethnicity)\b.*\b(cannot|can't|not|no|u
 
 _STATUS_URL = re.compile(r"https?://(?:www\.|mobile\.)?(?:x|twitter)\.com/([A-Za-z0-9_]{1,15})/status/")
 _HANDLE_LINE = re.compile(r"^@[A-Za-z0-9_]{1,15}$")
+_TWEET_CHROME = re.compile(r"^(Show translation|Translate post|Follow|Subscribe)$", re.I)   # X's buttons, not text
 # Where a tweet's text ends in a screenshot of it: the timestamp line, view counts, or a reply box.
-_TWEET_END = re.compile(r"^(\d{1,2}:\d{2}\s?(AM|PM)\b|.*·\s*\w{3} \d{1,2}, \d{4}|[\d.,]+[KM]?\s+Views?$|Post your reply|Translate post$)",
+_TWEET_END = re.compile(r"^(\d{1,2}:\d{2}\s?(AM|PM)\b|.*·\s*\w{3} \d{1,2}, \d{4}|[\d.,]+[KM]?\s+Views?$|Post your reply)",
                         re.I)
 TWEET_TEXT_CHARS = 1200
 
@@ -485,7 +486,8 @@ def tweet_from_ocr(ocr: str | None) -> tuple[str | None, str | None, str | None]
     for ln in lines[at + 1:]:
         if _TWEET_END.match(ln):
             break
-        body.append(ln)
+        if not _TWEET_CHROME.match(ln):
+            body.append(ln)
     text = "\n".join(body).strip()
     return name, lines[at][1:], (text[:TWEET_TEXT_CHARS] + "…" if len(text) > TWEET_TEXT_CHARS else text) or None
 

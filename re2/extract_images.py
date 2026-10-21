@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import sqlite3
 import threading
 import time
@@ -118,6 +119,7 @@ class Job:
     item_date: str | None = None
     redo: bool = False  # has a caption from an older prompt version
     user_context: str | None = None  # what the archive's owner said about the image; kept across redos
+    post_note: str = ""   # the post the photo was saved with (post_note); "" when there is none to give
 
 
 @dataclass
@@ -173,6 +175,48 @@ def job_from_row(cfg, r, ran_out: set[int] = frozenset()) -> Job | None:
                r["user_context"] or None)
 
 
+POST_CONTEXT = 1   # caption JSON post_context: read with the text of the post it was saved with
+
+
+def post_contexts(conn: sqlite3.Connection, media_ids=None) -> dict[int, dict]:
+    """For each photo in a post that has text: who posted it, the text, its place among the photos and the
+    post's screenshot, whose caption the text is read from (search.post_header)."""
+    from re2 import search
+
+    if not search._has_table(conn, "post"):
+        return {}
+    rows = conn.execute("""SELECT pm.post_id, pm.media_id FROM post_member pm WHERE pm.role='photo'
+                           ORDER BY pm.post_id, pm.seq""").fetchall()
+    wanted = None if media_ids is None else set(media_ids)
+    photos: dict[int, list[int]] = {}
+    for post_id, media_id in rows:
+        photos.setdefault(post_id, []).append(media_id)
+    out = {}
+    for post_id, ids in photos.items():
+        if wanted is not None and not wanted & set(ids):
+            continue
+        head = search.post_header(conn, post_id)
+        shot = conn.execute("SELECT media_id FROM post_member WHERE post_id=? AND role='screenshot' ORDER BY seq LIMIT 1",
+                            (post_id,)).fetchone()
+        for k, media_id in enumerate(ids, 1):
+            out[media_id] = {**head, "k": k, "n": len(ids), "screenshot_id": shot[0] if shot else None}
+    return out
+
+
+def post_note(ctx: dict | None) -> str:
+    """The post a photo was saved with. What only the post says is the poster's claim, and is attributed:
+    without that, a caption names whoever the post says is pictured as if the image showed it."""
+    if not ctx or not ctx.get("text"):
+        return ""
+    who = (f"@{ctx['author']}" + (f" ({ctx['author_name']})" if ctx.get("author_name") else "")) if ctx.get("author") else "its author"
+    where = " on X" if re.match(r"https?://(www\.)?(x|twitter)\.com/", ctx.get("url") or "") else ""
+    return (f" This image is photo {ctx['k']} of {ctx['n']} in a post{where} by {who}, saved together with a screenshot"
+            f" of the post. The post says: \"{ctx['text']}\". Use the post as context for what the image shows and why"
+            " it was shared (saved_as), but describe only what is visible. People, places and events that only the"
+            " post names are the poster's claims: attribute them (\"whom the post names as …\") rather than state"
+            " them, and list as entities only what the image shows or the post names.")
+
+
 def select_jobs(conn: sqlite3.Connection, cfg, limit: int | None, include_thumbnail_only: bool) -> list[Job]:
     statuses = ("READY", "THUMBNAIL_ONLY") if include_thumbnail_only else ("READY",)
     skip = db.pending_failures(conn, STAGE)
@@ -187,13 +231,29 @@ def select_jobs(conn: sqlite3.Connection, cfg, limit: int | None, include_thumbn
             ORDER BY redo, m.status='THUMBNAIL_ONLY', item_date IS NULL, item_date DESC, m.id DESC""",
         (*statuses, PROMPT_VERSION),
     ).fetchall()
+    # Post photos captioned before their post's text could be given are read again with it.
+    in_posts = post_contexts(conn)
+    contexts = {m: c for m, c in in_posts.items() if c["text"]}
+    if contexts:
+        rows += conn.execute(
+            f"""SELECT {JOB_COLUMNS} FROM media m
+                WHERE m.id IN ({','.join('?' * len(contexts))}) AND m.status IN ({','.join('?' * len(statuses))})
+                  AND EXISTS (SELECT 1 FROM doc d WHERE d.media_id=m.id AND d.kind='caption'
+                              AND coalesce(json_extract(d.json, '$.prompt_version'), 0) >= ?
+                              AND coalesce(json_extract(d.json, '$.post_context'), 0) < ?)
+                ORDER BY m.id DESC""", (*contexts, *statuses, PROMPT_VERSION, POST_CONTEXT)).fetchall()
+    uncaptioned = {r["id"] for r in rows if not r["redo"]}
     jobs = []
     for r in rows:
         if r["id"] in skip:
             continue
+        ctx = in_posts.get(r["id"])
+        if ctx and not ctx["text"] and ctx["screenshot_id"] in uncaptioned:
+            continue   # its post's screenshot is captioned first; the photo then gets the post's text
         job = job_from_row(cfg, r, ran_out)
         if job is None:
             continue
+        job.post_note = post_note(ctx)
         jobs.append(job)
         if limit is not None and len(jobs) >= limit:
             break
@@ -229,12 +289,14 @@ def extract_job(client: httpx.Client, cfg, job: Job, max_tokens: int | None = No
     images = vlm.prepare_images(job.path, cfg.vision_max_side, cfg.vision_max_tiles, dense=job.long_output)
     text = (USER_TEXT + (LOW_RES_TEXT if job.low_res else "") + vlm.folder_note(job.folder)
             + vlm.filename_note(job.rel_path) + vlm.date_note(job.item_date) + vlm.tiles_note(len(images))
-            + user_context_note(job.user_context))
+            + user_context_note(job.user_context) + job.post_note)
     result = vlm.extract(client, cfg, images, vlm.IMAGE_SCHEMA, vlm.IMAGE_SYSTEM_PROMPT, text,
                          max_tokens=max_tokens, sampling=vlm.LOOP_BREAKER if job.long_output else None)
     result["_tiles"] = len(images)
     if job.user_context:
         result["user_context"] = job.user_context  # saved in the caption JSON, so a later redo sends it again
+    if job.post_note:
+        result["post_context"] = POST_CONTEXT
     return result
 
 
@@ -275,6 +337,7 @@ def recaption(conn: sqlite3.Connection, cfg, media_id: int, note: str, client_fa
     if job is None:
         raise LookupError(f"media {media_id} is not an image with a file or thumbnail to read")
     job.user_context = note.strip()
+    job.post_note = post_note(post_contexts(conn, [media_id]).get(media_id))
     with client_factory() as client:
         try:
             result = extract_job(client, cfg, job)

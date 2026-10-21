@@ -290,3 +290,39 @@ def test_half_an_emoji_does_not_end_the_run(tmp_path):
     assert stats.done == 2 and stats.failed == 0
     saved = json.loads(conn.execute("SELECT json FROM doc WHERE kind='caption' LIMIT 1").fetchone()[0])
     assert saved["description"] == "a post  ending" and saved["tags"] == ["emoji  tag"]
+
+
+def test_post_photos_wait_for_the_post_text_then_get_it(tmp_path):
+    root = tmp_path / "corpus"
+    root.mkdir()
+    for shade, name in enumerate(("shot.png", "photo1.png", "photo2.png", "alone.png")):
+        Image.new("RGB", (500, 400), (shade * 60, 0, 0)).save(root / name)
+    conn = db.connect(":memory:")
+    db.init_schema(conn)
+    cfg = SimpleNamespace(corpus_root=root, vision_model="gemma-test")
+    scan.scan(conn, cfg)
+    ids = {r[1]: r[0] for r in conn.execute("SELECT media_id, rel_path FROM media_path")}
+    post = conn.execute("INSERT INTO post(url, primary_media_id) VALUES ('https://x.com/AFpost/status/1', ?)",
+                        (ids["shot.png"],)).lastrowid
+    conn.executemany("INSERT INTO post_member(post_id, media_id, role, seq) VALUES (?, ?, ?, ?)",
+                     [(post, ids["shot.png"], "screenshot", 0), (post, ids["photo1.png"], "photo", 1),
+                      (post, ids["photo2.png"], "photo", 2)])
+    conn.commit()
+    picked = lambda: {j.media_id: j for j in extract_images.select_jobs(conn, cfg, None, True)}  # noqa: E731
+
+    # The screenshot is read first; its photos wait for the post's text.
+    assert set(picked()) == {ids["shot.png"], ids["alone.png"]}
+    shot = {**sample_result(), "ocr_text": "← Post\nAF Post\n@AFpost\nRobert Maxwell was killed.\n1:22 PM · Mar 15, 2018"}
+    extract_images.store_image_result(conn, cfg, ids["shot.png"], shot, False)
+    jobs = picked()
+    assert set(jobs) == {ids["photo1.png"], ids["photo2.png"], ids["alone.png"]}
+    note = jobs[ids["photo2.png"]].post_note
+    assert "photo 2 of 2 in a post on X by @AFpost (AF Post)" in note and '"Robert Maxwell was killed."' in note
+    assert "attribute them" in note and jobs[ids["alone.png"]].post_note == ""
+
+    # A photo captioned without the post's text is read again with it; once it has it, it is done.
+    extract_images.store_image_result(conn, cfg, ids["photo1.png"], sample_result(), False)
+    extract_images.store_image_result(conn, cfg, ids["photo2.png"], {**sample_result(), "post_context": 1}, False)
+    extract_images.store_image_result(conn, cfg, ids["alone.png"], sample_result(), False)
+    jobs = picked()
+    assert set(jobs) == {ids["photo1.png"]} and jobs[ids["photo1.png"]].redo and jobs[ids["photo1.png"]].post_note
