@@ -360,7 +360,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--limit", type=int, help="process at most N images")
     p.set_defaults(func=cmd_thumbs)
 
-    p = sub.add_parser("extract-images", help="caption, OCR and tag images with the vision model on cube")
+    p = sub.add_parser("extract-images", help="caption, OCR and tag images with the vision model")
     p.add_argument("--limit", type=int, help="process at most N images")
     p.add_argument("--no-thumbnail-only", action="store_true", help="skip items that only have a thumbnail")
     p.add_argument("--concurrency", type=int,
@@ -387,7 +387,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--limit", type=int, help="read at most N PDFs")
     p.set_defaults(func=cmd_pdfs)
 
-    p = sub.add_parser("pdf-ocr", help="transcribe queued scanned PDF pages with the vision model on cube")
+    p = sub.add_parser("pdf-ocr", help="transcribe queued scanned PDF pages with the vision model")
     p.add_argument("--limit", type=int, help="transcribe at most N pages")
     p.set_defaults(func=cmd_pdf_ocr)
 
@@ -451,6 +451,14 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--host", help="bind address (default from config.toml)")
     p.add_argument("--port", type=int, help="port (default from config.toml)")
     p.set_defaults(func=cmd_serve)
+
+    from re2.presets import COMMAND_SERVICE
+
+    for name, service in COMMAND_SERVICE.items():
+        p = sub.choices[name]
+        p.add_argument("--preset", help=f"use this preset from config.local.toml for {service}, without asking")
+        p.add_argument("--no-pick", action="store_true",
+                       help="skip the server picker shown in a terminal; use the configured server")
     return parser
 
 
@@ -463,6 +471,9 @@ def main(argv: list[str] | None = None) -> int:
     )
     logging.getLogger("httpx").setLevel(logging.WARNING)
     cfg = config.load(args.config)
+    from re2 import presets
+
+    cfg = presets.choose(cfg, args)
     if args.command != "status":
         log_dir = cfg.data_dir / "logs"
         log_dir.mkdir(parents=True, exist_ok=True)
@@ -470,6 +481,10 @@ def main(argv: list[str] | None = None) -> int:
         handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
         logging.getLogger().addHandler(handler)
         logging.getLogger(__name__).info("start: re2 %s", " ".join(sys.argv[1:]))
+        if args.command in presets.COMMAND_SERVICE:
+            service = presets.COMMAND_SERVICE[args.command]
+            cur = presets.of_service(cfg, service)
+            logging.getLogger(__name__).info("%s: %s at %s", service, cur["model"], cur["base_url"])
     return args.func(cfg, args)
 
 

@@ -14,6 +14,10 @@
 # Re-run after captioning or ASR sessions, then run wiki_build.sh.
 # Extra arguments pass through, e.g. --limit 20 to measure the rate, or --concurrency 2 when the
 # server has free slots. A log is appended to data/logs/digests.log.
+#
+# In a terminal it first lists the presets (named servers in config.local.toml) with a live check of
+# each and asks which to use: Enter keeps the configured server, n walks through adding a preset.
+# --preset NAME uses one without asking; --no-pick, or no terminal, uses the configured server.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 exec uv run re2 digests "$@"

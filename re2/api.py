@@ -15,7 +15,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Streamin
 from fastapi.staticfiles import StaticFiles
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
-from re2 import config, db, embed, search
+from re2 import config, db, embed, presets, search
 from re2.config import REPO_ROOT
 
 log = logging.getLogger(__name__)
@@ -586,9 +586,14 @@ def create_app(cfg: config.Config | None = None) -> FastAPI:
 
     # ── Settings ──────────────────────────────────────────────────────────
 
+    def settings_body():
+        all_presets = presets.load_all()
+        return {"services": config.services(cfg), "file": str(config.LOCAL_OVERRIDES), "presets": all_presets,
+                "using": {s: presets.matching(cfg, s, all_presets) for s in presets.SERVICE_KEYS}}
+
     @app.get("/api/settings")
     def settings_get():
-        return {"services": config.services(cfg), "file": str(config.LOCAL_OVERRIDES)}
+        return settings_body()
 
     @app.get("/api/settings/models")
     def settings_models(base_url: str):
@@ -598,23 +603,27 @@ def create_app(cfg: config.Config | None = None) -> FastAPI:
         if not base.startswith(("http://", "https://")):
             raise HTTPException(400, "base_url must be an http(s) URL")
         try:
-            resp = chat_client.get(f"{base}/models", timeout=8)
-            resp.raise_for_status()
-            data = resp.json().get("data") or []
+            return {"ok": True, "models": presets.list_models(chat_client, base)}
         except (httpx.HTTPError, ValueError, AttributeError) as exc:
             return {"ok": False, "error": str(exc)[:300], "models": []}
-        models = []
-        for m in data:
-            status = m.get("status") if isinstance(m.get("status"), dict) else {}
-            args = status.get("args") or []
-            ctx = next((args[i + 1] for i, a in enumerate(args[:-1]) if a in ("--ctx-size", "-c")), None)
-            parallel = next((args[i + 1] for i, a in enumerate(args[:-1]) if a in ("--parallel", "-np")), None)
-            ctx = int(ctx) if str(ctx or "").isdigit() else None
-            parallel = int(parallel) if str(parallel or "").isdigit() else None
-            unified = "--kv-unified" in args or not parallel   # llama.cpp's automatic parallel shares one cache
-            models.append({"id": m.get("id"), "state": status.get("value"), "ctx": ctx, "parallel": parallel,
-                           "request_ctx": ctx if ctx is None or unified else ctx // max(parallel, 1)})
-        return {"ok": True, "models": models}
+
+    @app.post("/api/settings/presets/{name}")
+    def preset_save(name: str, request: Request, body: dict = Body(...)):
+        if request.headers.get("x-re2-settings") != "1":
+            raise HTTPException(403, "missing X-RE2-Settings header")
+        try:
+            presets.save(name, body)
+        except (ValueError, TypeError, OSError) as exc:
+            raise HTTPException(400, str(exc)) from exc
+        return settings_body()
+
+    @app.delete("/api/settings/presets/{name}")
+    def preset_delete(name: str, request: Request):
+        if request.headers.get("x-re2-settings") != "1":
+            raise HTTPException(403, "missing X-RE2-Settings header")
+        if not presets.delete(name):
+            raise HTTPException(404, f"no preset {name!r} in {config.LOCAL_OVERRIDES.name}")
+        return settings_body()
 
     @app.post("/api/settings")
     def settings_save(request: Request, body: dict = Body(...)):
@@ -626,7 +635,7 @@ def create_app(cfg: config.Config | None = None) -> FastAPI:
             config.save_services(cfg, body.get("services") or {})
         except (ValueError, TypeError, OSError) as exc:
             raise HTTPException(400, str(exc)) from exc
-        return {"services": config.services(cfg), "file": str(config.LOCAL_OVERRIDES)}
+        return settings_body()
 
     # ── Items ─────────────────────────────────────────────────────────────
 

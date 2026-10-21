@@ -545,7 +545,10 @@ mark { background: var(--hot-w); color: var(--ink); padding: 0 1px; }
 .svc > p { font-size: 12.5px; color: var(--ink-3); margin: 0 0 10px; }
 .svc label { display: grid; grid-template-columns: minmax(110px, 170px) 1fr; gap: 10px; align-items: center; margin: 6px 0; }
 .svc input { font-family: var(--font-mono); font-size: 12px; padding: 6px 8px; border: 1px solid var(--rule); background: var(--stock); color: var(--ink); outline: none; min-width: 0; }
-.svc input:focus { border-color: var(--blue); }
+.svc input:focus, .svc select:focus { border-color: var(--blue); }
+.svc select { font-family: var(--font-mono); font-size: 12px; padding: 5px 6px; border: 1px solid var(--rule); background: var(--stock); color: var(--ink); outline: none; min-width: 0; }
+.svc__presets { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 10px; }
+.svc__presets input { flex: 1 1 160px; }
 .svc input.is-changed { border-color: var(--blue); background: var(--blue-w); }
 .svc__models { margin-top: 8px; display: flex; flex-direction: column; gap: 1px; max-height: 240px; overflow: auto; }
 .svc__models button { display: grid; grid-template-columns: 1fr auto auto; gap: 12px; text-align: left; font-family: var(--font-mono); font-size: 11px; color: var(--ink-2); padding: 4px 6px; border-left: 2px solid transparent; }
@@ -2833,6 +2836,41 @@ const SERVICES = [
   ["asr", "Speech to text", "faster-whisper on this machine's GPU. asr.sh reads it when next started.",
     [["model", "Model", "text"], ["device", "Device (cuda or cpu)", "text"], ["compute_type", "Compute type", "text"]]],
 ];
+/* A preset is a named server and model; picking one fills a card, Save makes it the default. The batch scripts
+   offer the same presets when they start in a terminal. Preset keys that differ from the card's field keys: */
+const PRESET_FIELD = { vision: { model: "vision_model", concurrency: "vision_concurrency" } };
+const presetField = (svc, k) => PRESET_FIELD[svc]?.[k] || k;
+const PRESET_KEYS = ["base_url", "model", "concurrency", "context_tokens"];
+function presetFromCard(box) {
+  const svc = box.dataset.svc, out = {};
+  for (const k of PRESET_KEYS) {
+    const inp = $(`[data-key="${presetField(svc, k)}"]`, box);
+    if (inp && inp.value.trim() !== "") out[k] = inp.dataset.type === "int" ? Number(inp.value.trim()) : inp.value.trim();
+  }
+  return out;
+}
+function syncPresets() {
+  const all = S.settings?.presets || {};
+  for (const sel of $$("#settings [data-preset]")) {
+    const box = sel.closest("[data-svc]"), cur = presetFromCard(box);
+    const match = Object.keys(all).find((n) => all[n].base_url === (cur.base_url || "").replace(/\/+$/, "") && all[n].model === cur.model) || "";
+    sel.innerHTML = `<option value="">${Object.keys(all).length ? "(not a preset)" : "(no presets yet)"}</option>` +
+      Object.entries(all).map(([n, p]) => `<option value="${escapeHtml(n)}">${escapeHtml(n)} · ${escapeHtml(p.model)}</option>`).join("");
+    sel.value = match;
+    const del = $("[data-del-preset]", box);
+    if (del) del.disabled = !match;
+  }
+}
+async function presetRequest(name, method, body) {
+  const resp = await fetch(`/api/settings/presets/${encodeURIComponent(name)}`, {
+    method, headers: { "Content-Type": "application/json", "X-RE2-Settings": "1" }, body: body && JSON.stringify(body),
+  });
+  const d = await resp.json().catch(() => ({}));
+  if (!resp.ok) return say(`Preset not ${method === "DELETE" ? "deleted" : "saved"}: ${d.detail || resp.status}`, true);
+  S.settings.presets = d.presets;
+  syncPresets();
+  say(method === "DELETE" ? `Deleted preset ${name}.` : `Saved preset ${name} in ${S.settings.file}.`);
+}
 async function renderSettings() {
   const el = $("#settings");
   const resp = await fetch("/api/settings");
@@ -2840,13 +2878,19 @@ async function renderSettings() {
   S.settings = await resp.json();
   const sv = S.settings.services;
   el.innerHTML = `<p>The model servers the dashboard and the batch scripts use. Saving writes <code>${escapeHtml(S.settings.file)}</code>` +
-    ` (git-ignored; <code>config.toml</code> stays as it is). Anyone who can open this page can change these.</p>` +
+    ` (git-ignored; <code>config.toml</code> stays as it is). Anyone who can open this page can change these. ` +
+    `A preset is a named server and model: pick one to fill a card, or save a card as one. The batch scripts offer the same presets when they start in a terminal.</p>` +
     SERVICES.map(([name, title, note, fields]) => `<section class="svc" data-svc="${name}"><h3>${escapeHtml(title)}</h3><p>${escapeHtml(note)}</p>` +
+      (name in S.settings.using ? `<label><span class="label">Preset</span><select data-preset aria-label="${escapeHtml(title)} preset"></select></label>` : "") +
       fields.map(([key, label, type]) => `<label><span class="label">${escapeHtml(label)}</span>` +
         `<input data-key="${key}" data-type="${type}" value="${escapeHtml(String(sv[name][key] ?? ""))}"` +
         `${type === "int" ? ` inputmode="numeric"` : ""} spellcheck="false" autocomplete="off"></label>`).join("") +
-      (fields.some((f) => f[2] === "model") ? `<div class="svc__models" data-models></div>` : "") + `</section>`).join("") +
+      (fields.some((f) => f[2] === "model") ? `<div class="svc__models" data-models></div>` : "") +
+      (name in S.settings.using ? `<div class="svc__presets"><input data-preset-name placeholder="preset name" value="${escapeHtml(S.settings.using[name] || "")}" spellcheck="false" autocomplete="off" aria-label="Preset name">` +
+        `<button class="btn" type="button" data-save-preset>Save as preset</button><button class="btn" type="button" data-del-preset>Delete preset</button></div>` : "") +
+      `</section>`).join("") +
     `<div class="settings__bar"><button class="btn" type="button" data-save>Save</button><button class="btn" type="button" data-revert>Revert</button><span class="meta" id="settingsNote"></span></div>`;
+  syncPresets();
   for (const [name] of SERVICES) if ($(`[data-svc="${name}"] [data-models]`)) loadModels(name);
 }
 async function loadModels(name) {
@@ -2863,7 +2907,7 @@ async function loadModels(name) {
   const cur = $(`[data-key="${modelKey}"]`, box).value;
   list.innerHTML = d.models.map((m) => `<button type="button" data-pick="${escapeHtml(m.id)}" data-ctx="${m.request_ctx ?? ""}" class="${m.id === cur ? "is-current" : ""}">` +
     `<span>${escapeHtml(m.id)}</span><span class="${m.state === "loaded" ? "on" : ""}">${escapeHtml(m.state || "")}</span>` +
-    `<span>${m.request_ctx ? `${fmtN(m.request_ctx)} ctx${m.parallel ? ` · ${m.parallel} slots` : ""}` : ""}</span></button>`).join("") ||
+    `<span>${m.request_ctx ? `${fmtN(m.request_ctx)} ctx${m.parallel ? ` · ${m.parallel} slots` : ""}` : ""}${name === "vision" && m.vision ? " · images" : ""}</span></button>`).join("") ||
     `<span class="meta">The server lists no models.</span>`;
 }
 function settingsValues() {
@@ -4771,6 +4815,17 @@ $("#askCtx").addEventListener("click", (e) => {
 $("#settings").addEventListener("click", (e) => {
   if (e.target.closest("[data-save]")) return saveSettings();
   if (e.target.closest("[data-revert]")) return renderSettings();
+  const box0 = e.target.closest("[data-svc]");
+  if (e.target.closest("[data-save-preset]")) {
+    const name = $("[data-preset-name]", box0).value.trim();
+    if (!name) return say("Give the preset a name first.", true);
+    return presetRequest(name, "POST", presetFromCard(box0));
+  }
+  if (e.target.closest("[data-del-preset]")) {
+    const name = $("[data-preset]", box0).value;
+    if (name && confirm(`Delete preset ${name}?`)) presetRequest(name, "DELETE");
+    return;
+  }
   const pick = e.target.closest("[data-pick]");
   if (pick) {
     const box = pick.closest("[data-svc]");
@@ -4778,11 +4833,24 @@ $("#settings").addEventListener("click", (e) => {
     const ctx = $('[data-key="context_tokens"]', box);
     if (ctx && pick.dataset.ctx) ctx.value = pick.dataset.ctx;   // a request's share of the server's context
     $$("[data-pick]", box).forEach((b) => b.classList.toggle("is-current", b === pick));
-    markChanged();
+    markChanged(); syncPresets();
   }
 });
-$("#settings").addEventListener("input", markChanged);
+$("#settings").addEventListener("input", (e) => { markChanged(); if (e.target.matches("input[data-key]")) syncPresets(); });
 $("#settings").addEventListener("change", (e) => {
+  if (e.target.matches("[data-preset]")) {
+    const box = e.target.closest("[data-svc]"), svc = box.dataset.svc, p = S.settings.presets[e.target.value];
+    if (!p) return;
+    const oldUrl = $('[data-key="base_url"]', box).value.trim();
+    for (const k of PRESET_KEYS) {
+      const inp = $(`[data-key="${presetField(svc, k)}"]`, box);
+      if (inp && p[k] != null) inp.value = String(p[k]);
+    }
+    $("[data-preset-name]", box).value = e.target.value;
+    markChanged(); syncPresets();
+    if (p.base_url !== oldUrl) loadModels(svc);
+    return;
+  }
   if (e.target.matches('[data-key="base_url"], [data-key="url"]')) loadModels(e.target.closest("[data-svc]").dataset.svc);
 });
 $("#sortBtn").addEventListener("click", cycleSort);

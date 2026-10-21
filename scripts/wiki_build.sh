@@ -19,6 +19,10 @@
 # Extra arguments pass through: --topic 348 (one topic, its events and page), --kind event,
 # --limit 2 (two topics end to end, two pages of each other kind). Then `uv run re2 wiki-export`
 # writes Markdown to data/wiki. A log is appended to data/logs/wiki-build.log.
+#
+# In a terminal it first lists the presets (named servers in config.local.toml) with a live check of
+# each and asks which to use: Enter keeps the configured server, n walks through adding a preset.
+# --preset NAME uses one without asking; --no-pick, or no terminal, uses the configured server.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 exec uv run re2 wiki-build "$@"
