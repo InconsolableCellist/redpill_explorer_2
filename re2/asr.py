@@ -46,6 +46,7 @@ LANGUAGE_MIN_P = 0.9
 NOT_TRUSTED = frozenset({"cy"})
 AMBERNET_CODES = {"iw": "he"}   # to the ISO 639-1 codes Whisper recorded
 WORKER = Path(__file__).with_name("asr_worker.py")
+REDO_KEY = "asr_redo"      # kv: JSON list of media ids to transcribe again (mark_redo)
 
 
 class Busy(RuntimeError):
@@ -229,34 +230,61 @@ def windows(segments: list[Segment]) -> list[Segment]:
     return out
 
 
-def _set_language(conn: sqlite3.Connection, media_id: int, language: str) -> None:
-    conn.execute(
-        """INSERT INTO media_meta(media_id, language) VALUES (?, ?)
-           ON CONFLICT(media_id) DO UPDATE SET language=COALESCE(media_meta.language, excluded.language)""",
-        (media_id, language))
+def _set_language(conn: sqlite3.Connection, media_id: int, language: str | None, replace: bool) -> None:
+    """Record the language; a redo replaces what the older engine recorded, even with "unknown"."""
+    if language is None and not replace:
+        return
+    keep = "excluded.language" if replace else "COALESCE(media_meta.language, excluded.language)"
+    conn.execute(f"""INSERT INTO media_meta(media_id, language) VALUES (?, ?)
+                     ON CONFLICT(media_id) DO UPDATE SET language={keep}""", (media_id, language))
+
+
+def redo_ids(conn: sqlite3.Connection) -> set[int]:
+    return set(json.loads(db.kv_get(conn, REDO_KEY) or "[]"))
+
+
+def mark_redo(conn: sqlite3.Connection, media_ids) -> int:
+    """Queue videos to be transcribed again on the next run, even though they have a transcript or a
+    no-speech verdict; their old transcript stays searchable until the new one replaces it."""
+    ids = {int(i) for i in media_ids}
+    with conn:
+        db.kv_set(conn, REDO_KEY, json.dumps(sorted(redo_ids(conn) | ids)))
+        conn.executemany("DELETE FROM failure WHERE stage=? AND media_id=?", [(STAGE, i) for i in ids])
+    return len(ids)
+
+
+def redo_candidates(conn: sqlite3.Connection, what: str) -> list[int]:
+    """Videos to redo: "no_speech" (an earlier no-speech verdict) or a language code an earlier engine
+    recorded (e.g. "cy": Whisper heard British English as Welsh and stored a Welsh translation)."""
+    if what == "no_speech":
+        sql, args = "SELECT media_id FROM failure WHERE stage=? AND error='no_speech'", (STAGE,)
+    else:
+        sql, args = ("""SELECT mm.media_id FROM media_meta mm JOIN media m ON m.id=mm.media_id
+                        WHERE m.kind='video' AND mm.language=?""", (what,))
+    return [r[0] for r in conn.execute(sql, args)]
 
 
 def store(conn: sqlite3.Connection, cfg, media_id: int, segments: list[Segment] | None, language: str | None) -> int:
     """Windows stored, 0 for no speech, -1 for a language the model does not transcribe."""
+    redo = redo_ids(conn)
     with conn:
+        conn.execute("DELETE FROM transcript_segment WHERE media_id=?", (media_id,))
+        conn.execute("DELETE FROM doc WHERE media_id=? AND kind='transcript'", (media_id,))
+        _set_language(conn, media_id, language, replace=media_id in redo)
+        if media_id in redo:
+            db.kv_set(conn, REDO_KEY, json.dumps(sorted(redo - {media_id})))
         if segments is None:
             db.upsert_failure(conn, STAGE, media_id, None, f"language:{language}", attempts=NO_SPEECH_ATTEMPTS)
-            if language:
-                _set_language(conn, media_id, language)
             return -1
         if not segments:
             db.upsert_failure(conn, STAGE, media_id, None, "no_speech", attempts=NO_SPEECH_ATTEMPTS)
             return 0
-        conn.execute("DELETE FROM transcript_segment WHERE media_id=?", (media_id,))
-        conn.execute("DELETE FROM doc WHERE media_id=? AND kind='transcript'", (media_id,))
         conn.executemany("INSERT INTO transcript_segment(media_id, start_s, end_s, text) VALUES (?, ?, ?, ?)",
                          [(media_id, s.start, s.end, s.text) for s in segments])
         wins = windows(segments)
         conn.executemany(
             "INSERT INTO doc(media_id, kind, seq, start_s, end_s, text, model) VALUES (?, 'transcript', ?, ?, ?, ?, ?)",
             [(media_id, n, w.start, w.end, w.text, model_tag(cfg)) for n, w in enumerate(wins)])
-        if language:
-            _set_language(conn, media_id, language)
         db.clear_failure(conn, STAGE, media_id)
         return len(wins)
 
@@ -279,16 +307,18 @@ class AsrStats:
 
 
 def select_jobs(conn: sqlite3.Connection, limit: int | None) -> list[sqlite3.Row]:
+    """Videos with audio and no transcript yet, and the ones queued for a redo (mark_redo)."""
     skip = db.pending_failures(conn, STAGE)
+    redo = redo_ids(conn)
     rows = conn.execute(
         """SELECT m.id, m.duration,
                   (SELECT p.rel_path FROM media_path p WHERE p.media_id=m.id AND p.readable=1
                    ORDER BY p.id LIMIT 1) AS rel_path
            FROM media m
            WHERE m.kind='video' AND m.status='READY' AND m.has_audio=1
-             AND NOT EXISTS (SELECT 1 FROM doc d WHERE d.media_id=m.id AND d.kind='transcript')
            ORDER BY m.id""").fetchall()
-    jobs = [r for r in rows if r["id"] not in skip and r["rel_path"]]
+    has = {r[0] for r in conn.execute("SELECT DISTINCT media_id FROM doc WHERE kind='transcript'")}
+    jobs = [r for r in rows if r["rel_path"] and (r["id"] in redo or (r["id"] not in has and r["id"] not in skip))]
     return jobs[:limit] if limit is not None else jobs
 
 

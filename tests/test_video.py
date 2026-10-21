@@ -97,6 +97,28 @@ def test_asr_windows_and_storage(env):
     assert asr.select_jobs(conn, None) == []                 # the skipped language is not selected again
 
 
+def test_asr_redo_replaces_an_older_transcript(env):
+    conn, cfg, ids = env
+    cfg = asr_cfg(cfg)
+    video.run(conn, cfg)
+    long = ids["long.mp4"]
+    asr.run(conn, cfg, worker=FakeWorker())
+    conn.execute("UPDATE media_meta SET language='cy' WHERE media_id=?", (long,))   # as Whisper recorded it
+    conn.commit()
+    assert asr.redo_candidates(conn, "cy") == [long]
+    assert asr.mark_redo(conn, asr.redo_candidates(conn, "cy") + asr.redo_candidates(conn, "ja")) == 2
+    assert [r["id"] for r in asr.select_jobs(conn, None)] == sorted([long, ids["short.mp4"]])
+
+    class Silent:
+        def transcribe(self, wav):
+            return "war", 0.3, []
+    stats = asr.run(conn, cfg, worker=Silent())
+    assert stats.no_speech == 2 and asr.redo_ids(conn) == set()
+    assert not conn.execute("SELECT 1 FROM doc WHERE kind='transcript' AND media_id=?", (long,)).fetchone()
+    assert conn.execute("SELECT language FROM media_meta WHERE media_id=?", (long,)).fetchone()[0] is None
+    assert asr.select_jobs(conn, None) == []
+
+
 def test_asr_stops_to_make_room(env, monkeypatch):
     conn, cfg, ids = env
     cfg = asr_cfg(cfg)
