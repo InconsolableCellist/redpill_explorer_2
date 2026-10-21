@@ -11,7 +11,7 @@ from pathlib import Path
 
 from PIL import Image, ImageOps
 
-from re2 import db
+from re2 import db, runner
 from re2.config import REPO_ROOT
 
 log = logging.getLogger(__name__)
@@ -107,5 +107,9 @@ def run(conn: sqlite3.Connection, cfg, limit: int | None = None) -> ThumbStats:
             if n % 200 == 0:
                 conn.commit()
                 log.info("thumbnails %d/%d", n, len(jobs))
+                if runner.progress_hook:
+                    runner.progress_hook(stats.made, stats.failed, len(jobs))
     conn.commit()
+    if runner.progress_hook:
+        runner.progress_hook(stats.made, stats.failed, len(jobs))
     return stats

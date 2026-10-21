@@ -593,6 +593,15 @@ mark { background: var(--hot-w); color: var(--ink); padding: 0 1px; }
 .svc select { font-family: var(--font-mono); font-size: 12px; padding: 5px 6px; border: 1px solid var(--rule); background: var(--stock); color: var(--ink); outline: none; min-width: 0; }
 .svc__presets { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 10px; }
 .svc__presets input { flex: 1 1 160px; }
+.svc__test { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; margin-top: 10px; }
+.svc__test ol { list-style: none; margin: 0; padding: 0; font-family: var(--font-mono); font-size: 11.5px; flex: 1 1 260px; }
+.svc__test li { padding: 1px 0; overflow-wrap: anywhere; color: var(--ink-2); }
+.svc__test li b { font-weight: 600; margin-right: 6px; }
+.svc__test li.ok b { color: var(--focus); }
+.svc__test li.bad b { color: var(--hot); }
+.svc__test .verdict { font-family: var(--font-mono); font-size: 11px; letter-spacing: .06em; text-transform: uppercase; padding: 1px 6px; border: 1px solid currentColor; }
+.svc__test .verdict.ok { color: var(--focus); }
+.svc__test .verdict.bad { color: var(--hot); }
 .svc input.is-changed { border-color: var(--blue); background: var(--blue-w); }
 .svc__models { margin-top: 8px; display: flex; flex-direction: column; gap: 1px; max-height: 240px; overflow: auto; }
 .svc__models button { display: grid; grid-template-columns: 1fr auto auto; gap: 12px; text-align: left; font-family: var(--font-mono); font-size: 11px; color: var(--ink-2); padding: 4px 6px; border-left: 2px solid transparent; }
@@ -2921,6 +2930,34 @@ async function presetRequest(name, method, body) {
   syncPresets();
   say(method === "DELETE" ? `Deleted preset ${name}.` : `Saved preset ${name} in ${S.settings.file}.`);
 }
+const TEST_TITLE = {
+  chat: "Ask the model for a one-word reply with the values above (saved or not). On a router this loads the model, which may unload another.",
+  wiki: "Ask the model for a one-word reply with the values above (saved or not). On a router this loads the model, which may unload another.",
+  vision: "Show the model an image with a random number drawn on it and check it reads the number back. On a router this loads the model, which may unload another.",
+  embed: "Embed three sentences and check a paraphrase scores closer than an unrelated sentence.",
+  asr: "Load the speech model on this machine's GPU in a separate process and transcribe a second of silence (takes a while; the memory is freed after).",
+};
+async function testService(box) {
+  const name = box.dataset.svc, out = $("[data-test-out]", box), btn = $("[data-test]", box);
+  const values = settingsValues()[name];
+  btn.disabled = true;
+  out.innerHTML = `<span class="meta">Testing… a model that has to load first can take a minute.</span>`;
+  const t0 = Date.now();
+  const tick = setInterval(() => { const m = $(".meta", out); if (m) m.textContent = `Testing… ${Math.round((Date.now() - t0) / 1000)} s (a model that has to load first can take a minute)`; }, 1000);
+  try {
+    const resp = await fetch("/api/settings/test", { method: "POST", headers: { "Content-Type": "application/json", "X-RE2-Settings": "1" },
+      body: JSON.stringify({ service: name, values }) });
+    const d = await resp.json().catch(() => ({}));
+    if (!box.isConnected) return;
+    if (!resp.ok) { out.innerHTML = `<ol><li class="bad"><b>✗</b>${escapeHtml(d.detail || `HTTP ${resp.status}`)}</li></ol>`; return; }
+    out.innerHTML = `<span class="verdict ${d.ok ? "ok" : "bad"}">${d.ok ? "ready" : "not ready"}</span> <span class="meta">${d.seconds} s</span>` +
+      `<ol>${d.steps.map((s) => `<li class="${s.ok ? "ok" : "bad"}"><b>${s.ok ? "✓" : "✗"} ${escapeHtml(s.name)}</b>${escapeHtml(s.detail)}</li>`).join("")}</ol>`;
+    say(d.ok ? `${name}: ready.` : `${name}: not ready.`, !d.ok);
+  } finally {
+    clearInterval(tick);
+    btn.disabled = false;
+  }
+}
 async function renderSettings() {
   const el = $("#settings");
   const resp = await fetch("/api/settings");
@@ -2936,6 +2973,7 @@ async function renderSettings() {
         `<input data-key="${key}" data-type="${type}" value="${escapeHtml(String(sv[name][key] ?? ""))}"` +
         `${type === "int" ? ` inputmode="numeric"` : ""} spellcheck="false" autocomplete="off"></label>`).join("") +
       (fields.some((f) => f[2] === "model") ? `<div class="svc__models" data-models></div>` : "") +
+      `<div class="svc__test"><button class="btn" type="button" data-test title="${escapeHtml(TEST_TITLE[name])}">Test</button><div data-test-out></div></div>` +
       (name in S.settings.using ? `<div class="svc__presets"><input data-preset-name placeholder="preset name" value="${escapeHtml(S.settings.using[name] || "")}" spellcheck="false" autocomplete="off" aria-label="Preset name">` +
         `<button class="btn" type="button" data-save-preset>Save as preset</button><button class="btn" type="button" data-del-preset>Delete preset</button></div>` : "") +
       `</section>`).join("") +
@@ -5066,6 +5104,7 @@ $("#settings").addEventListener("click", (e) => {
   if (e.target.closest("[data-save]")) return saveSettings();
   if (e.target.closest("[data-revert]")) return renderSettings();
   const box0 = e.target.closest("[data-svc]");
+  if (e.target.closest("[data-test]")) return testService(box0);
   if (e.target.closest("[data-save-preset]")) {
     const name = $("[data-preset-name]", box0).value.trim();
     if (!name) return say("Give the preset a name first.", true);

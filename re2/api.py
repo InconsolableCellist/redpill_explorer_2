@@ -609,6 +609,18 @@ def create_app(cfg: config.Config | None = None) -> FastAPI:
         except (httpx.HTTPError, ValueError, AttributeError) as exc:
             return {"ok": False, "error": str(exc)[:300], "models": []}
 
+    @app.post("/api/settings/test")
+    def settings_test(request: Request, body: dict = Body(...)):
+        """One real request to the service with the card's values (saved or not): see servicetest."""
+        from re2 import servicetest
+
+        if request.headers.get("x-re2-settings") != "1":
+            raise HTTPException(403, "missing X-RE2-Settings header")
+        try:
+            return servicetest.run(cfg, str(body.get("service")), body.get("values") or {})
+        except (ValueError, TypeError) as exc:
+            raise HTTPException(400, str(exc)) from exc
+
     @app.post("/api/settings/presets/{name}")
     def preset_save(name: str, request: Request, body: dict = Body(...)):
         if request.headers.get("x-re2-settings") != "1":
