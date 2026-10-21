@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import dataclasses
 import difflib
+import os
 import re
 import sys
 import tomllib
@@ -219,25 +220,40 @@ def probe(client: httpx.Client, cfg, service: str, preset: dict) -> Probe:
     return p
 
 
+# ── Colour ────────────────────────────────────────────────────────────────
+# Off unless the picker runs in a terminal (and NO_COLOR is unset), so logs and tests stay plain.
+_color = False
+STYLES = {"ok": "38;5;114", "bad": "38;5;203", "warn": "38;5;221", "key": "1;38;5;75", "head": "1;38;5;75",
+          "name": "1", "dim": "2", "mark": "1;38;5;211"}
+
+
+def paint(style: str, text) -> str:
+    return f"\033[{STYLES[style]}m{text}\033[0m" if _color else str(text)
+
+
 def describe(p: Probe) -> str:
     """One line: what the check found."""
     if not p.reachable:
-        return f"✗ {p.error}"
+        return paint("bad", f"✗ {p.error}")
     if p.entry is None:
-        return f"✗ {p.error}" + (f"; closest: {', '.join(p.suggest)}" if p.suggest else "")
+        return paint("bad", f"✗ {p.error}") + \
+            (f"{paint('dim', '; closest:')} {paint('warn', ', '.join(p.suggest))}" if p.suggest else "")
     e = p.entry
-    bits = [e["state"] or "available"]
+    sep = paint("dim", " · ")
+    bits = [paint("ok", "loaded") if e["state"] == "loaded" else paint("dim", e["state"] or "available")]
     if e["vision"]:
-        bits.append("reads images")
+        bits.append(paint("ok", "reads images"))
     if p.limits:
-        bits.append(f"{p.limits.slots} slots {'sharing' if p.limits.shared else 'of'} {p.limits.slot_ctx:,} tokens")
+        bits.append(paint("dim", f"{p.limits.slots} slots {'sharing' if p.limits.shared else 'of'} "
+                                 f"{p.limits.slot_ctx:,} tokens"))
     elif e["request_ctx"]:
-        bits.append(f"{e['request_ctx']:,} tokens per request" + (f", {e['parallel']} slots" if e["parallel"] else ""))
+        bits.append(paint("dim", f"{e['request_ctx']:,} tokens per request"
+                                 + (f", {e['parallel']} slots" if e["parallel"] else "")))
     if p.at_once:
-        bits.append(f"{p.at_once} at once")
-    line = ("✗ " + p.error + " · " if p.error else "✓ ") + " · ".join(bits)
+        bits.append(paint("key", f"{p.at_once} at once"))
+    line = (paint("bad", f"✗ {p.error}") + sep if p.error else paint("ok", "✓ ")) + sep.join(bits)
     if e["state"] not in ("loaded", None) and p.others_loaded:
-        line += f"\n      loading it may unload {', '.join(p.others_loaded)}"
+        line += "\n      " + paint("warn", f"⚠ loading it may unload {', '.join(p.others_loaded)}")
     return line
 
 
@@ -249,7 +265,7 @@ class Quit(Exception):
 
 def _ask(ask, prompt: str, default: str = "") -> str:
     try:
-        answer = ask(f"{prompt}{f' [{default}]' if default else ''}: ").strip()
+        answer = ask(f"{paint('name', prompt)}{paint('dim', f' [{default}]') if default else ''}: ").strip()
     except EOFError:
         raise Quit from None
     if answer.lower() in ("q", "quit"):
@@ -279,7 +295,7 @@ def _find_server(client, url: str) -> tuple[str, list[dict]]:
 def new_preset(client, cfg, service: str, presets: dict, ask=input, say=print) -> tuple[str, dict]:
     """Ask for a server, list its models to choose from, check the choice and save it as a preset."""
     known = sorted({p["base_url"] for p in presets.values()} | {of_service(cfg, service)["base_url"]})
-    say("\nNew preset. Known servers: " + ", ".join(known))
+    say("\n" + paint("head", "New preset.") + " Known servers: " + ", ".join(paint("dim", k) for k in known))
     while True:
         url = _ask(ask, "Server URL (host:port is enough)")
         if not url:
@@ -288,20 +304,23 @@ def new_preset(client, cfg, service: str, presets: dict, ask=input, say=print) -
             base_url, models = _find_server(client, url)
             break
         except ValueError as exc:
-            say(f"  {exc}")
+            say("  " + paint("bad", f"✗ {exc}"))
     if not models:
         raise ValueError(f"{base_url} lists no models")
-    say(f"\nModels on {base_url}:")
+    say(f"\n{paint('head', 'Models on')} {paint('dim', base_url)}")
+    width = max(len(m["id"]) for m in models)
     for i, m in enumerate(models, 1):
-        tag = "" if service != "vision" else ("  reads images" if m["vision"] else "  text only" if m["vision"] is False else "")
-        ctx = f"  {m['request_ctx']:,} ctx" if m["request_ctx"] else ""
-        say(f"  {i:>2}  {m['id']}  {m['state'] or ''}{tag}{ctx}")
+        tag = "" if service != "vision" else (paint("ok", "  reads images") if m["vision"]
+                                               else paint("warn", "  text only") if m["vision"] is False else "")
+        state = paint("ok", "loaded  ") if m["state"] == "loaded" else paint("dim", f"{m['state'] or '':8}")
+        ctx = paint("dim", f"  {m['request_ctx']:,} ctx") if m["request_ctx"] else ""
+        say(f"  {paint('key', f'{i:>2}')}  {m['id']:<{width}}  {state}{tag}{ctx}")
     while True:
         pick = _ask(ask, "Model (number or name)")
         entry = models[int(pick) - 1] if pick.isdigit() and 0 < int(pick) <= len(models) else \
             next((m for m in models if m["id"] == pick), None)
         if entry is None:
-            say("  not one of the above")
+            say("  " + paint("bad", "not one of the above"))
         elif service == "vision" and entry["vision"] is False and not _yes(ask, "  That model cannot read images. Use it anyway?"):
             continue
         else:
@@ -321,9 +340,9 @@ def new_preset(client, cfg, service: str, presets: dict, ask=input, say=print) -
         name = _ask(ask, "Name", name if NAME_RE.match(name) else "")
         if NAME_RE.match(name):
             break
-        say("  letters, digits, '.', '_' or '-', up to 60 characters")
+        say("  " + paint("bad", "letters, digits, '.', '_' or '-', up to 60 characters"))
     save(name, preset)
-    say(f"Saved preset {name} in {config.LOCAL_OVERRIDES}")
+    say(paint("ok", "✓ Saved preset ") + paint("name", name) + paint("dim", f" in {config.LOCAL_OVERRIDES}"))
     return name, preset
 
 
@@ -338,22 +357,25 @@ def pick(cfg, service: str, command: str, client_factory=httpx.Client, ask=input
             if current is None:
                 rows.insert(0, ("(current settings)", of_service(cfg, service)))
             default = next(i for i, (n, _) in enumerate(rows, 1) if n in (current, "(current settings)"))
-            say(f"Checking {len(rows)} server{'s' if len(rows) != 1 else ''} for {command} "
-                f"({SERVICE_TITLE[service].lower()})…")
+            say(paint("dim", f"Checking {len(rows)} server{'s' if len(rows) != 1 else ''} for {command} "
+                             f"({SERVICE_TITLE[service].lower()})…"))
             with ThreadPoolExecutor(min(8, len(rows))) as pool:
                 checks = list(pool.map(lambda r: probe(client, cfg, service, r[1]), rows))
-            say(f"\n{SERVICE_TITLE[service]} server for {command}:")
+            say(f"\n{paint('head', f'{SERVICE_TITLE[service]} server for {command}')}")
+            wn = max(len(n) for n, _ in rows)
+            wm = max(len("" if n == p["model"] else p["model"]) for n, p in rows)
             for i, ((name, p), check) in enumerate(zip(rows, checks), 1):
-                mark = "*" if i == default else " "
-                model = "" if name == p["model"] else f"  {p['model']}"
-                say(f" {mark}{i:>2}  {name}{model}  {p['base_url']}\n      {describe(check)}")
-            say("   n  add a preset    q  quit")
+                mark = paint("mark", "●") if i == default else " "
+                model = "" if name == p["model"] else p["model"]
+                say(f" {mark}{paint('key', f'{i:>2}')}  {paint('name', f'{name:<{wn}}')}  {model:<{wm}}  "
+                    f"{paint('dim', p['base_url'])}\n      {describe(check)}")
+            say(f"   {paint('key', 'n')}  add a preset    {paint('key', 'q')}  quit")
             choice = _ask(ask, "Use", str(default))
             if choice.lower() == "n":
                 try:
                     name, preset = new_preset(client, cfg, service, presets, ask, say)
                 except ValueError as exc:
-                    say(f"  {exc}")
+                    say("  " + paint("bad", f"✗ {exc}"))
                     continue
                 presets[name] = preset
                 rows.append((name, preset))
@@ -362,7 +384,7 @@ def pick(cfg, service: str, command: str, client_factory=httpx.Client, ask=input
                 check = checks[int(choice) - 1]
                 choice = rows[int(choice) - 1][0]
             else:
-                say("  choose a number, n or q")
+                say("  " + paint("bad", "choose a number, n or q"))
                 continue
             if choice == "(current settings)":
                 if not check.ok and not _yes(ask, f"  {describe(check)}\n  Run anyway?"):
@@ -397,6 +419,8 @@ def choose(cfg, args) -> object:
     if getattr(args, "server", None) or getattr(args, "model", None) or getattr(args, "no_pick", False) \
             or not (sys.stdin.isatty() and sys.stdout.isatty()):
         return cfg
+    global _color
+    _color = not os.environ.get("NO_COLOR")
     try:
         return pick(cfg, service, args.command)
     except (Quit, KeyboardInterrupt):
