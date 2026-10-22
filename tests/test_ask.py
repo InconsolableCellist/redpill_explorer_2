@@ -236,3 +236,42 @@ def test_settings_save_to_local_file_and_apply_live(archive, monkeypatch, tmp_pa
     assert app.get("/api/ask/plan").json()["context_tokens"] == 160000
     bad = {"services": {"chat": {"base_url": "file:///etc/passwd"}}}
     assert app.post("/api/settings", json=bad, headers={"X-RE2-Settings": "1"}).status_code == 400
+
+
+def test_a_run_reports_what_the_model_is_doing_and_keeps_only_the_latest(archive, monkeypatch):
+    conn, cfg = archive
+    monkeypatch.setattr(ask, "LIVE_EVERY_S", 0)
+    step = json.dumps({"thought": "Search for the missiles", "action": "answer", "args": {}})
+
+    def handler(request):
+        body = json.loads(request.content)
+        progress = [{"prompt_progress": {"total": 4000, "cache": 1000, "processed": p, "time_ms": 1}, "choices": []}
+                    for p in (1000, 3048, 4000)]
+        content = [step[:20], step[20:]] if body.get("response_format") else ["The answer."]
+        chunks = progress + [{"choices": [{"delta": {"content": c}}]} for c in content]
+        return httpx.Response(200, text="".join(f"data: {json.dumps(c)}\n\n" for c in chunks) + "data: [DONE]\n\n")
+
+    run = ask.Run("s1", "Missiles?", {})
+    run.control.report = lambda status: lives.append(status) or run.set_live(status)
+    lives: list[dict] = []
+    for name, data in ask.run(conn, cfg, "Missiles?", client=httpx.Client(transport=httpx.MockTransport(handler)),
+                              control=run.control):
+        run.add(name, data)
+    phases = [(s["what"], s["phase"]) for s in lives]
+    first = "step 1: choosing what to do"
+    assert phases[:5] == [(first, "waiting")] + [(first, "reading")] * 3 + [(first, "writing")]
+    reading = [s for s in lives if s["phase"] == "reading"]
+    assert [s["processed"] for s in reading[:3]] == [1000, 3048, 4000] and reading[0]["cache"] == 1000
+    # A step's thought shows as it is written, not its JSON.
+    assert [s["preview"] for s in lives if s["phase"] == "writing"][:2] == ["Search ", "Search for the missiles"]
+    assert ("writing the answer", "writing") in phases
+
+    # A viewer who arrives now gets every event and only the latest live status, which run.finish then ends.
+    seen = []
+    for event in run.follow(heartbeat_s=0.01):
+        if event is None:
+            run.finish()
+            continue
+        seen.append(event)
+    assert [n for n, _ in seen].count("live") == 1 and seen[-1][0] == "live" and seen[-1][1] == run.live
+    assert [n for n, _ in seen[:-1]] == [n for n, _ in run.events]

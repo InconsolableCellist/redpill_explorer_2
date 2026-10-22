@@ -8,6 +8,8 @@ citations are checked against what the tools actually returned.
 run() is a generator of events, consumed by the SSE endpoint:
   ("step", {...}) ("token", {"text"}) ("cite", {"n", "ref", "card"}) ("final", {...}) ("done", {...})
   ("error", {"msg"})
+While a model call or tool is under way, Control.live reports what it is doing; a Run keeps only the latest
+and sends it as ("live", {"what", "phase", "elapsed_ms", ...}).
 """
 from __future__ import annotations
 
@@ -33,6 +35,8 @@ CHAT_TIMEOUT = 300.0
 STEP_MAX_TOKENS = 400
 ANSWER_MAX_TOKENS = 1400
 RESULT_CHARS = 7000
+LIVE_EVERY_S = 0.5     # at most this often, a model call reports its progress
+LIVE_PREVIEW_CHARS = 240
 HISTORY_TURNS = 6
 CHARS_PER_TOKEN = 3.5
 
@@ -104,14 +108,19 @@ class Stopped(Exception):
 
 
 class Control:
-    """A stop flag the model calls check between streamed chunks."""
+    """A stop flag the model calls check between streamed chunks, and where they report what they are doing."""
 
     def __init__(self):
         self.stop = threading.Event()
+        self.report = None   # Run.set_live, when someone may be watching
 
     def check(self) -> None:
         if self.stop.is_set():
             raise Stopped()
+
+    def live(self, what: str, phase: str, **status) -> None:
+        if self.report:
+            self.report({"what": what, "phase": phase, **status})
 
 
 # ── Depth: how much the agent reads and how much of it reaches the answer ──
@@ -167,10 +176,30 @@ def step_schema(actions: list[str]) -> dict:
     return schema
 
 
-def _stream_chat(client: httpx.Client, cfg, body: dict, control: Control | None) -> Iterator[str]:
+def _partial_thought(text: str) -> str:
+    """The "thought" of a step's JSON while it is still being written."""
+    m = re.search(r'"thought"\s*:\s*"((?:[^"\\]|\\.)*)', text)
+    return re.sub(r"\\(.)", lambda e: {"n": " ", "t": " "}.get(e.group(1), e.group(1)), m.group(1)) if m else ""
+
+
+def _stream_chat(client: httpx.Client, cfg, body: dict, control: Control | None, what: str = "",
+                 preview=None) -> Iterator[str]:
     """Content deltas from a streamed completion. Every call streams, so a stop takes effect between chunks;
-    return_progress makes llama.cpp send chunks while it reads a long prompt, too."""
+    return_progress makes llama.cpp send chunks while it reads a long prompt, too. Along the way it reports
+    to control.live: waiting for the server, reading the prompt (tokens of it so far), then writing (tokens
+    so far and preview(text), the end of the text by default)."""
     body = {**body, "stream": True, "return_progress": True}
+    t0 = last = time.monotonic()
+    text, tokens = "", 0
+
+    def tell(phase: str, force: bool = False, **status) -> None:
+        nonlocal last
+        now = time.monotonic()
+        if control and (force or now - last >= LIVE_EVERY_S):
+            last = now
+            control.live(what, phase, elapsed_ms=int((now - t0) * 1000), **status)
+
+    tell("waiting", force=True)
     with client.stream("POST", f"{cfg.chat_base_url}/chat/completions", json=body, timeout=CHAT_TIMEOUT) as resp:
         if resp.status_code >= 400:
             resp.read()
@@ -186,19 +215,27 @@ def _stream_chat(client: httpx.Client, cfg, body: dict, control: Control | None)
                 chunk = json.loads(line[6:])
             except json.JSONDecodeError:
                 continue
+            progress = chunk.get("prompt_progress")
+            if progress and progress.get("total"):
+                tell("reading", progress["processed"] >= progress["total"], processed=progress["processed"],
+                     total=progress["total"], cache=progress.get("cache", 0))
             choices = chunk.get("choices") or []
             delta = (choices[0].get("delta") or {}).get("content") if choices else None
             if delta:
+                text += delta
+                tokens += 1
+                tell("writing", tokens == 1, tokens=tokens,
+                     preview=(preview(text) if preview else text)[-LIVE_PREVIEW_CHARS:])
                 yield delta
 
 
 def next_action(client: httpx.Client, cfg, messages: list[dict], actions: list[str] | None = None,
-                control: Control | None = None) -> dict:
+                control: Control | None = None, what: str = "choosing the next step") -> dict:
     schema = step_schema(actions or ACTIONS)
     body = _payload(cfg, messages, STEP_MAX_TOKENS,
                     response_format={"type": "json_schema", "json_schema": {"name": "step", "schema": schema}})
     try:
-        content = "".join(_stream_chat(client, cfg, body, control))
+        content = "".join(_stream_chat(client, cfg, body, control, what, _partial_thought))
     except httpx.HTTPError as exc:
         raise AskError(f"chat model unavailable: {exc}") from exc
     content = re.sub(r"^\s*<think>.*?</think>", "", content, flags=re.DOTALL)
@@ -214,7 +251,7 @@ def next_action(client: httpx.Client, cfg, messages: list[dict], actions: list[s
 def stream_answer(client: httpx.Client, cfg, messages: list[dict], control: Control | None = None,
                   max_tokens: int = ANSWER_MAX_TOKENS) -> Iterator[str]:
     try:
-        yield from _stream_chat(client, cfg, _payload(cfg, messages, max_tokens), control)
+        yield from _stream_chat(client, cfg, _payload(cfg, messages, max_tokens), control, "writing the answer")
     except httpx.HTTPError as exc:
         raise AskError(f"chat model failed while answering: {exc}") from exc
 
@@ -576,10 +613,10 @@ def _batch_chars(cfg) -> int:
     return max(8000, int((cfg.chat_context_tokens - PROMPT_OVERHEAD_TOKENS - MAP_MAX_TOKENS) * 3.0 * 0.6))
 
 
-def _complete(client, cfg, system: str, prompt: str, max_tokens: int, control: Control) -> str:
+def _complete(client, cfg, system: str, prompt: str, max_tokens: int, control: Control, what: str = "") -> str:
     body = _payload(cfg, [{"role": "system", "content": system}, {"role": "user", "content": prompt}], max_tokens)
     try:
-        return "".join(_stream_chat(client, cfg, body, control)).strip()
+        return "".join(_stream_chat(client, cfg, body, control, what)).strip()
     except httpx.HTTPError as exc:
         raise AskError(f"chat model failed while reading: {exc}") from exc
 
@@ -616,7 +653,7 @@ def _read_all(conn, cfg, client, embed_client, ev: Evidence, question: str, orde
         try:
             text = _complete(client, cfg, MAP_SYSTEM, MAP_PROMPT.format(question=question, n=len(batch), i=i,
                                                                         total=len(batches), records="\n\n".join(batch)),
-                             MAP_MAX_TOKENS, control)
+                             MAP_MAX_TOKENS, control, f"reading batch {i} of {len(batches)} ({len(batch)} items)")
         except AskError as exc:
             # Too big for what the server has free right now: read the batch as two halves instead.
             if len(batch) < 2 or not re.search(r"context|exceed|HTTP 5\d\d", str(exc), re.IGNORECASE):
@@ -649,7 +686,7 @@ def _read_all(conn, cfg, client, embed_client, ev: Evidence, question: str, orde
         for j, group in enumerate(groups, 1):
             control.check()
             notes.append(_complete(client, cfg, MAP_SYSTEM, REDUCE_PROMPT.format(question=question, notes="\n\n".join(group)),
-                                   MAP_MAX_TOKENS * 2, control))
+                                   MAP_MAX_TOKENS * 2, control, f"merging notes, round {rounds}: {j} of {len(groups)}"))
             yield "step", {"n": len(trace), "action": "merge", "args": {"id": f"round {rounds}, {j}/{len(groups)}"},
                            "thought": "", "summary": ""}
         merged = "\n\n".join(notes)
@@ -738,13 +775,16 @@ def run(conn: sqlite3.Connection, cfg, question: str, scopes: list[str] | None =
                        and not (a in ("find_pages", "open_page") and not _has_wiki(conn))]
             if step_no == pl.steps - 1:
                 actions = ["answer"]
-            step = next_action(client, cfg, messages, actions, control)
+            step = next_action(client, cfg, messages, actions, control,
+                               f"step {step_no + 1}: choosing what to do" if actions != ["answer"] else "deciding to answer")
             action, args = step["action"], step["args"]
             if action == "answer":
                 trace.append({"action": "answer", "thought": step.get("thought", ""), "ms": int((time.monotonic() - t0) * 1000)})
                 break
             if action == "search":
                 args["limit"] = min(int(args.get("limit") or pl.search_limit), pl.search_limit)
+            detail = args.get("query") or args.get("id") or args.get("slug") or ""
+            control.live(f"{action.replace('_', ' ')} {detail}".strip(), "tool")
             try:
                 result = TOOLS[action](conn, cfg, embed_client, ev, scopes, args)
             except (search.ScopeError, ValueError, TypeError) as exc:
@@ -772,6 +812,7 @@ def run(conn: sqlite3.Connection, cfg, question: str, scopes: list[str] | None =
         t0 = time.monotonic()
         queries = [str(t["args"]["query"]) for t in trace
                    if t["action"] in ("search", "timeline", "topics") and (t.get("args") or {}).get("query")]
+        control.live("gathering every item the research matched", "tool")
         candidates, n_keyword = match_set(conn, cfg, embed_client, queries, question, scopes)
         conn.commit()
         order = list(dict.fromkeys(related_ids + [m for m in ev.items if m not in related_ids] + candidates))
@@ -885,12 +926,21 @@ class Run:
         self.started = time.time()
         self.finished: float | None = None
         self.control = Control()
+        self.control.report = self.set_live
         self.events: list[tuple[str, dict]] = []
+        self.live: dict | None = None   # what the run is doing right now; only the latest is kept
+        self._live_seq = 0
         self._cond = threading.Condition()
 
     def add(self, name: str, data: dict) -> None:
         with self._cond:
             self.events.append((name, data))
+            self._cond.notify_all()
+
+    def set_live(self, status: dict) -> None:
+        with self._cond:
+            self.live = status
+            self._live_seq += 1
             self._cond.notify_all()
 
     def finish(self) -> None:
@@ -899,17 +949,22 @@ class Run:
             self._cond.notify_all()
 
     def follow(self, start: int = 0, heartbeat_s: float = 15.0) -> Iterator[tuple[str, dict] | None]:
-        """Every event from start on, as it happens; None now and then while nothing does."""
-        i = start
+        """Every event from start on, as it happens, then ("live", ...) whenever what it is doing changes;
+        None now and then while nothing does."""
+        i, seen = start, -1
         while True:
             with self._cond:
-                if i >= len(self.events) and self.finished is None:
+                if i >= len(self.events) and self.finished is None and self._live_seq == seen:
                     self._cond.wait(heartbeat_s)
                 batch, finished = self.events[i:], self.finished is not None
-            if not batch and not finished:
+                live = self.live if self._live_seq != seen and self.live else None
+                seen = self._live_seq
+            if not batch and not finished and live is None:
                 yield None
             for event in batch:
                 yield event
+            if live is not None and not finished:
+                yield "live", live
             i += len(batch)
             if finished and i >= len(self.events):
                 return

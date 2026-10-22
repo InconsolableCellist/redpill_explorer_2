@@ -479,6 +479,11 @@ mark { background: var(--hot-w); color: var(--ink); padding: 0 1px; }
 .steps { font-family: var(--font-mono); font-size: 11px; color: var(--ink-3); display: flex; flex-direction: column; gap: 2px; margin-bottom: 10px; }
 .steps b { color: var(--blue); font-weight: 500; letter-spacing: .08em; text-transform: uppercase; font-size: 10px; margin-right: 6px; }
 .steps .is-live::after { content: "▍"; color: var(--hot); animation: blink 1s steps(1) infinite; }
+/* What the model call under way is doing: reading the prompt, writing, and the step's thought as it comes. */
+.steps .live { color: var(--ink-2); }
+.live__bar { display: inline-block; position: relative; width: 72px; height: 6px; margin: 0 6px 1px; vertical-align: middle; background: var(--stock-well); overflow: hidden; }
+.live__bar > i { position: absolute; inset: 0 auto 0 0; background: var(--blue); transition: width .4s; }
+.steps .live__preview { color: var(--ink-3); font-style: italic; white-space: pre-wrap; overflow-wrap: anywhere; max-width: 76ch; }
 @keyframes blink { 50% { opacity: 0; } }
 .answer { font-size: 14.5px; line-height: 1.62; color: var(--ink); max-width: 76ch; }
 .answer p + p, .answer p + ol, .answer p + ul, .answer ol + p, .answer ul + p { margin-top: 9px; }
@@ -2429,6 +2434,35 @@ function applyTopics() {
   navigate(true);
 }
 
+/* The live line under a running turn's steps. Its clock (.live-clock) ticks between events, so a long prompt
+   read or a model that is still loading never looks stalled. */
+const fmtK = (n) => n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
+function liveLine(turn) {
+  const l = turn.live;
+  if (!l) return `<div class="is-live">${turn.steps.length ? "thinking" : "starting"}</div>`;
+  const clock = `<span class="live-clock" data-t0="${l.at - l.elapsed_ms}"></span>`;
+  let doing = "", preview = "";
+  if (l.phase === "waiting") doing = "waiting for the model";
+  else if (l.phase === "reading") {
+    const pct = Math.round(100 * l.processed / l.total);
+    doing = `reading the prompt<span class="live__bar"><i style="width:${pct}%"></i></span>${fmtK(l.processed)} / ${fmtK(l.total)} tokens` +
+      (l.cache ? `, ${fmtK(l.cache)} cached` : "");
+  } else if (l.phase === "writing") {
+    const rate = l.elapsed_ms ? ` · ${(l.tokens / (l.elapsed_ms / 1000)).toFixed(1)}/s` : "";
+    doing = `writing · ${fmtN(l.tokens)} tokens${rate}`;
+    if (l.preview) preview = `<div class="live__preview">${escapeHtml(l.preview)}</div>`;
+  }
+  return `<div class="live is-live"><b>${escapeHtml(l.what || "working")}</b>${doing ? `${doing} · ` : ""}${clock}</div>` + preview;
+}
+function tickLiveClocks() {
+  const now = performance.now();
+  for (const el of document.querySelectorAll(".live-clock")) {
+    const s = Math.max(0, Math.round((now - Number(el.dataset.t0)) / 1000));
+    // Waiting this long usually means the router is loading the model, or is busy with another request.
+    el.textContent = `${s} s${s >= 10 && el.closest(".live")?.textContent.includes("waiting for the model") ? " (it may be loading, or busy)" : ""}`;
+  }
+}
+setInterval(() => { if (!document.hidden && S.mode === "ask") tickLiveClocks(); }, 1000);
 function stepLine(st, live) {
   const args = st.args || {};
   const detail = args.query ?? args.id ?? args.slug ?? "";
@@ -2499,7 +2533,7 @@ function renderAskLog() {
   log.innerHTML = S.ask.turns.length ? topic + S.ask.turns.map((turn, i) =>
     `<article class="turn${turn.speaker ? ` turn--${turn.speaker}` : ""}${turn.by === "user" ? " turn--you" : ""}" data-turn="${i}">` + head(turn) +
     (turn.by === "user" ? "" : `<div class="steps">${turn.steps.map((st, j) => stepLine(st, !turn.done && !turn.text && j === turn.steps.length - 1)).join("")}` +
-      `${!turn.done && !turn.text ? `<div class="is-live">${turn.steps.length ? "thinking" : "starting"}</div>` : ""}</div>`) +
+      `${!turn.done && !turn.text ? liveLine(turn) : ""}</div>`) +
     `<div class="answer">${answerHtml(turn)}</div>` + coverageLine(turn) +
     (turn.stopped ? `<div class="turn__stopped">stopped</div>` : "") +
     (turn.error ? `<div class="ask__err">${escapeHtml(turn.error)}</div>` : "") +
@@ -2511,6 +2545,7 @@ function renderAskLog() {
     : `<div class="empty">Ask a question about the archive. The agent searches, reads the items it finds, and answers with numbered sources you can open.` +
     `${S.scopes.length ? "<br>It will look only within your current scopes." : ""}${S.ask.attach.length ? "<br>The attached item goes along in full." : ""}</div>`;
   renderComposer();
+  tickLiveClocks();
 }
 function coverageLine(turn) {
   const c = turn.coverage;
@@ -2643,7 +2678,8 @@ async function followTurn(resp, turn) {
         }
         Object.assign(turn, { speaker: d.role, by: d.by, question: d.label });
       }
-      else if (name === "step") turn.steps.push(d);
+      else if (name === "live") turn.live = { ...d, at: performance.now() };
+      else if (name === "step") { turn.steps.push(d); turn.live = null; }
       else if (name === "token") turn.text += d.text;
       else if (name === "cite") turn.cites[d.n] = d;
       else if (name === "stopped") turn.stopped = true;
