@@ -408,7 +408,7 @@ mark { background: var(--hot-w); color: var(--ink); padding: 0 1px; }
 }
 .reader__what { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* On a phone the actions fold into a ⋯ menu so the header stays one row; on desktop they are just a row. */
-.ractions { position: relative; flex: none; }
+.ractions { position: relative; flex: none; display: flex; align-items: center; }
 .ractions__more { display: none; }
 .ractions__pop { display: flex; gap: 6px; align-items: center; }
 .reader__body { padding: 14px 16px 30px; display: flex; flex-direction: column; gap: 14px; }
@@ -554,7 +554,7 @@ mark { background: var(--hot-w); color: var(--ink); padding: 0 1px; }
 .topic-pick h4 { font-family: var(--font-mono); font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-3); font-weight: 500; margin: 8px 0 4px; }
 .topic-pick .chips button[aria-pressed="true"] { background: var(--blue); border-color: var(--blue); color: var(--on-ink); }
 .session { position: relative; padding-right: 22px; }
-.session .del { position: absolute; right: 2px; top: 4px; width: 18px; height: 18px; line-height: 16px; text-align: center; color: var(--ink-3); font-size: 13px; opacity: 0; }
+.session .del { position: absolute; right: 2px; top: 4px; width: 18px; height: 18px; line-height: 16px; text-align: center; color: var(--ink-3); font-size: 13px; opacity: .35; cursor: pointer; }
 .session:hover .del, .session.is-cursor .del { opacity: 1; }
 .session .del:hover { color: var(--hot); }
 .session .live { color: var(--hot); }
@@ -827,6 +827,7 @@ html.is-touch .mp canvas, html.is-touch .gr canvas { height: min(52vh, 520px); }
 .keys { display: grid; grid-template-columns: auto 1fr; gap: 5px 12px; font-size: 12.5px; color: var(--ink-2); align-items: baseline; }
 
 .mobile-close { display: none; }
+.reader__close { margin-left: 6px; padding-inline: 9px; font-size: 15px; line-height: 1; }
 
 /* Which-key: after a prefix key, what can follow. Vim users know the keys; this shows them to everyone else. */
 .whichkey {
@@ -866,6 +867,7 @@ html.is-touch .mp canvas, html.is-touch .gr canvas { height: min(52vh, 520px); }
   }
   /* The sheet's header is the way out: back on the left, everything else behind ⋯ on the right. */
   .mobile-close { display: inline-block; }
+  .reader__close { display: none; }
   .reader__end { display: inline-block; margin-top: 6px; }
   .reader__bar { padding: 6px 8px 6px 6px; }
   .reader__back { padding: 9px 12px; }
@@ -1849,7 +1851,8 @@ function renderReader() {
     `<span class="ractions"><button class="btn ractions__more" data-acts aria-expanded="false" aria-label="More actions">⋯</button>` +
     `<span class="ractions__pop">${d.kind === "image" ? `<button class="btn" data-recaption title="Tell the vision model what this image is and have it read the image again (C)">Recaption</button> ` : ""}` +
     `<button class="btn" data-discuss title="Discuss this item in Ask, with its full record attached (D)">Discuss</button> ` +
-    `<button class="btn" data-copy title="Copy citation (yy)">Cite</button></span></span></div>` +
+    `<button class="btn" data-copy title="Copy citation (yy)">Cite</button></span>` +
+    `<button class="btn reader__close" data-close title="Close (Esc)" aria-label="Close">×</button></span></div>` +
     `<div class="reader__body">` +
     postHeadHtml(d) +
     galleryHtml(d) +
