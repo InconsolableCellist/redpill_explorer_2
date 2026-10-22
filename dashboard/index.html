@@ -947,6 +947,70 @@ html.is-touch .mp canvas, html.is-touch .gr canvas { height: min(52vh, 520px); }
   .wiki__title { font-size: 25px; }
   .wiki__body { font-size: 16px; }
 }
+/* ─────────────────────────────────────────────────────────────
+   Matrix: phosphor on near-black, the third theme (◐ cycles light, dark, matrix).
+   Roles kept: ink = text, blue = the primary ink (links, counts,
+   series), hot = the second ink (cursor / picked / errors),
+   focus = the focused pane / running. Contrast vs --stock-card:
+   ink 14.6, ink-2 9.9, ink-3 5.8, blue 11.8, hot 6.1, focus 11.6.
+   ───────────────────────────────────────────────────────────── */
+:root[data-theme="matrix"] {
+  color-scheme: dark;   /* dark scrollbars, form controls, date pickers */
+  --stock:#060B07; --stock-well:#030604; --stock-card:#0B150D; --stock-bar:#08110A;
+  --rule:#1E3A25; --rule-soft:#142A1A; --dot:#10231A;
+  --ink:#B6F2C2;   /* pale phosphor: long text reads like a terminal, not a laser */
+  --ink-2:#7CCF92; /* "general knowledge" text in answers */
+  --ink-3:#5A9E6C; /* meta lines, 9.5-11px mono: still AA (5.8:1 on cards) */
+  --blue:#5BE0E6;  --blue-w:#0C2A2C;   /* terminal cyan: the first ink */
+  --hot:#FF5A66;   --hot-w:#2E0C10;    /* the red pill: the second ink */
+  --focus:#FFC24A;                     /* amber: focus/running, distinct from both inks */
+  --on-ink:#06110A;
+  --glow: color-mix(in srgb, var(--ink) 55%, transparent);
+  --shadow: 0 0 0 1px rgba(57,255,110,.06), 0 8px 20px -12px rgba(0,0,0,.9);
+  --shadow-lift: 0 0 0 1px rgba(57,255,110,.10), 0 0 24px -8px rgba(57,255,110,.18), 0 26px 44px -20px #000;
+  /* JetBrains Mono everywhere: tall x-height, real 400/500/600 weights (headings and the bold
+     "stand" line use 600), legible at the 9.5-11px meta sizes. VT323 only for the brand. */
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --font-ui: var(--font-mono);
+  --font-display: var(--font-mono);
+}
+
+/* Mono runs wider than the serif/sans it replaces: pull the long-reading sizes down a notch. */
+:root[data-theme="matrix"] .answer { font-size: 13.5px; line-height: 1.68; }
+:root[data-theme="matrix"] .wiki__body { font-size: 14.5px; line-height: 1.7; }
+:root[data-theme="matrix"] .wiki__title { font-size: 26px; letter-spacing: 0; }
+:root[data-theme="matrix"] :is(.reader h2, .turn__q, .debate__topic, .answer h3, .stage__title, .svc h3) { letter-spacing: 0; }
+
+/* Glow on headings and chrome only. Body copy stays crisp: a text-shadow on paragraphs blurs them. */
+:root[data-theme="matrix"]:not(.fx-noglow) :is(.reader h2, .turn__q, .debate__topic, .wiki__title, .answer h3,
+  .stage__title, .mode__tag, kbd, .brand__title) { text-shadow: 0 0 6px var(--glow); }
+:root[data-theme="matrix"] .brand__title::after {
+  content: "REDPILL"; font-family: "VT323", var(--font-mono); font-size: 22px; letter-spacing: .08em;
+  color: var(--ink); margin-left: 6px;
+}
+:root[data-theme="matrix"] ::selection { background: var(--ink); color: var(--on-ink); }
+:root[data-theme="matrix"] :is(input, textarea) { caret-color: var(--ink); caret-shape: block; }   /* caret-shape: Chromium only; harmless elsewhere */
+
+/* Blinking block cursor after the vim mode tag (NORMAL▌) and after a running turn's live step. */
+:root[data-theme="matrix"] :is(.mode__tag, .steps .live__preview)::after {
+  content: ""; display: inline-block; width: .6em; height: 1.05em; margin-left: 3px; vertical-align: -.18em;
+  background: currentColor; animation: rp-blink 1.06s steps(1) infinite;
+}
+@keyframes rp-blink { 50% { opacity: 0; } }
+
+/* Photos and white PDF pages glare on black: dim thumbnails a touch; the viewer shows them as they are. */
+:root[data-theme="matrix"] :is(.thumb img, .gallery button, .frames img) { filter: brightness(.88) contrast(1.02); }
+:root[data-theme="matrix"] :is(.thumb:hover img, .gallery button:hover) { filter: none; }
+
+/* Digital rain: behind everything; opaque cards cover it, so it only shows in the gutters. */
+#rain { position: fixed; inset: 0; z-index: -1; pointer-events: none; opacity: .35; }
+:root:not([data-theme="matrix"]) #rain { display: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  :root[data-theme="matrix"] :is(.mode__tag, .steps .live__preview)::after { animation: none; }
+  #rain { display: none; }
+}
+
 </style>
 
 <div id="app">
@@ -1091,7 +1155,7 @@ html.is-touch .mp canvas, html.is-touch .gr canvas { height: min(52vh, 520px); }
         <h3>On a phone</h3>
         <div class="keys">
           <kbd>💊</kbd><span>The brand is the way home; tapping it says what is in the archive, since the counts no longer sit next to the search box.</span>
-          <kbd>⚙ ◐ ?</kbd><span>Settings, theme and this panel stay in the top row. The modes live on the bar at the bottom, where the thumb is.</span>
+          <kbd>⚙ ◐ ?</kbd><span>Settings, theme (◐ cycles light, dark and matrix) and this panel stay in the top row. The modes live on the bar at the bottom, where the thumb is.</span>
           <kbd>←</kbd><span>An item opens as a sheet over the results: <b>Back</b> at the top left closes it (so does <kbd>Esc</kbd>, the shade beside it, and the button at the end of the item), and <b>⋯</b> holds recaption, discuss and cite.</span>
           <kbd>↩</kbd><span><b>reopen</b> above the results opens the last item you read again; its card keeps a faint blue mark until then.</span>
           <kbd>☰</kbd><span><b>Chats</b> in Ask and <b>Pages</b> in the wiki slide that column in from the left; picking a row or tapping the shade puts it away.</span>
@@ -5286,16 +5350,80 @@ document.addEventListener("click", (e) => {
 $("#scrim").addEventListener("click", () => { if (!closeDrawer()) closeReader(); });
 // The counts used to crowd the search box; now they are a tap on the pill (and live in the key panel).
 $("#brandLink").addEventListener("click", () => { if (S.counts) say(S.counts); });
-$("#themeBtn").addEventListener("click", () => {
-  const cur = document.documentElement.dataset.theme ||
+/* Themes: light, dark (or the OS's choice until one is picked) and matrix, cycled by the ◐ button. */
+const THEMES = ["light", "dark", "matrix"];
+const THEME_GLYPH = { light: "◐", dark: "◑", matrix: "▓" };
+function currentTheme() {
+  return document.documentElement.dataset.theme ||
     (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
-  const next = cur === "dark" ? "light" : "dark";
-  document.documentElement.dataset.theme = next;
-  store("theme", next);
-  drawTimeline();
-  drawGraph();
-  drawMap();
+}
+function loadMatrixFonts() {
+  if (document.getElementById("matrixFonts")) return;
+  const l = document.createElement("link");
+  l.id = "matrixFonts"; l.rel = "stylesheet";
+  l.href = "https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=VT323&display=swap";
+  document.head.append(l);
+  // Canvas text is drawn once with whatever font is ready; redraw when the real one arrives.
+  document.fonts?.ready.then(() => { drawTimeline(); drawGraph(); drawMap(); });
+}
+function applyTheme(theme, save) {
+  document.documentElement.dataset.theme = theme;
+  if (save) store("theme", theme);
+  const btn = $("#themeBtn");
+  btn.textContent = THEME_GLYPH[theme] || "◐";
+  btn.title = `Theme: ${theme} (tap for ${THEMES[(THEMES.indexOf(theme) + 1) % THEMES.length]})`;
+  if (theme === "matrix") { loadMatrixFonts(); Rain.start(); } else Rain.stop();
+  drawTimeline(); drawGraph(); drawMap();
+}
+$("#themeBtn").addEventListener("click", () => {
+  const cur = currentTheme();
+  applyTheme(THEMES[(THEMES.indexOf(cur) + 1) % THEMES.length], true);
 });
+// Existing gap, fixed in passing: following the OS (no stored theme), the canvases never redrew on a flip.
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
+  if (!store("theme")) { drawTimeline(); drawGraph(); drawMap(); }
+});
+
+/* Digital rain. Cheap by construction: device pixels 1:1 (no DPR scaling), ~12 fps, one fillText per
+   column per frame, paused while the tab is hidden, never started under reduced motion, opt-out with
+   store("rain", false). Phones get half the columns. */
+const Rain = (() => {
+  const GLYPHS = "ｱｲｳｴｵｶｷｸｹｺｻｼｽｾｿﾀﾁﾂﾃﾄ0123456789:.=*+-<>|";
+  const reduce = matchMedia("(prefers-reduced-motion: reduce)");
+  let cv, g, drops = [], timer = 0, size = 16;
+  function fit() {
+    cv.width = innerWidth; cv.height = innerHeight;
+    const step = innerWidth < 700 ? size * 2 : size;
+    drops = Array.from({ length: Math.ceil(innerWidth / step) }, () => Math.random() * -50);
+    drops.step = step;
+    g.font = `${size}px ${getComputedStyle(document.documentElement).getPropertyValue("--font-mono")}`;
+  }
+  function frame() {
+    if (document.hidden) return;
+    const css = getComputedStyle(document.documentElement);
+    g.fillStyle = css.getPropertyValue("--stock").trim() + "22";   // translucent wipe = the fading trail
+    g.fillRect(0, 0, cv.width, cv.height);
+    g.fillStyle = css.getPropertyValue("--ink-3").trim();
+    for (let i = 0; i < drops.length; i++) {
+      const y = drops[i] * size;
+      if (y > 0) g.fillText(GLYPHS[(Math.random() * GLYPHS.length) | 0], i * drops.step, y);
+      drops[i] = y > cv.height && Math.random() > 0.975 ? 0 : drops[i] + 1;
+    }
+  }
+  function start() {
+    if (timer || reduce.matches || store("rain") === false) return;
+    if (!cv) {
+      cv = document.createElement("canvas"); cv.id = "rain"; cv.setAttribute("aria-hidden", "true");
+      document.body.prepend(cv); g = cv.getContext("2d");
+      addEventListener("resize", () => cv && timer && fit());
+      reduce.addEventListener("change", () => (reduce.matches ? stop() : currentTheme() === "matrix" && start()));
+    }
+    fit(); timer = setInterval(frame, 83);
+  }
+  function stop() { clearInterval(timer); timer = 0; g?.clearRect(0, 0, cv.width, cv.height); }
+  return { start, stop };
+})();
+
 window.addEventListener("popstate", fromHash);
 new ResizeObserver(() => {
   document.documentElement.style.setProperty("--top-h", $("#topbar").offsetHeight + "px");
@@ -5336,7 +5464,7 @@ function fromHash() {
 
 (async function init() {
   const theme = store("theme");
-  if (theme) document.documentElement.dataset.theme = theme;
+  if (theme) applyTheme(theme, false);
   if (!location.hash) history.replaceState(null, "", "#/search");
   fromHash();
   setFocus("results");
