@@ -1013,7 +1013,31 @@ html.is-touch .mp canvas, html.is-touch .gr canvas { height: min(52vh, 520px); }
   #rain { display: none; }
 }
 
+/* ── Boot: the landing at the bare root, Matrix-styled whatever the theme, then the timeline ── */
+#boot {
+  position: fixed; inset: 0; z-index: 200; display: grid; place-items: center;
+  background: #020503; color: #A8F5BA; transition: opacity .6s ease;
+  font: 14px/1.65 "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+#boot[hidden] { display: none; }
+#boot.is-out { opacity: 0; pointer-events: none; }
+#boot canvas { position: absolute; inset: 0; width: 100%; height: 100%; opacity: .6; }
+.boot__term {
+  position: relative; width: min(640px, calc(100vw - 32px)); min-height: 13.5em; padding: 18px 20px;
+  background: rgba(2, 9, 4, .84); border: 1px solid #1E5A30; box-shadow: 0 0 44px -12px rgba(57, 255, 110, .4);
+  white-space: pre-wrap; overflow-wrap: anywhere; text-shadow: 0 0 6px rgba(120, 255, 150, .4);
+}
+.boot__term .dim { color: #4F8F5F; }
+.boot__term .ok { color: #5BE0E6; }
+.boot__term .red { color: #FF5A66; text-shadow: 0 0 8px rgba(255, 90, 102, .55); }
+.boot__term .cur { display: inline-block; width: .6em; height: 1.05em; vertical-align: -.18em; background: currentColor; animation: rp-blink 1.06s steps(1) infinite; }
+.boot__skip { position: absolute; left: 0; right: 0; bottom: 18px; text-align: center; font-size: 10.5px; letter-spacing: .14em; text-transform: uppercase; color: #4F8F5F; }
+@media (max-width: 699px) { #boot { font-size: 12.5px; } .boot__term { padding: 14px 14px; } }
+@media (prefers-reduced-motion: reduce) { #boot { transition-duration: .2s; } .boot__term .cur { animation: none; } }
 </style>
+
+<div id="boot" hidden aria-label="Starting up"><canvas aria-hidden="true"></canvas><div class="boot__term" role="status"></div>
+  <div class="boot__skip">press any key to skip</div></div>
 
 <div id="app">
   <div class="topbar" id="topbar">
@@ -5443,8 +5467,9 @@ matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
 /* Digital rain. Cheap by construction: device pixels 1:1 (no DPR scaling), ~12 fps, one fillText per
    column per frame, paused while the tab is hidden, never started under reduced motion, opt-out with
    store("rain", false). Phones get half the columns. */
+const RAIN_GLYPHS = "ｱｲｳｴｵｶｷｸｹｺｻｼｽｾｿﾀﾁﾂﾃﾄ0123456789:.=*+-<>|";
 const Rain = (() => {
-  const GLYPHS = "ｱｲｳｴｵｶｷｸｹｺｻｼｽｾｿﾀﾁﾂﾃﾄ0123456789:.=*+-<>|";
+  const GLYPHS = RAIN_GLYPHS;
   const reduce = matchMedia("(prefers-reduced-motion: reduce)");
   let cv, g, drops = [], timer = 0, size = 16;
   function fit() {
@@ -5518,10 +5543,94 @@ function fromHash() {
   if (openChanged) { if (h.open != null) openItem(h.open); else closeReader(); }
 }
 
+/* The landing at the bare root: digital rain and a short boot log with the archive's real numbers, then the
+   timeline, which has been loading underneath. Any key, click or tap skips it; reduced motion gets the log
+   at once and no rain. */
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+function bootRain(cv) {
+  const g = cv.getContext("2d");
+  let size, drops;
+  const fit = () => {
+    size = innerWidth < 700 ? 14 : 16;
+    cv.width = innerWidth; cv.height = innerHeight;
+    drops = Array.from({ length: Math.ceil(innerWidth / size) }, () => Math.random() * -40);
+    g.font = `${size}px ui-monospace, Menlo, monospace`;
+  };
+  fit();
+  addEventListener("resize", fit);
+  const glyph = () => RAIN_GLYPHS[(Math.random() * RAIN_GLYPHS.length) | 0];
+  const timer = setInterval(() => {
+    g.fillStyle = "rgba(2, 5, 3, .14)";   // the translucent wipe leaves the fading trails
+    g.fillRect(0, 0, cv.width, cv.height);
+    for (let i = 0; i < drops.length; i++) {
+      const y = drops[i] * size;
+      if (y > 0) {
+        g.fillStyle = "#2FBF5B"; g.fillText(glyph(), i * size, y - size);
+        g.fillStyle = "#D2FFDC"; g.fillText(glyph(), i * size, y);   // a bright head on each drop
+      }
+      drops[i] = y > cv.height && Math.random() > 0.975 ? 0 : drops[i] + 1;
+    }
+  }, 50);
+  return () => { clearInterval(timer); removeEventListener("resize", fit); };
+}
+function bootLines(st) {
+  const host = location.hostname.split(".")[0] || "localhost";
+  const lead = (label, value, cls = "ok") => [["> " + label.padEnd(22, ".") + " ", ""], [value, cls]];
+  const lines = [[[`redpill archive v2 @ ${host}`, ""]], [["", ""]], lead("mounting corpus", "ok (read only)")];
+  if (st) {
+    const n = (kind) => (st.media.find((r) => r.kind === kind && r.status === "READY") || {}).n || 0;
+    const d = (kind) => (st.docs.find((r) => r.kind === kind) || {}).n || 0;
+    lines.push(lead("items", fmtN(n("image") + n("video") + n("pdf"))),
+      [[`  ${fmtN(n("image"))} images · ${fmtN(n("video"))} videos · ${fmtN(n("pdf"))} documents`, "dim"]],
+      lead("vision model read", fmtN(d("caption"))),
+      lead("transcripts", `${fmtN(d("transcript"))} passages`),
+      lead("search index", `${fmtN(st.embedding_index || 0)} passages`),
+      lead("entities", fmtN(st.entities || 0)));
+  } else lines.push(lead("status", "unreachable; carrying on", "red"));
+  lines.push([["", ""]], [["> you took the ", ""], ["red pill", "red"], [".", ""]]);
+  return lines;
+}
+async function boot() {
+  const el = $("#boot");
+  const term = $(".boot__term", el);
+  const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  el.hidden = false;
+  const stopRain = reduce ? () => {} : bootRain($("canvas", el));
+  let skipped = false, wake;
+  const woken = new Promise((r) => { wake = r; });
+  const skip = (e) => { e.preventDefault(); e.stopPropagation(); skipped = true; wake(); };
+  addEventListener("keydown", skip, true);   // capture: a skipping key must not reach the app
+  el.addEventListener("pointerdown", skip);
+  const wait = (ms) => Promise.race([sleep(ms), woken]);
+  const st = await Promise.race([fetch("/api/status").then((r) => r.json()).catch(() => null), sleep(1500).then(() => null)]);
+  const cursor = document.createElement("span");
+  cursor.className = "cur";
+  for (const line of bootLines(st)) {
+    for (const [text, cls] of line) {
+      const span = document.createElement("span");
+      if (cls) span.className = cls;
+      term.insertBefore(span, cursor.parentNode ? cursor : null);
+      if (reduce || skipped) { span.textContent = text; continue; }
+      for (let i = 0; i < text.length; i += 3) { span.textContent = text.slice(0, i + 3); await wait(9); if (skipped) { span.textContent = text; break; } }
+    }
+    term.insertBefore(document.createTextNode("\n"), cursor.parentNode ? cursor : null);
+    if (!cursor.parentNode) term.append(cursor);
+    if (!reduce && !skipped) await wait(110);
+  }
+  if (!skipped) await wait(reduce ? 900 : 800);
+  removeEventListener("keydown", skip, true);
+  el.classList.add("is-out");
+  await sleep(reduce ? 200 : 600);
+  stopRain();
+  el.remove();
+}
+
 (async function init() {
   const theme = store("theme");
   if (theme) applyTheme(theme, false);
-  if (!location.hash) history.replaceState(null, "", "#/search");
+  // The bare root boots into the timeline; every other link opens where it points.
+  const landing = !location.hash || location.hash === "#" || location.hash === "#/";
+  if (landing) { history.replaceState(null, "", "#/timeline"); boot(); }
   fromHash();
   setFocus("results");
   paintMode();
