@@ -326,3 +326,17 @@ def test_post_photos_wait_for_the_post_text_then_get_it(tmp_path):
     extract_images.store_image_result(conn, cfg, ids["alone.png"], sample_result(), False)
     jobs = picked()
     assert set(jobs) == {ids["photo1.png"]} and jobs[ids["photo1.png"]].redo and jobs[ids["photo1.png"]].post_note
+
+    # A run reads it again rather than taking the caption it already has for one made since the list.
+    cfg = SimpleNamespace(corpus_root=root, base_url="http://cube.test/v1", vision_model="gemma-test",
+                          vision_max_tokens=100, vision_max_side=1024, vision_concurrency=1,
+                          vision_max_tiles=6, vision_max_tokens_tall=300, data_dir=tmp_path / "data")
+    sent = []
+
+    def handler(request):
+        sent.append(json.loads(request.content))
+        return httpx.Response(200, json={"choices": [{"message": {"content": json.dumps(sample_result())}}]})
+
+    stats = extract_images.run(conn, cfg, client_factory=lambda: httpx.Client(transport=httpx.MockTransport(handler)))
+    assert stats.done == 1 and stats.taken_elsewhere == 0 and "Robert Maxwell" in json.dumps(sent)
+    assert caption_json(conn, ids["photo1.png"])["post_context"] == 1 and not picked()

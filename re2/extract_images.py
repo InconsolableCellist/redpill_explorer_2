@@ -314,10 +314,13 @@ def run_owner(cfg) -> str:
     return f"{os.uname().nodename}:{os.getpid()}:{cfg.base_url}"
 
 
-def captioned_now(conn: sqlite3.Connection, media_id: int) -> bool:
+def captioned_now(conn: sqlite3.Connection, media_id: int, post_context: bool = False) -> bool:
+    """True when the image has a current-version caption, and one read with its post's text if post_context."""
     return conn.execute(
         """SELECT 1 FROM doc WHERE media_id=? AND kind='caption'
-           AND coalesce(json_extract(json, '$.prompt_version'), 0) >= ?""", (media_id, PROMPT_VERSION)).fetchone() is not None
+           AND coalesce(json_extract(json, '$.prompt_version'), 0) >= ?
+           AND coalesce(json_extract(json, '$.post_context'), 0) >= ?""",
+        (media_id, PROMPT_VERSION, POST_CONTEXT if post_context else 0)).fetchone() is not None
 
 
 def owner_captioned(conn: sqlite3.Connection, media_id: int) -> bool:
@@ -376,7 +379,7 @@ def run(conn: sqlite3.Connection, cfg, limit: int | None = None, include_thumbna
         # Several runs (cube, another GPU host) can work through the same list: each takes an image only when
         # no other run holds it and nobody has captioned it since this run's list was made.
         for job in queue:
-            if captioned_now(conn, job.media_id) or not db.claim(conn, STAGE, job.media_id, owner, CLAIM_LEASE_S):
+            if captioned_now(conn, job.media_id, bool(job.post_note)) or not db.claim(conn, STAGE, job.media_id, owner, CLAIM_LEASE_S):
                 stats.taken_elsewhere += 1
                 continue
             yield job
