@@ -367,3 +367,15 @@ def test_report_sections_get_their_items_by_meaning_or_by_words(archive, monkeyp
 def test_a_section_that_repeats_its_heading_loses_the_copy():
     assert ask._drop_repeated_heading("### Excess Mortality and 'Sudden Death'\n\nThe archive", "Excess Mortality and 'Sudden Death'") == "The archive"
     assert ask._drop_repeated_heading("#### Key claims\n- one", "Excess deaths") == "#### Key claims\n- one"
+
+
+def test_several_conversations_are_deleted_at_once(archive):
+    conn, cfg = archive
+    conn.executescript("""
+        INSERT INTO chat_session(id, title) VALUES ('a', 'one'), ('b', 'two'), ('c', 'three');
+        INSERT INTO chat_log(question, answer, session_id) VALUES ('q1', 'x', 'a'), ('q2', 'y', 'a'), ('q3', 'z', 'b'), ('q4', 'w', 'c');
+    """)
+    conn.commit()
+    app = TestClient(api.create_app(cfg))
+    assert app.post("/api/ask/sessions/delete", json={"ids": ["a", "b"]}).json() == {"deleted": 2, "deleted_turns": 3}
+    assert [s["id"] for s in app.get("/api/ask/sessions").json()["sessions"]] == ["c"]

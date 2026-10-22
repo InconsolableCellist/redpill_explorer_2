@@ -48,7 +48,7 @@ SCHEMA = {
 
 def _clip(text: str | None, n: int) -> str:
     text = " ".join((text or "").split())
-    return text if len(text) <= n else text[: n - 1].rstrip() + "…"
+    return text if len(text) <= n else text[: n - 3].rstrip() + "..."
 
 
 @dataclass

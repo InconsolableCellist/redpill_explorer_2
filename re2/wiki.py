@@ -687,7 +687,7 @@ def extract_summary(body: str, max_chars: int = 300) -> str:
             return text
         cut = text[:max_chars]
         end = max(cut.rfind(". "), cut.rfind("? "), cut.rfind("! "))
-        return cut[:end + 1] if end > max_chars // 3 else cut.rsplit(" ", 1)[0] + "…"
+        return cut[:end + 1] if end > max_chars // 3 else cut.rsplit(" ", 1)[0] + "..."
     return ""
 
 
@@ -800,7 +800,7 @@ def _clip_body(body: str, n: int) -> str:
     if len(body) <= n:
         return body
     cut = body[:n]
-    return cut[:cut.rfind("\n\n")] if cut.rfind("\n\n") > n // 2 else cut.rsplit(" ", 1)[0] + " …"
+    return cut[:cut.rfind("\n\n")] if cut.rfind("\n\n") > n // 2 else cut.rsplit(" ", 1)[0] + " ..."
 
 
 def write_prompt(cfg, plan: PagePlan, material: str) -> tuple[str, set[str]]:

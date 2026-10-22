@@ -449,21 +449,30 @@ def create_app(cfg: config.Config | None = None) -> FastAPI:
                 "batch_items": int(ask._batch_chars(cfg) / ask.EXHAUSTIVE_RECORD_CHARS), "exhaustive_max": ask.EXHAUSTIVE_MAX,
                 "in_scope": None if allowed is None else len(allowed)}
 
-    @app.delete("/api/ask/session/{session_id}")
-    def ask_session_delete(session_id: str):
+    def delete_sessions(ids: list[str]) -> int:
         from re2 import ask
 
         for run in ask.active_runs():
-            if run.session_id == session_id:
+            if run.session_id in ids:
                 run.control.stop.set()
         conn = db.connect(cfg.db_path)
         try:
             with conn:
-                n = conn.execute("DELETE FROM chat_log WHERE session_id=?", (session_id,)).rowcount
-                conn.execute("DELETE FROM chat_session WHERE id=?", (session_id,))
+                n = sum(conn.execute("DELETE FROM chat_log WHERE session_id=?", (i,)).rowcount for i in ids)
+                conn.executemany("DELETE FROM chat_session WHERE id=?", [(i,) for i in ids])
         finally:
             conn.close()
-        return {"deleted_turns": n}
+        return n
+
+    @app.delete("/api/ask/session/{session_id}")
+    def ask_session_delete(session_id: str):
+        return {"deleted_turns": delete_sessions([session_id])}
+
+    @app.post("/api/ask/sessions/delete")
+    def ask_sessions_delete(body: dict = Body(...)):
+        """Delete several conversations at once (the list's select mode)."""
+        ids = [str(i) for i in body.get("ids") or []][:500]
+        return {"deleted": len(ids), "deleted_turns": delete_sessions(ids)}
 
     @app.get("/api/ask/sessions")
     def ask_sessions(limit: int = 30):

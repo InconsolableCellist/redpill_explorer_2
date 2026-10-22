@@ -213,7 +213,7 @@ def post_note(ctx: dict | None) -> str:
     return (f" This image is photo {ctx['k']} of {ctx['n']} in a post{where} by {who}, saved together with a screenshot"
             f" of the post. The post says: \"{ctx['text']}\". Use the post as context for what the image shows and why"
             " it was shared (saved_as), but describe only what is visible. People, places and events that only the"
-            " post names are the poster's claims: attribute them (\"whom the post names as …\") rather than state"
+            " post names are the poster's claims: attribute them (\"whom the post names as ...\") rather than state"
             " them, and list as entities only what the image shows or the post names.")
 
 

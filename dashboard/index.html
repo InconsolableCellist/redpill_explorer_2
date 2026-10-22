@@ -555,6 +555,12 @@ mark { background: var(--hot-w); color: var(--ink); padding: 0 1px; }
 .topic-pick h4 { font-family: var(--font-mono); font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-3); font-weight: 500; margin: 8px 0 4px; }
 .topic-pick .chips button[aria-pressed="true"] { background: var(--blue); border-color: var(--blue); color: var(--on-ink); }
 .session { position: relative; padding-right: 22px; }
+.sessacts { display: flex; gap: 8px; align-items: baseline; }
+.sessacts__del { color: var(--hot); }
+.sessacts__del[disabled] { color: var(--ink-3); cursor: default; }
+.session .tick { font-family: var(--font-mono); color: var(--ink-3); margin-right: 6px; }
+.session.is-chosen { background: var(--blue-w); }
+.session.is-chosen .tick { color: var(--blue); }
 .session .del { position: absolute; right: 2px; top: 4px; width: 18px; height: 18px; line-height: 16px; text-align: center; color: var(--ink-3); font-size: 13px; opacity: .35; cursor: pointer; }
 .session:hover .del, .session.is-cursor .del { opacity: 1; }
 .session .del:hover { color: var(--hot); }
@@ -969,7 +975,7 @@ html.is-touch .mp canvas, html.is-touch .gr canvas { height: min(52vh, 520px); }
   --shadow: 0 0 0 1px rgba(57,255,110,.06), 0 8px 20px -12px rgba(0,0,0,.9);
   --shadow-lift: 0 0 0 1px rgba(57,255,110,.10), 0 0 24px -8px rgba(57,255,110,.18), 0 26px 44px -20px #000;
   /* JetBrains Mono everywhere: tall x-height, real 400/500/600 weights (headings and the bold
-     "stand" line use 600), legible at the 9.5-11px meta sizes. VT323 only for the brand. */
+     "stand" line use 600), legible at the 9.5-11px meta sizes. */
   --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   --font-ui: var(--font-mono);
   --font-display: var(--font-mono);
@@ -984,10 +990,6 @@ html.is-touch .mp canvas, html.is-touch .gr canvas { height: min(52vh, 520px); }
 /* Glow on headings and chrome only. Body copy stays crisp: a text-shadow on paragraphs blurs them. */
 :root[data-theme="matrix"]:not(.fx-noglow) :is(.reader h2, .turn__q, .debate__topic, .wiki__title, .answer h3,
   .stage__title, .mode__tag, kbd, .brand__title) { text-shadow: 0 0 6px var(--glow); }
-:root[data-theme="matrix"] .brand__title::after {
-  content: "REDPILL"; font-family: "VT323", var(--font-mono); font-size: 22px; letter-spacing: .08em;
-  color: var(--ink); margin-left: 6px;
-}
 :root[data-theme="matrix"] ::selection { background: var(--ink); color: var(--on-ink); }
 :root[data-theme="matrix"] :is(input, textarea) { caret-color: var(--ink); caret-shape: block; }   /* caret-shape: Chromium only; harmless elsewhere */
 
@@ -1025,7 +1027,7 @@ html.is-touch .mp canvas, html.is-touch .gr canvas { height: min(52vh, 520px); }
           <path d="M10.5 10.5 L14 14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
         </svg>
         <span class="scopes" id="scopes"></span>
-        <input id="q" type="search" placeholder="search the archive…  (/ to focus)" autocomplete="off" spellcheck="false" aria-label="Search">
+        <input id="q" type="search" placeholder="search the archive...  (/ to focus)" autocomplete="off" spellcheck="false" aria-label="Search">
         <span class="omni__n" id="omniN"></span>
       </label>
       <nav class="modes" aria-label="Modes">
@@ -1053,7 +1055,7 @@ html.is-touch .mp canvas, html.is-touch .gr canvas { height: min(52vh, 520px); }
         <div class="ask__log" id="askLog"></div>
         <form class="composer" id="composer">
           <div class="composer__ctx" id="askCtx" hidden></div>
-          <textarea id="askInput" rows="2" placeholder="Ask about the archive…  (Enter sends, Shift-Enter new line, Esc leaves)" aria-label="Question"></textarea>
+          <textarea id="askInput" rows="2" placeholder="Ask about the archive..." title="Enter sends, Shift-Enter starts a new line, Esc leaves the box" aria-label="Question"></textarea>
           <div class="composer__side">
             <button class="btn drawer-btn" type="button" data-drawer title="The conversations so far">Chats</button>
             <button class="btn" type="submit" id="askSend">Send</button>
@@ -1210,7 +1212,7 @@ function escapeHtml(value) {
     .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
-/* The server marks matches with \x02…\x03 so escaping can happen first. */
+/* The server marks matches with \x02...\x03 so escaping can happen first. */
 function markSnippet(s) {
   return escapeHtml(s).replace(/\x02/g, "<mark>").replace(/\x03/g, "</mark>");
 }
@@ -1229,7 +1231,7 @@ function store(key, value) {
 /* The hints about "/" and Shift-Enter are for keyboards; on a phone the boxes just need their names. */
 const narrowQ = matchMedia("(max-width: 699px)");
 function setPlaceholders() {
-  $("#q").placeholder = narrowQ.matches ? "search the archive…" : "search the archive…  (/ to focus)";
+  $("#q").placeholder = narrowQ.matches ? "search the archive..." : "search the archive...  (/ to focus)";
   if (S.ask.kind !== "argue") renderComposer();   // the argue prompts are about the debate, not the keys
 }
 let sayTimer = 0;
@@ -1256,7 +1258,7 @@ const S = {
   onChart: true,       // in the timeline, graph and map: the results cursor is on the chart, not the list
   open: null,         // media id in the reader
   lastOpen: null,      // the last one read, for the reopen button after the sheet is closed
-  counts: "",          // "16,720 items · …", shown in the key panel and on a tap of the brand
+  counts: "",          // "16,720 items · ...", shown in the key panel and on a tap of the brand
   item: null,          // /api/item payload for the reader
   openHit: null,       // the hit that opened it (for start_s)
   veil: store("veil") ?? 0.6,
@@ -1282,6 +1284,7 @@ const S = {
         titles: new Map(), sugg: [], suggI: 0, net: null, boxes: [] },
   ask: { session: null, turns: [], mode: store("askMode") || "informed", sessions: [],
          live: new Map(),   // run id -> turn, for turns still running on the server
+         selecting: false, chosen: new Set(), lastChosen: null,   // the conversation list's select mode
          attach: [], related: store("askRelated") ?? true, depth: store("askDepth") ?? 35, topics: null, picked: new Set(),
          kind: "ask",                          // this conversation: ask | argue
          role: store("argueRole") ?? null,     // argue: null watches both sides; steelman | skeptic is the user's side
@@ -1805,7 +1808,7 @@ async function openItem(mediaId, hit = null) {
   const el = $("#reader");
   el.hidden = false;
   paintSheets();
-  el.innerHTML = `<div class="reader__bar"><span class="label">Loading…</span></div>`;
+  el.innerHTML = `<div class="reader__bar"><span class="label">Loading...</span></div>`;
   // toggle() flips the class when its second argument is undefined, so the test must be a real boolean.
   $$(".hit").forEach((h) => {
     const holds = Number(h.dataset.id) === mediaId ||
@@ -2011,7 +2014,7 @@ function paintRecap(error = "") {
   const busy = !!recap && recap.id === S.item?.media_id;
   $("[data-recap-go]", box).disabled = !!recap;
   $("textarea", box).readOnly = busy;
-  $("[data-recap-time]", box).textContent = busy ? `reading… ${Math.round((Date.now() - recap.started) / 1000)} s`
+  $("[data-recap-time]", box).textContent = busy ? `reading... ${Math.round((Date.now() - recap.started) / 1000)} s`
     : recap ? `busy with #${recap.id}` : "";
   const err = $("[data-recap-err]", box);
   err.textContent = error;
@@ -2338,11 +2341,27 @@ async function loadSessions() {
   if (!resp.ok) return;
   S.ask.sessions = (await resp.json()).sessions;
   if (S.mode !== "ask") return;
-  $("#lenses").innerHTML = `<div class="lens-group"><h3><span class="label">Conversations</span></h3>` +
+  paintSessions();
+}
+/* The conversation list. "select" turns a click into a tick (shift-click ticks a range), for deleting several. */
+function paintSessions() {
+  const sel = S.ask.selecting;
+  const chosen = S.ask.chosen;
+  // Drop ticks on conversations that are gone.
+  for (const id of [...chosen]) if (!S.ask.sessions.some((x) => x.id === id)) chosen.delete(id);
+  const acts = sel
+    ? `<span class="sessacts"><span class="label">${chosen.size} selected</span>` +
+      `<button class="wfilter label" data-sess="all">all</button><button class="wfilter label" data-sess="none">none</button>` +
+      `<button class="wfilter label sessacts__del" data-sess="delete"${chosen.size ? "" : " disabled"}>delete</button>` +
+      `<button class="wfilter label" data-sess="done">done</button></span>`
+    : `<span class="sessacts"><button class="wfilter label" data-sess="new" title="Start a new conversation">+ new</button>` +
+      (S.ask.sessions.length ? `<button class="wfilter label" data-sess="select" title="Select conversations to delete several at once">select</button>` : "") + `</span>`;
+  $("#lenses").innerHTML = `<div class="lens-group${sel ? " is-selecting" : ""}"><h3><span class="label">Conversations</span>${acts}</h3>` +
     (S.ask.sessions.length ? S.ask.sessions.map((x) =>
-      `<button class="session${x.id === S.ask.session ? " is-current" : ""}" data-session="${escapeHtml(x.id)}">${escapeHtml(x.title || "(untitled)")}` +
+      `<button class="session${x.id === S.ask.session ? " is-current" : ""}${chosen.has(x.id) ? " is-chosen" : ""}" data-session="${escapeHtml(x.id)}"` +
+      `${sel ? ` aria-pressed="${chosen.has(x.id)}"` : ""}>${sel ? `<span class="tick">${chosen.has(x.id) ? "■" : "□"}</span>` : ""}${escapeHtml(x.title || "(untitled)")}` +
       `<small>${x.running ? `<span class="live">● running</span> · ` : ""}${x.kind === "argue" ? "argue · " : ""}${escapeHtml((x.created_at || "").slice(0, 16))} · ${x.turns} turn${x.turns === 1 ? "" : "s"}</small>` +
-      `<span class="del" data-del="${escapeHtml(x.id)}" title="Delete this conversation (d d)">×</span></button>`).join("")
+      (sel ? "" : `<span class="del" data-del="${escapeHtml(x.id)}" title="Delete this conversation (d d)">×</span>`) + `</button>`).join("")
       : `<div class="empty">No conversations yet.</div>`) + `</div>`;
   $("#lenses").classList.remove("is-stale");
   paintCursor("lenses", false);
@@ -2369,6 +2388,39 @@ async function loadSession(id) {
   renderAskCtx();
   renderAskLog();
   loadSessions();
+}
+function chooseSession(id, range) {
+  const ids = S.ask.sessions.map((x) => x.id);
+  if (range && S.ask.lastChosen != null) {
+    const [a, b] = [ids.indexOf(S.ask.lastChosen), ids.indexOf(id)].sort((x, y) => x - y);
+    const on = !S.ask.chosen.has(id);
+    for (const v of ids.slice(a, b + 1)) on ? S.ask.chosen.add(v) : S.ask.chosen.delete(v);
+  } else if (S.ask.chosen.has(id)) S.ask.chosen.delete(id);
+  else S.ask.chosen.add(id);
+  S.ask.lastChosen = id;
+  paintSessions();
+}
+async function sessionAction(what) {
+  if (what === "new") { closeDrawer(); newConversation(); return $("#askInput").focus(); }
+  if (what === "select" || what === "done") {
+    S.ask.selecting = what === "select"; S.ask.chosen.clear(); S.ask.lastChosen = null;
+    if (what === "select") say("Select: click conversations to tick them (shift-click for a range), then delete.");
+    return paintSessions();
+  }
+  if (what === "all") { S.ask.sessions.forEach((x) => S.ask.chosen.add(x.id)); return paintSessions(); }
+  if (what === "none") { S.ask.chosen.clear(); return paintSessions(); }
+  if (what === "delete") {
+    const ids = [...S.ask.chosen];
+    const running = S.ask.sessions.filter((x) => ids.includes(x.id) && x.running).length;
+    if (!ids.length || !confirm(`Delete ${ids.length} conversation${ids.length === 1 ? "" : "s"}?` +
+      `${running ? ` ${running} still running will be stopped.` : ""} This cannot be undone.`)) return;
+    const resp = await fetch("/api/ask/sessions/delete", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids }) });
+    if (!resp.ok) return say("Could not delete those conversations.");
+    for (const [rid, turn] of S.ask.live) if (ids.includes(turn.session)) S.ask.live.delete(rid);
+    say(`${ids.length} conversation${ids.length === 1 ? "" : "s"} deleted.`);
+    S.ask.selecting = false; S.ask.chosen.clear();
+    if (ids.includes(S.ask.session)) newConversation(); else loadSessions();
+  }
 }
 function newConversation() {
   S.ask.session = null; S.ask.turns = []; S.ask.attach = []; S.ask.seed = null; S.ask.topic = null;
@@ -2473,7 +2525,7 @@ async function toggleTopics(force) {
   $("#askTopics").setAttribute("aria-expanded", String(show));
   if (!show) return;
   if (!S.ask.topics) {
-    el.innerHTML = `<div class="empty">Loading topics…</div>`;
+    el.innerHTML = `<div class="empty">Loading topics...</div>`;
     const resp = await fetch("/api/topics");
     S.ask.topics = resp.ok ? (await resp.json()).themes : [];
   }
@@ -2707,10 +2759,10 @@ function renderComposer() {
   // "Send" rather than "Ask": the button beside it switches ask/argue and would read the same.
   $("#askSend").textContent = busy ? "Stop" : !argue ? "Send" : !started ? "Start" : role ? "Reply" : "Next round";
   $("#askSend").title = busy ? "Stop this answer" : "Send (Enter)";
-  // The key hints only help where there are keys; narrow, the box is already small.
-  $("#askInput").placeholder = !argue ? (narrowQ.matches ? "Ask about the archive…" : "Ask about the archive…  (Enter sends, Shift-Enter new line, Esc leaves)")
-    : !started ? (role === "steelman" ? "The claim, then your opening case for it…" : "A claim to debate, e.g. “Canada's missiles were used inside Russia”…")
-    : role ? `Your turn as the ${role}…` : "Optional note to both sides as moderator; Enter runs the next round…";
+  // Short enough not to wrap in any theme; the key hints are the box's tooltip.
+  $("#askInput").placeholder = !argue ? "Ask about the archive..."
+    : !started ? (role === "steelman" ? "The claim, then your opening case for it..." : "A claim to debate, e.g. “Canada's missiles were used inside Russia”...")
+    : role ? `Your turn as the ${role}...` : "Optional note to both sides as moderator; Enter runs the next round...";
 }
 function openCitation(el) {
   const turn = S.ask.turns[Number(el.closest(".turn")?.dataset.turn)];
@@ -2841,7 +2893,7 @@ function finishTurn(turn) {
 async function stopTurn() {
   const run = [...S.ask.live.entries()].find(([, t]) => t.session === S.ask.session)?.[0] || S.ask.turns.find((t) => !t.done)?.run;
   if (!run) return;
-  say("Stopping…");
+  say("Stopping...");
   await fetch(`/api/ask/run/${run}/stop`, { method: "POST" });
 }
 function toggleAskKind() {
@@ -3135,9 +3187,9 @@ async function testService(box) {
   const name = box.dataset.svc, out = $("[data-test-out]", box), btn = $("[data-test]", box);
   const values = settingsValues()[name];
   btn.disabled = true;
-  out.innerHTML = `<span class="meta">Testing… a model that has to load first can take a minute.</span>`;
+  out.innerHTML = `<span class="meta">Testing... a model that has to load first can take a minute.</span>`;
   const t0 = Date.now();
-  const tick = setInterval(() => { const m = $(".meta", out); if (m) m.textContent = `Testing… ${Math.round((Date.now() - t0) / 1000)} s (a model that has to load first can take a minute)`; }, 1000);
+  const tick = setInterval(() => { const m = $(".meta", out); if (m) m.textContent = `Testing... ${Math.round((Date.now() - t0) / 1000)} s (a model that has to load first can take a minute)`; }, 1000);
   try {
     const resp = await fetch("/api/settings/test", { method: "POST", headers: { "Content-Type": "application/json", "X-RE2-Settings": "1" },
       body: JSON.stringify({ service: name, values }) });
@@ -3180,7 +3232,7 @@ async function loadModels(name) {
   const list = $("[data-models]", box);
   const url = ($('[data-key="base_url"]', box) || $('[data-key="url"]', box)).value.trim();
   if (!url) return;
-  list.innerHTML = `<span class="meta">Asking ${escapeHtml(url)} for its models…</span>`;
+  list.innerHTML = `<span class="meta">Asking ${escapeHtml(url)} for its models...</span>`;
   const resp = await fetch(`/api/settings/models?${new URLSearchParams({ base_url: url })}`);
   const d = resp.ok ? await resp.json() : { ok: false, error: `HTTP ${resp.status}` };
   if (!box.isConnected) return;
@@ -3553,7 +3605,7 @@ function mpInSel(t) { return S.mp.sel.size && (S.mp.sel.has(t) || S.mp.sel.has(S
 function renderMap() {
   const host = $("#map");
   if (!host.firstChild) {
-    host.innerHTML = `<div class="mp"><div class="mp__top"><label class="mp__find"><input id="mpFind" placeholder="find a tag, person, place…" autocomplete="off" spellcheck="false" aria-label="Find a tag or entity on the map"><kbd>f</kbd></label>` +
+    host.innerHTML = `<div class="mp"><div class="mp__top"><label class="mp__find"><input id="mpFind" placeholder="find a tag, person, place..." autocomplete="off" spellcheck="false" aria-label="Find a tag or entity on the map"><kbd>f</kbd></label>` +
       `<div class="mp__hover" id="mpHover"></div><ul class="mp__sugg" id="mpSugg" role="listbox" hidden></ul></div>` +
       `<canvas id="mpCanvas" aria-label="Map of the archive by meaning"></canvas>` +
       `<div class="chart-tools" id="mpTools">` +
@@ -3742,7 +3794,7 @@ function drawMap() {
       const title = S.mp.titles.get(d.ids[i]);
       if (title === undefined) { missing.push(d.ids[i]); continue; }
       const [sx, sy] = P.to(d.x[i], d.y[i]);
-      const text = title.length > 38 ? title.slice(0, 37) + "…" : title;
+      const text = title.length > 38 ? title.slice(0, 37) + "..." : title;
       const tw = g.measureText(text).width;
       const left = sx + tw + 12 > w;   // near the right edge the title goes on the dot's left
       const box = [left ? sx - tw - 9 : sx + 5, sy - 6, tw + 4, 12];
@@ -4349,7 +4401,7 @@ function drawGraph() {
   function labelBox(i, left = false) {
     const p = screen[i], nd = data.nodes[i];
     const mark = picked(i) ? "✓ " : follow.has(i) ? `${follow.get(i)} ` : i === back ? "b " : "";
-    const text = mark + (nd.name.length > 28 ? nd.name.slice(0, 27) + "…" : nd.name);
+    const text = mark + (nd.name.length > 28 ? nd.name.slice(0, 27) + "..." : nd.name);
     const tw = g.measureText(text).width, gap = p.r + (i === cur ? 7 : picked(i) ? 6 : 4);
     if (p.x + gap + tw + 2 > w) left = true;   // names at the right edge go on the node's left
     const x = left ? p.x - gap - tw : p.x + gap;
@@ -4874,7 +4926,7 @@ function showWhichKey(prefix) {
   const el = $("#whichkey");
   const entry = WHICH_KEY[prefix];
   if (!entry) { el.hidden = true; return; }
-  el.innerHTML = `<h4>${escapeHtml(prefix)} … ${escapeHtml(entry[0])}</h4>` + entry[1].map(([k, label, off]) =>
+  el.innerHTML = `<h4>${escapeHtml(prefix)} ... ${escapeHtml(entry[0])}</h4>` + entry[1].map(([k, label, off]) =>
     `<kbd>${escapeHtml(k)}</kbd><span class="${off ? "off" : ""}">${escapeHtml(label)}${off ? " (not built yet)" : ""}</span>`).join("");
   el.hidden = false;
 }
@@ -5266,10 +5318,14 @@ $("#askLog").addEventListener("click", (e) => {
   openCitation(el);
 });
 $("#lenses").addEventListener("click", (e) => {
+  const act = e.target.closest("[data-sess]");
+  if (act) { e.stopPropagation(); return sessionAction(act.dataset.sess); }
   const del = e.target.closest("[data-del]");
   if (del) { e.stopPropagation(); return deleteSession(del.dataset.del); }
   const row = e.target.closest(".session");
-  if (row) { closeDrawer(); loadSession(row.dataset.session); }
+  if (!row) return;
+  if (S.ask.selecting) return chooseSession(row.dataset.session, e.shiftKey);
+  closeDrawer(); loadSession(row.dataset.session);
 });
 $("#askDepth").addEventListener("input", (e) => { S.ask.depth = Number(e.target.value); store("askDepth", S.ask.depth); fetchPlan(); });
 for (const id of ["#askFrom", "#askTo"]) $(id).addEventListener("change", applyPeriod);
@@ -5361,7 +5417,7 @@ function loadMatrixFonts() {
   if (document.getElementById("matrixFonts")) return;
   const l = document.createElement("link");
   l.id = "matrixFonts"; l.rel = "stylesheet";
-  l.href = "https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=VT323&display=swap";
+  l.href = "https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap";
   document.head.append(l);
   // Canvas text is drawn once with whatever font is ready; redraw when the real one arrives.
   document.fonts?.ready.then(() => { drawTimeline(); drawGraph(); drawMap(); });

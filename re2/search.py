@@ -321,14 +321,14 @@ def _snippet(conn: sqlite3.Connection, doc_id: int, q: str, text: str) -> str:
     if match:
         try:
             row = conn.execute(
-                f"SELECT snippet(doc_fts, 0, '{MARK_START}', '{MARK_END}', '…', 24) FROM doc_fts "
+                f"SELECT snippet(doc_fts, 0, '{MARK_START}', '{MARK_END}', '...', 24) FROM doc_fts "
                 "WHERE doc_fts MATCH ? AND rowid=?", (match, doc_id)).fetchone()
             if row and MARK_START in row[0]:
                 return row[0]
         except sqlite3.OperationalError:
             pass
     text = " ".join(text.split())
-    return text[:240] + ("…" if len(text) > 240 else "")
+    return text[:240] + ("..." if len(text) > 240 else "")
 
 
 # ── Posts ──────────────────────────────────────────────────────────────────
@@ -489,7 +489,7 @@ def tweet_from_ocr(ocr: str | None) -> tuple[str | None, str | None, str | None]
         if not _TWEET_CHROME.match(ln):
             body.append(ln)
     text = "\n".join(body).strip()
-    return name, lines[at][1:], (text[:TWEET_TEXT_CHARS] + "…" if len(text) > TWEET_TEXT_CHARS else text) or None
+    return name, lines[at][1:], (text[:TWEET_TEXT_CHARS] + "..." if len(text) > TWEET_TEXT_CHARS else text) or None
 
 
 def post_header(conn: sqlite3.Connection, post_id: int) -> dict:
@@ -525,7 +525,7 @@ def title_from_text(text: str | None, max_len: int = 90) -> str | None:
     if not sentence:
         return None
     sentence = sentence[0].upper() + sentence[1:]
-    return sentence if len(sentence) <= max_len else sentence[: max_len - 1].rsplit(" ", 1)[0] + "…"
+    return sentence if len(sentence) <= max_len else sentence[: max_len - 3].rsplit(" ", 1)[0] + "..."
 
 
 def cards(conn: sqlite3.Connection, media_ids: list[int]) -> dict[int, dict]:

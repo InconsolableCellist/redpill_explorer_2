@@ -358,7 +358,7 @@ def pick(cfg, service: str, command: str, client_factory=httpx.Client, ask=input
                 rows.insert(0, ("(current settings)", of_service(cfg, service)))
             default = next(i for i, (n, _) in enumerate(rows, 1) if n in (current, "(current settings)"))
             say(paint("dim", f"Checking {len(rows)} server{'s' if len(rows) != 1 else ''} for {command} "
-                             f"({SERVICE_TITLE[service].lower()})…"))
+                             f"({SERVICE_TITLE[service].lower()})..."))
             with ThreadPoolExecutor(min(8, len(rows))) as pool:
                 checks = list(pool.map(lambda r: probe(client, cfg, service, r[1]), rows))
             say(f"\n{paint('head', f'{SERVICE_TITLE[service]} server for {command}')}")

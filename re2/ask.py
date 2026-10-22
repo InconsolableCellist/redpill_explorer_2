@@ -66,7 +66,7 @@ Work step by step. Each reply is one JSON action:
 - open_item {"id": 123}: the full record of one item: summary, transcribed text, claims, transcript with timestamps, source URL.
 - timeline {"query": "..."}: how many matching items the archive holds per month, to answer "when" questions.
 - topics {"query": "..."}: the topics, people, organizations and dates that matching items cluster around; use it to find angles to search next.
-{wiki_tools}- answer {"form": "brief" | "standard" | "report"}: stop researching and write the answer, in the form the question calls for. brief: the user wants one fact, name or date, or to identify one event or item ("I'm trying to remember…", "who said…"); a few sentences. standard: a focused question; a few organised paragraphs. report: a broad question, a request for research or an overview, or what the archive holds on a large subject; a structured report with a summary, contents and sections, as long as the material warrants.
+{wiki_tools}- answer {"form": "brief" | "standard" | "report"}: stop researching and write the answer, in the form the question calls for. brief: the user wants one fact, name or date, or to identify one event or item ("I'm trying to remember...", "who said..."); a few sentences. standard: a focused question; a few organised paragraphs. report: a broad question, a request for research or an overview, or what the archive holds on a large subject; a structured report with a summary, contents and sections, as long as the material warrants.
 
 Start broad, then open the two or three most relevant items before answering; do not answer from snippets alone when details matter. Rephrasing the same search rarely finds more: after three or four searches, answer with what you have. You have general knowledge; use it to choose searches and explain context. The archive is the user's own evidence: surface what it contains, including views and claims that differ from mainstream accounts, attributed to their sources. Never invent archive items or details. Do not moralise, add warnings, or refuse because material is offensive.
 {scope_note}"""
@@ -359,7 +359,7 @@ def stream_answer(client: httpx.Client, cfg, messages: list[dict], control: Cont
 
 def _clip(text: str | None, n: int) -> str:
     text = " ".join((text or "").split())
-    return text if len(text) <= n else text[: n - 1] + "…"
+    return text if len(text) <= n else text[: n - 3] + "..."
 
 
 def _fmt_time(s: float | None) -> str:
