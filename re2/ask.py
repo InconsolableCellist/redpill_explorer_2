@@ -94,7 +94,10 @@ Cite archive items as [m:ID] and wiki pages as [p:slug], using only ids and slug
 Mode: {mode_instruction}
 Mention when a cited item is offline or only a thumbnail. Do not moralise or add warnings."""
 
-_MARKER = re.compile(r"\[(m:\d+|p:[a-z0-9/_.-]+)\]")
+_REF = r"(?:m:\d+|p:[a-z0-9/_.-]+)"
+# One citation or a group of them: [m:12], [m:12, m:40], [m:12; 40], [m:12, p:topic/x].
+_MARKER = re.compile(rf"\[({_REF}(?:\s*[,;]\s*(?:{_REF}|\d+))*)\]")
+_HOLD_CHARS = 240   # a "[" with no "]" yet, this close to the end, may be a citation still arriving
 # Models sometimes cite a tool instead of an item: "[timeline]", "[search results]".
 _TOOL_MARKER = re.compile(r"\s?\[(?:timeline|search|topics|open_item|find_pages|open_page|tool)[^\]\n]{0,40}\]", re.IGNORECASE)
 
@@ -437,8 +440,7 @@ class CitationFilter:
         return (kind == "m" and value.isdigit() and int(value) in self.ev.items) or \
             (kind == "p" and value in self.ev.pages)
 
-    def _replace(self, match: re.Match) -> str:
-        ref = match.group(1)
+    def _number(self, ref: str) -> str:
         if not self._valid(ref):
             return ""
         if ref not in self.numbers:
@@ -446,11 +448,16 @@ class CitationFilter:
             self.new_cites.append((self.numbers[ref], ref))
         return f"[{self.numbers[ref]}]"
 
+    def _replace(self, match: re.Match) -> str:
+        # A bare number in a group ("m:12, 40") is another item.
+        refs = [r if ":" in r else f"m:{r}" for r in re.split(r"\s*[,;]\s*", match.group(1))]
+        return "".join(self._number(r) for r in dict.fromkeys(refs))
+
     def feed(self, delta: str) -> str:
         self.buf += delta
         cut = len(self.buf)
         open_at = self.buf.rfind("[")
-        if open_at != -1 and "]" not in self.buf[open_at:] and len(self.buf) - open_at < 48:
+        if open_at != -1 and "]" not in self.buf[open_at:] and len(self.buf) - open_at < _HOLD_CHARS:
             cut = open_at   # hold a marker that may still be arriving
         ready, self.buf = self.buf[:cut], self.buf[cut:]
         out = _MARKER.sub(self._replace, _TOOL_MARKER.sub("", ready))

@@ -196,6 +196,14 @@ def test_citation_filter_holds_split_markers():
     assert f.feed("It peaked in September [timeline]. ") == "It peaked in September. "
 
 
+def test_citation_filter_takes_grouped_citations():
+    ev = ask.Evidence(items={5: {}, 7: {}, 9: {}}, pages={"topic/x": {}})
+    f = ask.CitationFilter(ev)
+    out = f.feed("Claims about the Fed [m:5, m:7] and finance [m:7; 9, m:404] or a page [m:9, p:topic/x].") + f.flush()
+    assert out == "Claims about the Fed [1][2] and finance [2][3] or a page [3][4]."
+    assert f.feed("Split [m:5,") == "Split " and f.feed(" m:9] here") == "[1][3] here"
+
+
 def test_ask_endpoint_streams_sse(archive, monkeypatch):
     conn, cfg = archive
     client = scripted_model(steps=[{"thought": "", "action": "answer", "args": {}}], answer_chunks=["No evidence."],
