@@ -141,7 +141,10 @@ def test_exhaustive_reads_every_candidate_in_batches(archive, monkeypatch):
         body = json.loads(request.content)
         seen.append(body)
         last = body["messages"][-1]["content"]
-        if body.get("response_format"):
+        if (body.get("response_format") or {}).get("json_schema", {}).get("name") == "outline":
+            chunks = [json.dumps({"summary": "Trudeau and missiles [m:10].", "sections": [
+                {"title": "Missiles", "focus": "the missiles", "items": [10, 39, 9999]}]})]
+        elif body.get("response_format"):
             chunks = [json.dumps({"thought": "", "action": "search", "args": {"query": "trudeau missiles"}})
                       if sum(1 for b in seen if b.get("response_format")) == 1 else json.dumps({"thought": "", "action": "answer", "args": {}})]
         elif last.startswith("Question:") and "archive items (batch" in last:
@@ -164,7 +167,11 @@ def test_exhaustive_reads_every_candidate_in_batches(archive, monkeypatch):
     ok = [ids for ids in read if len(ids) <= 6]
     assert len(ok) == cov["batches"] and len(read) > len(ok) and sorted(m for ids in ok for m in ids) == sorted(set(m for ids in ok for m in ids))
     assert len({m for ids in ok for m in ids}) == 32
-    assert dict(events)["final"]["text"] == "Everything read [1] [2]."
+    # "Read all" answers as a report: a summary and contents, then each section from its own items.
+    section = [b for b in seen if "You are writing one section" in b["messages"][-1]["content"]]
+    assert len(section) == 1 and "[m:39]" in section[0]["messages"][-1]["content"]
+    assert dict(events)["final"]["text"] == ("## Summary\n\nTrudeau and missiles [1].\n\n## Contents\n\n1. Missiles\n\n"
+                                            "## Missiles\n\nEverything read [1] [2].")
 
 
 def test_stop_ends_a_turn_between_chunks(archive):
@@ -260,7 +267,7 @@ def test_a_run_reports_what_the_model_is_doing_and_keeps_only_the_latest(archive
         return httpx.Response(200, text="".join(f"data: {json.dumps(c)}\n\n" for c in chunks) + "data: [DONE]\n\n")
 
     run = ask.Run("s1", "Missiles?", {})
-    run.control.report = lambda status: lives.append(status) or run.set_live(status)
+    run.control.report = lambda status: lives.append(status["calls"][-1]) or run.set_live(status)
     lives: list[dict] = []
     for name, data in ask.run(conn, cfg, "Missiles?", client=httpx.Client(transport=httpx.MockTransport(handler)),
                               control=run.control):
@@ -283,3 +290,80 @@ def test_a_run_reports_what_the_model_is_doing_and_keeps_only_the_latest(archive
         seen.append(event)
     assert [n for n, _ in seen].count("live") == 1 and seen[-1][0] == "live" and seen[-1][1] == run.live
     assert [n for n, _ in seen[:-1]] == [n for n, _ in run.events]
+
+
+def test_the_agent_picks_the_answer_form(archive):
+    conn, cfg = archive
+    import time as _time
+
+    def model(form):
+        seen = []
+
+        def handler(request):
+            if request.method == "GET":
+                return httpx.Response(404)
+            body = json.loads(request.content)
+            seen.append(body)
+            schema = (body.get("response_format") or {}).get("json_schema", {}).get("name")
+            last = body["messages"][-1]["content"]
+            if schema == "outline":
+                out = json.dumps({"summary": "Two strands [m:1].", "sections": [
+                    {"title": "Speech", "focus": "what he said", "items": [1]},
+                    {"title": "Memes", "focus": "the memes", "items": [2]}]})
+            elif schema:
+                n = sum(1 for b in seen if b.get("response_format"))
+                out = json.dumps({"thought": "", "action": "search", "args": {"query": "trudeau"}} if n == 1 else
+                                 {"thought": "", "action": "answer", "args": {"form": form}})
+            elif '"Speech"' in last and "You are writing one section" in last:
+                _time.sleep(0.3)   # the first section is the slow one; it still comes first
+                out = "He said it [m:1]."
+            elif "You are writing one section" in last:
+                out = "A meme [m:2]."
+            else:
+                out = "It was the missile speech [m:1]."
+            return httpx.Response(200, text=f"data: {json.dumps({'choices': [{'delta': {'content': out}}]})}\n\ndata: [DONE]\n\n")
+
+        events = list(ask.run(conn, cfg, "Trudeau?", client=httpx.Client(transport=httpx.MockTransport(handler))))
+        return dict(events)["final"]["text"], seen
+
+    text, seen = model("brief")
+    answer = seen[-1]
+    assert text == "It was the missile speech [1]." and answer["max_tokens"] == ask.FORM_MAX_TOKENS["brief"]
+    assert "one to four sentences" in answer["messages"][-1]["content"]
+
+    text, seen = model("report")
+    assert text == ("## Summary\n\nTwo strands [1].\n\n## Contents\n\n1. Speech\n2. Memes\n\n"
+                    "## Speech\n\nHe said it [1].\n\n## Memes\n\nA meme [2].")
+    assert conn.execute("SELECT json_extract(context_json, '$.form') FROM chat_log ORDER BY id DESC").fetchone()[0] == "report"
+
+
+def test_report_sections_get_their_items_by_meaning_or_by_words(archive, monkeypatch):
+    import numpy as np
+
+    from re2 import embed
+    conn, cfg = archive
+    ev = ask.Evidence(items=search.cards(conn, [1, 2]))
+    sections = lambda: [{"title": "Missiles", "focus": "the speech", "items": []},  # noqa: E731
+                        {"title": "Memes", "focus": "jokes about Trudeau", "items": []}]
+
+    class Index:
+        def load(self):
+            return np.array([[1, 0, 0], [0.6, 0.8, 0]], dtype=np.float32), np.array([1, 2])
+
+    monkeypatch.setattr(embed, "get_index", lambda cfg, name: Index())
+    monkeypatch.setattr(embed, "embed_texts", lambda client, cfg, texts, prefix: [[1, 0, 0], [0, 1, 0]])
+    secs = sections()
+    assert ask.assign_sections(conn, cfg, None, ev, [1, 2], secs) == "meaning"
+    assert [s["items"] for s in secs] == [[1], [2]]          # item 2 is nearer the memes (0.8 against 0.6)
+
+    def down(*a):
+        raise embed.EmbedError("down")
+    monkeypatch.setattr(embed, "embed_texts", down)
+    secs = sections()
+    assert ask.assign_sections(conn, cfg, None, ev, [1, 2], secs) == "words"
+    assert sorted(m for s in secs for m in s["items"]) == [1, 2]
+
+
+def test_a_section_that_repeats_its_heading_loses_the_copy():
+    assert ask._drop_repeated_heading("### Excess Mortality and 'Sudden Death'\n\nThe archive", "Excess Mortality and 'Sudden Death'") == "The archive"
+    assert ask._drop_repeated_heading("#### Key claims\n- one", "Excess deaths") == "#### Key claims\n- one"

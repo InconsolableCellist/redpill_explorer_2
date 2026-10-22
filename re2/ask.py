@@ -8,25 +8,30 @@ citations are checked against what the tools actually returned.
 run() is a generator of events, consumed by the SSE endpoint:
   ("step", {...}) ("token", {"text"}) ("cite", {"n", "ref", "card"}) ("final", {...}) ("done", {...})
   ("error", {"msg"})
-While a model call or tool is under way, Control.live reports what it is doing; a Run keeps only the latest
-and sends it as ("live", {"what", "phase", "elapsed_ms", ...}).
+While model calls or a tool are under way, Control.live reports what they are doing; a Run keeps only the
+latest and sends it as ("live", {"calls": [{"what", "phase", "elapsed_ms", ...}, ...]}), one entry per call
+running at once.
 """
 from __future__ import annotations
 
 import json
 import logging
+import queue
 import re
 import sqlite3
 import threading
 import time
 import uuid
+from collections import deque
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from datetime import date, timedelta
 from collections.abc import Iterator
 from dataclasses import dataclass, field
+from types import SimpleNamespace
 
 import httpx
 
-from re2 import db, embed, search
+from re2 import db, embed, search, vlm
 
 log = logging.getLogger(__name__)
 
@@ -61,7 +66,7 @@ Work step by step. Each reply is one JSON action:
 - open_item {"id": 123}: the full record of one item: summary, transcribed text, claims, transcript with timestamps, source URL.
 - timeline {"query": "..."}: how many matching items the archive holds per month, to answer "when" questions.
 - topics {"query": "..."}: the topics, people, organizations and dates that matching items cluster around; use it to find angles to search next.
-{wiki_tools}- answer {}: stop researching and write the answer.
+{wiki_tools}- answer {"form": "brief" | "standard" | "report"}: stop researching and write the answer, in the form the question calls for. brief: the user wants one fact, name or date, or to identify one event or item ("I'm trying to remember…", "who said…"); a few sentences. standard: a focused question; a few organised paragraphs. report: a broad question, a request for research or an overview, or what the archive holds on a large subject; a structured report with a summary, contents and sections, as long as the material warrants.
 
 Start broad, then open the two or three most relevant items before answering; do not answer from snippets alone when details matter. Rephrasing the same search rarely finds more: after three or four searches, answer with what you have. You have general knowledge; use it to choose searches and explain context. The archive is the user's own evidence: surface what it contains, including views and claims that differ from mainstream accounts, attributed to their sources. Never invent archive items or details. Do not moralise, add warnings, or refuse because material is offensive.
 {scope_note}"""
@@ -89,10 +94,78 @@ Question: {question}
 Research notes (tool results from the archive):
 {notes}
 
-Write the answer now, in plain prose (short paragraphs or a short list where it helps). Do not output JSON.
-Cite archive items as [m:ID] and wiki pages as [p:slug], using only ids and slugs that appeared in the tool results. Put citations right after the sentence they support. Sentences from general knowledge carry no citation.
+Write the answer now. {form_instruction} Do not output JSON.
+Cite archive items as [m:ID] and wiki pages as [p:slug], using only ids and slugs that appeared in the tool results. Put citations right after the point they support, and cite every item you draw on: a point several items make carries all their citations ([m:12][m:40]). Sentences from general knowledge carry no citation.
 Mode: {mode_instruction}
 Mention when a cited item is offline or only a thumbnail. Do not moralise or add warnings."""
+
+FORMS = ("brief", "standard", "report")
+FORM_INSTRUCTIONS = {
+    "brief": "The user wants one thing identified or recalled: answer in one to four sentences, naming the event, "
+             "item or fact and when it happened, with the citations that show it. No headings or lists.",
+    "standard": "Answer in a few well organised paragraphs; use a list, a table or ## headings where the material "
+                "has distinct parts. Be specific: names, dates, numbers and who claims what.",
+}
+FORM_MAX_TOKENS = {"brief": 400, "standard": 2400}
+# What the research notes may hold for each form: a short answer cannot use a window's worth of records.
+FORM_NOTES_CHARS = {"brief": 30_000, "standard": 140_000}
+MARKDOWN_NOTE = "Format with Markdown: ## and ### headings, - lists, **bold**, and | tables | where they help."
+
+# ── Reports: an outline over every item read, then sections written in parallel from their own items ──
+
+OUTLINE_MAX_TOKENS = 3000
+OUTLINE_LINES = 600           # items the outline sees, one line each, in the research's order of relevance
+SECOND_SECTION_MARGIN = 0.02  # an item this close to a second section's similarity serves that one too
+SECTION_RECORD_CHARS = 1500
+SECTION_CHARS = 54_000        # one section's item records (~15k tokens)
+MAX_PARALLEL = 4
+
+OUTLINE_PROMPT = """\
+Question: {question}
+
+You are planning a research report that answers the question from the user's archive. Below are the research notes so far and the {n} archive items read, one line each.
+
+Plan the report:
+- summary: the high-level answer in {sentences} sentences: the main findings, how much material the archive holds and of what kind, and what is contested. Cite items as [m:ID].
+- sections: {k_lo} to {k_hi} sections, each a distinct sub-topic, theme, period, group of people or set of claims, in a sensible reading order, together covering everything in the items that bears on the question. For each, a short title and one sentence on what it covers, naming the people, events and kinds of claim it takes in: the archive items are sorted into sections by that sentence.
+Mode: {mode_instruction}
+
+Research notes:
+{notes}
+
+Items read:
+{lines}"""
+
+SECTION_PROMPT = """\
+Question: {question}
+
+You are writing one section of a research report that answers the question from the user's archive. The report:
+{plan}
+
+Write the section "{title}": {focus}
+Write about {words} words, from the archive items below.
+- Start with the content; the section's heading is added for you. Use ### subheadings, lists or a table where they help.
+- Be specific: names, dates, numbers, short quotes, what each source claims and how the sources relate. Attribute claims to their sources.
+- Cite every item you use as [m:ID] right after the point it supports; a point several items make carries all their citations.
+- Leave out items that turn out not to fit this section, and do not repeat what other sections cover.
+Mode: {mode_instruction}
+{notes}
+Items:
+{records}"""
+
+
+def outline_schema(k_hi: int) -> dict:
+    # No maxLength on the summary: llama.cpp cannot build a grammar for one that long (2400 failed to parse).
+    # Nor item ids per section: the model leaves such lists empty, and they are slow to write; items are
+    # sorted into sections by meaning instead (assign_sections).
+    return {"type": "object", "properties": {
+        "summary": {"type": "string"},
+        "sections": {"type": "array", "minItems": 1, "maxItems": k_hi, "items": {
+            "type": "object", "properties": {
+                "title": {"type": "string", "maxLength": 90},
+                "focus": {"type": "string", "maxLength": 400}},
+            "required": ["title", "focus"], "additionalProperties": False}}},
+        "required": ["summary", "sections"], "additionalProperties": False}
 
 _REF = r"(?:m:\d+|p:[a-z0-9/_.-]+)"
 # One citation or a group of them: [m:12], [m:12, m:40], [m:12; 40], [m:12, p:topic/x].
@@ -116,14 +189,28 @@ class Control:
     def __init__(self):
         self.stop = threading.Event()
         self.report = None   # Run.set_live, when someone may be watching
+        self._calls: dict[str, dict] = {}   # what each call running now is doing, in the order they started
+        self._lock = threading.Lock()
 
     def check(self) -> None:
         if self.stop.is_set():
             raise Stopped()
 
     def live(self, what: str, phase: str, **status) -> None:
-        if self.report:
-            self.report({"what": what, "phase": phase, **status})
+        if not self.report:
+            return
+        with self._lock:
+            if phase == "tool":   # tools run between model calls, never beside them
+                self._calls.clear()
+            else:
+                self._calls = {k: v for k, v in self._calls.items() if v["phase"] != "tool"}
+            self._calls[what] = {"what": what, "phase": phase, **status}
+            calls = list(self._calls.values())
+        self.report({"calls": calls})
+
+    def end(self, what: str) -> None:
+        with self._lock:
+            self._calls.pop(what, None)
 
 
 # ── Depth: how much the agent reads and how much of it reaches the answer ──
@@ -193,16 +280,26 @@ def _stream_chat(client: httpx.Client, cfg, body: dict, control: Control | None,
     so far and preview(text), the end of the text by default)."""
     body = {**body, "stream": True, "return_progress": True}
     t0 = last = time.monotonic()
-    text, tokens = "", 0
 
-    def tell(phase: str, force: bool = False, **status) -> None:
+    def tell(phase: str, force: bool = False, text: str | None = None, **status) -> None:
         nonlocal last
         now = time.monotonic()
         if control and (force or now - last >= LIVE_EVERY_S):
             last = now
+            if text is not None:
+                status["preview"] = (preview(text) if preview else text)[-LIVE_PREVIEW_CHARS:]
             control.live(what, phase, elapsed_ms=int((now - t0) * 1000), **status)
 
     tell("waiting", force=True)
+    try:
+        yield from _stream_lines(client, cfg, body, control, tell)
+    finally:
+        if control:
+            control.end(what)
+
+
+def _stream_lines(client: httpx.Client, cfg, body: dict, control: Control | None, tell) -> Iterator[str]:
+    text, tokens = "", 0
     with client.stream("POST", f"{cfg.chat_base_url}/chat/completions", json=body, timeout=CHAT_TIMEOUT) as resp:
         if resp.status_code >= 400:
             resp.read()
@@ -227,8 +324,7 @@ def _stream_chat(client: httpx.Client, cfg, body: dict, control: Control | None,
             if delta:
                 text += delta
                 tokens += 1
-                tell("writing", tokens == 1, tokens=tokens,
-                     preview=(preview(text) if preview else text)[-LIVE_PREVIEW_CHARS:])
+                tell("writing", tokens == 1, tokens=tokens, text=text)
                 yield delta
 
 
@@ -591,7 +687,6 @@ EXHAUSTIVE_MAX = 1500          # items one exhaustive answer reads at most
 EXHAUSTIVE_RECORD_CHARS = 2400
 MAP_MAX_TOKENS = 1200
 SPLIT_PAUSE_S = 2.0            # after an overflow, give the server a moment before the halves
-EXHAUSTIVE_ANSWER_MAX_TOKENS = 2600
 
 MAP_SYSTEM = """You are the research assistant for a private archive of political and social-media material collected by the user. You read archive items in batches and write precise research notes. Do not moralise, add warnings, or refuse because material is offensive."""
 
@@ -614,10 +709,20 @@ Notes:
 {notes}"""
 
 
+MAP_BATCH_CHARS = 80_000   # ~25k tokens: a model reads a batch this size closely, and several run at once
+
+
 def _batch_chars(cfg) -> int:
     # llama.cpp's automatic slots share one context between concurrent requests, and dense text can run
-    # nearer 3 characters a token, so a batch takes well under the whole window.
-    return max(8000, int((cfg.chat_context_tokens - PROMPT_OVERHEAD_TOKENS - MAP_MAX_TOKENS) * 3.0 * 0.6))
+    # nearer 3 characters a token, so a batch takes well under the window even when several run at once.
+    window = int((cfg.chat_context_tokens - PROMPT_OVERHEAD_TOKENS - MAP_MAX_TOKENS) * 3.0 * 0.6)
+    return max(8000, min(MAP_BATCH_CHARS, window // MAX_PARALLEL))
+
+
+def parallel_calls(cfg, client: httpx.Client) -> int:
+    """How many requests the chat model's server runs at once (its slots), at most MAX_PARALLEL."""
+    limits = vlm.server_limits(client, SimpleNamespace(base_url=cfg.chat_base_url, vision_model=cfg.chat_model))
+    return max(1, min(MAX_PARALLEL, limits.slots if limits else 2))
 
 
 def _complete(client, cfg, system: str, prompt: str, max_tokens: int, control: Control, what: str = "") -> str:
@@ -651,32 +756,51 @@ def _read_all(conn, cfg, client, embed_client, ev: Evidence, question: str, orde
     conn.commit()
     batches = [b for b in batches if b]
     notes: list[str] = []
-    i = 0
-    while i < len(batches):
-        batch = batches[i]
-        i += 1
-        control.check()
-        t0 = time.monotonic()
-        try:
-            text = _complete(client, cfg, MAP_SYSTEM, MAP_PROMPT.format(question=question, n=len(batch), i=i,
-                                                                        total=len(batches), records="\n\n".join(batch)),
-                             MAP_MAX_TOKENS, control, f"reading batch {i} of {len(batches)} ({len(batch)} items)")
-        except AskError as exc:
-            # Too big for what the server has free right now: read the batch as two halves instead.
-            if len(batch) < 2 or not re.search(r"context|exceed|HTTP 5\d\d", str(exc), re.IGNORECASE):
-                raise
-            log.warning("batch of %d items failed (%s); splitting it", len(batch), exc)
-            batches[i - 1:i] = [batch[:len(batch) // 2], batch[len(batch) // 2:]]
-            i -= 1
-            time.sleep(SPLIT_PAUSE_S)
-            continue
-        cited = len(set(re.findall(r"\[m:(\d+)\]", text)))
-        if text and text.strip().upper() != "NONE":
-            notes.append(text)
-        trace.append({"action": "read_batch", "args": {"batch": i, "items": len(batch), "cited": cited},
-                      "ms": int((time.monotonic() - t0) * 1000)})
-        yield "step", {"n": len(trace), "action": "read", "args": {"id": f"batch {i}/{len(batches)}"}, "thought": "",
-                       "summary": f"{len(batch)} items · {cited} cited"}
+    total = len(batches)
+    todo = deque(enumerate(batches, 1))
+    parallel = parallel_calls(cfg, client)
+
+    def read(i: int, batch: list[str]) -> str:
+        return _complete(client, cfg, MAP_SYSTEM, MAP_PROMPT.format(question=question, n=len(batch), i=i, total=total,
+                                                                    records="\n\n".join(batch)),
+                         MAP_MAX_TOKENS, control, f"reading batch {i} of {total} ({len(batch)} items)")
+
+    # Batches run side by side on the server's slots; their notes are kept in batch order.
+    by_batch: dict[int, str] = {}
+    pool = ThreadPoolExecutor(parallel)
+    running: dict = {}
+    try:
+        while todo or running:
+            while todo and len(running) < parallel:
+                i, batch = todo.popleft()
+                running[pool.submit(read, i, batch)] = (i, batch, time.monotonic())
+            finished, _ = wait(running, return_when=FIRST_COMPLETED)
+            for fut in finished:
+                i, batch, t0 = running.pop(fut)
+                try:
+                    text = fut.result()
+                except AskError as exc:
+                    # Too big for what the server has free right now: read the batch as two halves instead.
+                    if len(batch) < 2 or not re.search(r"context|exceed|HTTP 5\d\d", str(exc), re.IGNORECASE):
+                        raise
+                    log.warning("batch of %d items failed (%s); splitting it", len(batch), exc)
+                    total += 1
+                    todo.extendleft([(i, batch[len(batch) // 2:]), (i, batch[:len(batch) // 2])])
+                    time.sleep(SPLIT_PAUSE_S)
+                    continue
+                cited = len(set(re.findall(r"\[m:(\d+)\]", text)))
+                if text and text.strip().upper() != "NONE":
+                    by_batch[i] = by_batch.get(i, "") + ("\n" if i in by_batch else "") + text
+                trace.append({"action": "read_batch", "args": {"batch": i, "items": len(batch), "cited": cited},
+                              "ms": int((time.monotonic() - t0) * 1000)})
+                yield "step", {"n": len(trace), "action": "read", "args": {"id": f"batch {i}/{total}"}, "thought": "",
+                               "summary": f"{len(batch)} items · {cited} cited"}
+    except BaseException:
+        control.stop.set()   # the batches still running end at their next chunk
+        raise
+    finally:
+        pool.shutdown(wait=False, cancel_futures=True)
+    notes = [by_batch[i] for i in sorted(by_batch)]
     merged = "\n\n".join(notes)
     rounds = 0
     while len(merged) > notes_budget and len(notes) > 1 and rounds < 4:
@@ -698,7 +822,176 @@ def _read_all(conn, cfg, client, embed_client, ev: Evidence, question: str, orde
                            "thought": "", "summary": ""}
         merged = "\n\n".join(notes)
     trace.append({"action": "reduce", "args": {"rounds": rounds}, "chars": len(merged)})
-    return len(records_ready), len(batches), merged[:notes_budget]
+    return len(records_ready), total, merged[:notes_budget]
+
+
+OUTLINE_NOTES_CHARS = 100_000   # notes from reading everything that the outline sees (~30k tokens)
+OUTLINE_RESEARCH_CHARS = 30_000  # the agent's own tool results that the outline sees
+
+
+class _End:
+    def __init__(self, exc: BaseException | None = None):
+        self.exc = exc
+
+
+def _outline(conn, cfg, client, ev: Evidence, question: str, ids: list[int], notes: str, mode_instruction: str,
+             answer_system: str, control: Control) -> tuple[str, list[dict]]:
+    n = len(ids)
+    k_lo, k_hi = (2, 4) if n < 30 else (3, 7) if n < 150 else (5, 10)
+    clip = 200 if n <= 150 else 120 if n <= 300 else 70
+    lines = "\n".join(f"[m:{m}] {ev.items[m]['date'] or 'undated'} · {ev.items[m]['kind']} · {ev.items[m]['title']}"
+                      f" — {_clip(ev.items[m].get('summary') or ev.items[m].get('description') or '', clip)}"
+                      for m in ids[:OUTLINE_LINES])
+    prompt = OUTLINE_PROMPT.format(question=question, n=n, sentences="4 to 6" if n < 150 else "6 to 9", k_lo=k_lo,
+                                   k_hi=k_hi, mode_instruction=mode_instruction,
+                                   notes=notes[:OUTLINE_NOTES_CHARS] or "(none)", lines=lines)
+    body = _payload(cfg, [{"role": "system", "content": answer_system}, {"role": "user", "content": prompt}],
+                    OUTLINE_MAX_TOKENS, response_format={"type": "json_schema", "json_schema": {
+                        "name": "outline", "schema": outline_schema(k_hi)}})
+    try:
+        content = "".join(_stream_chat(client, cfg, body, control, f"planning the report over {n} items"))
+    except httpx.HTTPError as exc:
+        raise AskError(f"chat model failed while planning the report: {exc}") from exc
+    try:
+        plan_ = json.loads(re.sub(r"^\s*<think>.*?</think>", "", content, flags=re.DOTALL))
+    except json.JSONDecodeError:
+        plan_ = {}
+    log.info("report outline over %d items: %s", n, content[:3000])
+    sections = []
+    for sec in plan_.get("sections") or []:
+        title = str(sec.get("title") or "").strip().strip("#").strip()
+        if title:
+            sections.append({"title": title, "focus": str(sec.get("focus") or "").strip(), "items": []})
+    if not sections:
+        sections = [{"title": "Findings", "focus": "what the archive holds on the question", "items": []}]
+    return str(plan_.get("summary") or "").strip(), sections
+
+
+def assign_sections(conn, cfg, embed_client, ev: Evidence, ids: list[int], sections: list[dict]) -> str:
+    """Sort the items read into the report's sections, most similar first: by meaning (each section's title and
+    focus against the item's vector), or by shared words when the embedding server or an item's vector is
+    missing. An item near-tied between two sections serves both. Returns how it sorted them."""
+    import numpy as np
+
+    texts = [f"{s['title']}: {s['focus']}" for s in sections]
+    scores: dict[int, list[float]] = {}
+    how = "meaning"
+    try:
+        vecs, vec_ids = embed.get_index(cfg, "items").load()
+        rows = {int(m): r for r, m in enumerate(vec_ids.tolist())}
+        qs = np.asarray(embed.embed_texts(embed_client, cfg, texts, embed.QUERY_PREFIX), dtype=np.float32)
+        qs /= np.maximum(np.linalg.norm(qs, axis=1, keepdims=True), 1e-12)
+        have = [m for m in ids if m in rows]
+        if have:
+            sims = vecs[[rows[m] for m in have]] @ qs.T
+            scores = {m: sims[i].tolist() for i, m in enumerate(have)}
+    except (embed.EmbedError, httpx.HTTPError, OSError, ValueError) as exc:
+        log.warning("report: sorting items by shared words (%s)", exc)
+        how = "words"
+    words = [set(re.findall(r"[a-z]{4,}", t.lower())) for t in texts]
+    for m in ids:
+        if m not in scores:
+            card = ev.items[m]
+            mine = set(re.findall(r"[a-z]{4,}", f"{card['title']} {card.get('summary') or ''}".lower()))
+            scores[m] = [len(mine & w) / (len(w) or 1) for w in words]
+    for m in ids:
+        row = scores[m]
+        best = max(range(len(row)), key=row.__getitem__)
+        for j, score in enumerate(row):
+            if j == best or (how == "meaning" and score >= row[best] - SECOND_SECTION_MARGIN):
+                sections[j]["items"].append((score, m))
+    for sec in sections:
+        sec["items"] = [m for _, m in sorted(sec["items"], key=lambda x: -x[0])]
+    return how
+
+
+def _drop_repeated_heading(text: str, title: str) -> str:
+    m = re.match(r"\s*#{1,6}\s*(.+?)\s*#*\s*\n", text)
+    norm = lambda t: re.sub(r"[^a-z0-9]+", " ", t.lower()).strip()  # noqa: E731
+    return text[m.end():].lstrip("\n") if m and norm(m.group(1)) == norm(title) else text
+
+
+def write_report(conn, cfg, client, embed_client, ev: Evidence, question: str, ids: list[int], notes: str,
+                 mode_instruction: str, answer_system: str, control: Control, trace: list[dict]):
+    """A report over the items read: an outline (summary and sections, each given its items) from one line per
+    item, then every section written from its own items' records, several at once. Yields the report's text in
+    order (each section streams as soon as those before it are out) and step events as tuples."""
+    t0 = time.monotonic()
+    summary, sections = _outline(conn, cfg, client, ev, question, ids, notes, mode_instruction, answer_system, control)
+    control.live(f"sorting {len(ids)} items into {len(sections)} sections", "tool")
+    how = assign_sections(conn, cfg, embed_client, ev, ids, sections)
+    trace.append({"action": "outline", "args": {"sections": [s["title"] for s in sections], "sorted_by": how},
+                  "ms": int((time.monotonic() - t0) * 1000)})
+    yield "step", {"n": len(trace), "action": "outline", "args": {"id": f"{len(sections)} sections"}, "thought": "",
+                   "summary": "; ".join(s["title"] for s in sections)[:160]}
+    plan_text = (f"Summary: {summary}\n" if summary else "") + "Sections:\n" + "\n".join(
+        f"{j}. {s['title']}: {s['focus']}" for j, s in enumerate(sections, 1))
+    note_lines = [line for line in notes.splitlines() if "[m:" in line]
+    bodies = []
+    for j, sec in enumerate(sections, 1):
+        records, size = [], 0
+        for m in sec["items"]:
+            record = tool_open_item(conn, cfg, embed_client, ev, [], {"id": m})[:SECTION_RECORD_CHARS]
+            if record.startswith("No item") or size + len(record) > SECTION_CHARS:
+                continue
+            records.append(record)
+            size += len(record) + 2
+        mine = {f"[m:{m}]" for m in sec["items"]}
+        bullets = [line for line in note_lines if any(c in line for c in mine)][:60]
+        words = max(180, min(900, 120 + 30 * len(records)))
+        prompt = SECTION_PROMPT.format(
+            question=question, plan=plan_text.replace(f"\n{j}. ", f"\n{j}. (this section) "), title=sec["title"],
+            focus=sec["focus"], words=words, mode_instruction=mode_instruction,
+            notes=("Notes from reading the archive that bear on this section:\n" + "\n".join(bullets) + "\n") if bullets else "",
+            records="\n\n".join(records) or "(none: write from the notes and the plan)")
+        sec["read"] = len(records)
+        bodies.append(_payload(cfg, [{"role": "system", "content": answer_system}, {"role": "user", "content": prompt}],
+                               int(words * 2.2) + 300))
+    conn.commit()
+
+    yield (f"## Summary\n\n{summary}\n\n" if summary else "") + "## Contents\n\n" + "\n".join(
+        f"{j}. {s['title']}" for j, s in enumerate(sections, 1)) + "\n\n"
+    queues: list[queue.Queue] = [queue.Queue() for _ in sections]
+
+    def write(j: int) -> None:
+        try:
+            for delta in _stream_chat(client, cfg, bodies[j], control,
+                                      f"writing section {j + 1} of {len(sections)}: {sections[j]['title']}"):
+                queues[j].put(delta)
+            queues[j].put(_End())
+        except httpx.HTTPError as exc:
+            queues[j].put(_End(AskError(f"chat model failed while writing a section: {exc}")))
+        except BaseException as exc:  # noqa: BLE001 - Stopped included: the reader re-raises it
+            queues[j].put(_End(exc))
+
+    pool = ThreadPoolExecutor(parallel_calls(cfg, client))
+    try:
+        for j in range(len(sections)):
+            pool.submit(write, j)
+        for j, sec in enumerate(sections):
+            yield f"## {sec['title']}\n\n"
+            # Hold the start until its first line is known: models often repeat the section's heading.
+            head, held = "", True
+            while not isinstance(item := queues[j].get(), _End):
+                if not held:
+                    yield item
+                    continue
+                head += item
+                if "\n" in head.lstrip() or len(head) > 300:
+                    held = False
+                    yield _drop_repeated_heading(head, sec["title"])
+            if held and head:
+                yield _drop_repeated_heading(head, sec["title"])
+            if item.exc:
+                raise item.exc
+            yield "\n\n"
+    except BaseException:
+        control.stop.set()   # the sections still being written end at their next chunk
+        raise
+    finally:
+        pool.shutdown(wait=False, cancel_futures=True)
+    trace.append({"action": "report", "args": {"sections": [{"title": s["title"], "items": len(s["items"]), "read": s["read"]}
+                                                             for s in sections]}, "ms": int((time.monotonic() - t0) * 1000)})
 
 
 def run(conn: sqlite3.Connection, cfg, question: str, scopes: list[str] | None = None, mode: str = "informed",
@@ -772,6 +1065,7 @@ def run(conn: sqlite3.Connection, cfg, question: str, scopes: list[str] | None =
         notes: list[str] = []
         opened: set[int] = set(context["items"])
         used = {"search": 0, "open_item": 0}
+        form = "standard"
         for step_no in range(pl.steps):
             t0 = time.monotonic()
             # Steer by narrowing the grammar, not by pleading: searches and opens run out,
@@ -786,7 +1080,9 @@ def run(conn: sqlite3.Connection, cfg, question: str, scopes: list[str] | None =
                                f"step {step_no + 1}: choosing what to do" if actions != ["answer"] else "deciding to answer")
             action, args = step["action"], step["args"]
             if action == "answer":
-                trace.append({"action": "answer", "thought": step.get("thought", ""), "ms": int((time.monotonic() - t0) * 1000)})
+                form = args.get("form") if args.get("form") in FORMS else form
+                trace.append({"action": "answer", "args": {"form": form}, "thought": step.get("thought", ""),
+                              "ms": int((time.monotonic() - t0) * 1000)})
                 break
             if action == "search":
                 args["limit"] = min(int(args.get("limit") or pl.search_limit), pl.search_limit)
@@ -815,6 +1111,11 @@ def run(conn: sqlite3.Connection, cfg, question: str, scopes: list[str] | None =
             if sum(len(m["content"]) for m in messages) > loop_budget_chars:
                 break
 
+        # A debate turn is one speaker's argument; "Read all" asks for everything, so it is a report.
+        form = "standard" if debate else "report" if exhaustive else form
+        context["form"] = form
+        if form in FORM_NOTES_CHARS:
+            notes_budget = min(notes_budget, FORM_NOTES_CHARS[form])
         notes = [f"## attached by the user\n{r}" for r in attached] + notes
         t0 = time.monotonic()
         queries = [str(t["args"]["query"]) for t in trace
@@ -826,8 +1127,9 @@ def run(conn: sqlite3.Connection, cfg, question: str, scopes: list[str] | None =
         order = [m for m in order if m not in context["items"]]
         coverage = {"candidates": len(set(candidates) | set(related_ids) | set(ev.items)), "keyword": n_keyword}
         if exhaustive:
-            read, map_notes, reduced = yield from _read_all(conn, cfg, client, embed_client, ev, question, order, notes_budget,
-                                                            control, trace)
+            read, map_notes, reduced = yield from _read_all(conn, cfg, client, embed_client, ev, question, order,
+                                                            OUTLINE_NOTES_CHARS, control, trace)
+            read_ids = [*context["items"], *(m for m in order[:EXHAUSTIVE_MAX] if m in ev.items)]
             # The agent's own research stays, but the batch notes carry the answer.
             loop_notes = "\n\n".join(notes)[: notes_budget // 4]
             notes = [loop_notes, "## notes from reading every candidate item\n" + reduced] if loop_notes else [reduced]
@@ -856,6 +1158,7 @@ def run(conn: sqlite3.Connection, cfg, question: str, scopes: list[str] | None =
                 yield "step", {"n": len(trace), "action": "read", "args": {"id": f"{len(extra)} more items"},
                                "thought": "", "summary": f"~{used_chars // CHARS_PER_TOKEN / 1000:.1f}k tokens of notes"}
             coverage["read"] = len(opened)
+            read_ids = [m for m in dict.fromkeys([*context["items"], *ev.items]) if m in opened]
         coverage["candidates"] = max(coverage["candidates"], coverage["read"])
         trace.append({"action": "coverage", "args": coverage})
         context["coverage"] = coverage
@@ -866,7 +1169,19 @@ def run(conn: sqlite3.Connection, cfg, question: str, scopes: list[str] | None =
         answer_messages = [{"role": "system", "content": answer_system}, *past,
                            {"role": "user", "content": ANSWER_PROMPT.format(
                                question=question, notes="\n\n".join(notes)[:notes_budget] or "(no research)",
+                               form_instruction="In plain prose (short paragraphs or a short list where it helps)."
+                               if debate else f"{FORM_INSTRUCTIONS.get(form, '')} {MARKDOWN_NOTE if form != 'brief' else ''}".strip(),
                                mode_instruction=mode_instruction)}]
+
+        def say(deltas):
+            for delta in deltas:
+                if isinstance(delta, tuple):
+                    yield delta
+                    continue
+                out = cites.feed(delta)
+                yield from emit_cites()
+                if out:
+                    yield "token", {"text": out}
 
         def emit_cites():
             for n, ref in cites.new_cites:
@@ -879,12 +1194,14 @@ def run(conn: sqlite3.Connection, cfg, question: str, scopes: list[str] | None =
                 yield "cite", payload
             cites.new_cites.clear()
 
-        for delta in stream_answer(client, cfg, answer_messages, control,
-                                   EXHAUSTIVE_ANSWER_MAX_TOKENS if exhaustive else ANSWER_MAX_TOKENS):
-            out = cites.feed(delta)
-            yield from emit_cites()
-            if out:
-                yield "token", {"text": out}
+        if form == "report":
+            research = "\n\n".join(notes)[:OUTLINE_RESEARCH_CHARS] if not exhaustive else \
+                "\n\n".join(n for n in notes if n.startswith("## notes from reading"))
+            yield from say(write_report(conn, cfg, client, embed_client, ev, question, read_ids, research,
+                                        f"{mode_instruction} {MARKDOWN_NOTE}", answer_system, control, trace))
+        else:
+            yield from say(stream_answer(client, cfg, answer_messages, control,
+                                         FORM_MAX_TOKENS[form] if not debate else ANSWER_MAX_TOKENS))
         tail = cites.flush()
         yield from emit_cites()
         if tail:

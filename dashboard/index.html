@@ -481,6 +481,7 @@ mark { background: var(--hot-w); color: var(--ink); padding: 0 1px; }
 .steps .is-live::after { content: "▍"; color: var(--hot); animation: blink 1s steps(1) infinite; }
 /* What the model call under way is doing: reading the prompt, writing, and the step's thought as it comes. */
 .steps .live { color: var(--ink-2); }
+.steps--after { margin: 10px 0 0; border-top: 1px dashed var(--rule-soft); padding-top: 6px; }
 .live__bar { display: inline-block; position: relative; width: 72px; height: 6px; margin: 0 6px 1px; vertical-align: middle; background: var(--stock-well); overflow: hidden; }
 .live__bar > i { position: absolute; inset: 0 auto 0 0; background: var(--blue); transition: width .4s; }
 .steps .live__preview { color: var(--ink-3); font-style: italic; white-space: pre-wrap; overflow-wrap: anywhere; max-width: 76ch; }
@@ -2453,21 +2454,24 @@ function applyTopics() {
    read or a model that is still loading never looks stalled. */
 const fmtK = (n) => n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
 function liveLine(turn) {
-  const l = turn.live;
-  if (!l) return `<div class="is-live">${turn.steps.length ? "thinking" : "starting"}</div>`;
-  const clock = `<span class="live-clock" data-t0="${l.at - l.elapsed_ms}"></span>`;
-  let doing = "", preview = "";
-  if (l.phase === "waiting") doing = "waiting for the model";
-  else if (l.phase === "reading") {
-    const pct = Math.round(100 * l.processed / l.total);
-    doing = `reading the prompt<span class="live__bar"><i style="width:${pct}%"></i></span>${fmtK(l.processed)} / ${fmtK(l.total)} tokens` +
-      (l.cache ? `, ${fmtK(l.cache)} cached` : "");
-  } else if (l.phase === "writing") {
-    const rate = l.elapsed_ms ? ` · ${(l.tokens / (l.elapsed_ms / 1000)).toFixed(1)}/s` : "";
-    doing = `writing · ${fmtN(l.tokens)} tokens${rate}`;
-    if (l.preview) preview = `<div class="live__preview">${escapeHtml(l.preview)}</div>`;
-  }
-  return `<div class="live is-live"><b>${escapeHtml(l.what || "working")}</b>${doing ? `${doing} · ` : ""}${clock}</div>` + preview;
+  const calls = turn.live?.calls || [];
+  if (!calls.length) return `<div class="is-live">${turn.steps.length ? "thinking" : "starting"}</div>`;
+  // Several calls at once (a report's sections, Read all's batches): a line each, and a preview only for one.
+  return calls.map((l) => {
+    const clock = `<span class="live-clock" data-t0="${turn.live.at - l.elapsed_ms}"></span>`;
+    let doing = "", preview = "";
+    if (l.phase === "waiting") doing = "waiting for the model";
+    else if (l.phase === "reading") {
+      const pct = Math.round(100 * l.processed / l.total);
+      doing = `reading the prompt<span class="live__bar"><i style="width:${pct}%"></i></span>${fmtK(l.processed)} / ${fmtK(l.total)} tokens` +
+        (l.cache ? `, ${fmtK(l.cache)} cached` : "");
+    } else if (l.phase === "writing") {
+      const rate = l.elapsed_ms ? ` · ${(l.tokens / (l.elapsed_ms / 1000)).toFixed(1)}/s` : "";
+      doing = `writing · ${fmtN(l.tokens)} tokens${rate}`;
+      if (l.preview && calls.length === 1) preview = `<div class="live__preview">${escapeHtml(l.preview)}</div>`;
+    }
+    return `<div class="live is-live"><b>${escapeHtml(l.what || "working")}</b>${doing ? `${doing} · ` : ""}${clock}</div>` + preview;
+  }).join("");
 }
 function tickLiveClocks() {
   const now = performance.now();
@@ -2604,7 +2608,9 @@ function renderAskLog() {
     `<article class="turn${turn.speaker ? ` turn--${turn.speaker}` : ""}${turn.by === "user" ? " turn--you" : ""}" data-turn="${i}">` + head(turn) +
     (turn.by === "user" ? "" : `<div class="steps">${turn.steps.map((st, j) => stepLine(st, !turn.done && !turn.text && j === turn.steps.length - 1)).join("")}` +
       `${!turn.done && !turn.text ? liveLine(turn) : ""}</div>`) +
-    `<div class="answer">${answerHtml(turn)}</div>` + coverageLine(turn) +
+    `<div class="answer">${answerHtml(turn)}</div>` +
+    (!turn.done && turn.text && turn.live?.calls?.length ? `<div class="steps steps--after">${liveLine(turn)}</div>` : "") +
+    coverageLine(turn) +
     (turn.stopped ? `<div class="turn__stopped">stopped</div>` : "") +
     (turn.error ? `<div class="ask__err">${escapeHtml(turn.error)}</div>` : "") +
     sourcesHtml(turn) +
